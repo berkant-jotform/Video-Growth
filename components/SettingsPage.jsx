@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Clipboard, ExternalLink, Save, ShieldCheck } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 
+const DELETE_SECRET_VALUE = "__DELETE_SECRET__";
+
 const BOOTSTRAP_ITEMS = [
   {
     key: "database",
@@ -282,13 +284,22 @@ export default function SettingsPage({ session }) {
 }
 
 function SettingField({ label, name, type, secret, source, value, onChange }) {
+  const markedForRemoval = value === DELETE_SECRET_VALUE;
+  const maskedSecret = secret && value === "********";
   return (
     <label className="setting-field">
       <span>
         {label}
         <em>{sourceLabel(source)}</em>
       </span>
-      {type === "textarea" ? (
+      {markedForRemoval ? (
+        <div className="secret-removal">
+          <strong>Will be removed when you save.</strong>
+          <button type="button" className="secondary-button" onClick={() => onChange("********")}>
+            Undo
+          </button>
+        </div>
+      ) : type === "textarea" ? (
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -302,6 +313,18 @@ function SettingField({ label, name, type, secret, source, value, onChange }) {
           onChange={(event) => onChange(event.target.value)}
         />
       )}
+      {maskedSecret && source === "app" ? (
+        <button
+          type="button"
+          className="secondary-button remove-secret-button"
+          onClick={() => onChange(DELETE_SECRET_VALUE)}
+        >
+          Remove saved value
+        </button>
+      ) : null}
+      {maskedSecret && source === "env" ? (
+        <p className="field-hint">This value comes from Vercel env. Remove it in Vercel, then redeploy.</p>
+      ) : null}
     </label>
   );
 }

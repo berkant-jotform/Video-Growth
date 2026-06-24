@@ -748,6 +748,32 @@ select {
   padding: 2px 8px;
 }
 
+.remove-secret-button {
+  justify-self: start;
+}
+
+.secret-removal {
+  align-items: center;
+  background: color-mix(in srgb, var(--amber) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--border));
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.secret-removal strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: -4px 0 0;
+}
+
 textarea {
   border: 1px solid var(--border);
   border-radius: 8px;
