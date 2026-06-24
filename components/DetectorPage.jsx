@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Filter,
   Image,
+  Info as InfoIcon,
   RefreshCw,
   Search,
   Type,
@@ -185,16 +186,19 @@ export default function DetectorPage({ session }) {
               ))}
             </select>
           </label>
-          <div className="segmented" aria-label="Test type">
-            {["all", "title", "thumbnail"].map((item) => (
-              <button
-                key={item}
-                className={type === item ? "active" : ""}
-                onClick={() => setType(item)}
-              >
-                {item === "all" ? "All" : titleCase(item)}
-              </button>
-            ))}
+          <div className="filter-control test-type-control">
+            <span className="filter-label">Test type</span>
+            <div className="segmented" aria-label="Test type">
+              {["all", "title", "thumbnail"].map((item) => (
+                <button
+                  key={item}
+                  className={type === item ? "active" : ""}
+                  onClick={() => setType(item)}
+                >
+                  {item === "all" ? "All" : titleCase(item)}
+                </button>
+              ))}
+            </div>
           </div>
           <label>
             Result
@@ -218,13 +222,16 @@ export default function DetectorPage({ session }) {
               <option value="missing">Missing date</option>
             </select>
           </label>
-          <label className="search-box">
-            <Search size={16} />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search video, ID, channel"
-            />
+          <label className="filter-control search-control">
+            <span className="filter-label">Search</span>
+            <span className="search-box">
+              <Search size={16} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search video, ID, channel"
+              />
+            </span>
           </label>
           <div className="advanced-filter">
             <button className="secondary-button" onClick={() => setAdvancedOpen((value) => !value)}>
@@ -327,7 +334,7 @@ function Summary({ summary }) {
 
 function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving }) {
   return (
-    <section className="channel-group">
+    <section className="channel-group" style={{ "--channel-hue": channelHue(group.channel) }}>
       <div className="channel-heading">
         <h3>{group.channel}</h3>
         <span>{group.count} active</span>
@@ -372,7 +379,25 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
     >
       <div className="card-topline">
         <span className="channel-pill">{channel || "Unknown channel"}</span>
-        <span className="date-pill">{run.effectiveFinishDate || "No finish date"}</span>
+        <span className="card-top-actions">
+          <button
+            className="mini-icon-button"
+            title="Copy video ID"
+            aria-label="Copy video ID"
+            onClick={() => copyText(run.videoId)}
+          >
+            <Clipboard size={14} />
+          </button>
+          <button
+            className="mini-icon-button"
+            title="Details"
+            aria-label="Open details"
+            onClick={() => onDetails(run)}
+          >
+            <InfoIcon size={14} />
+          </button>
+          <span className="date-pill">{run.effectiveFinishDate || "No finish date"}</span>
+        </span>
       </div>
       <div className="card-badges">
         <span className={`type-pill ${run.testType}-type`}>
@@ -384,7 +409,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
       <CardVisual run={run} result={result} />
       <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
       <div className="card-meta-grid">
-        <div>
+        <div className="channel-meta">
           <span>Channel</span>
           <strong>{channel || "Unknown"}</strong>
         </div>
@@ -413,12 +438,6 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
             </button>
           ))}
         </div>
-        <button className="icon-button" title="Copy video ID" onClick={() => copyText(run.videoId)}>
-          <Clipboard size={17} />
-        </button>
-        <button className="secondary-button" onClick={() => onDetails(run)}>
-          Details
-        </button>
         <button className="done-button" onClick={() => onDone(run)}>
           <Check size={17} />
           Done
