@@ -476,7 +476,7 @@ function CardVisual({ run, result }) {
         {["A", "B", "C"]
           .filter((key) => run.options?.[key])
           .map((key) => (
-            <div className="title-option-card" key={key}>
+            <div className={`title-option-card option-${key.toLowerCase()}`} key={key}>
               <strong>{key}</strong>
               <span>{run.options[key]}</span>
             </div>
@@ -496,7 +496,7 @@ function CardVisual({ run, result }) {
     return (
       <div className={`card-visual thumbnail-visual-grid count-${shownKeys.length}`}>
         {shownKeys.map((key) => (
-          <figure key={key}>
+          <figure className={`option-${key.toLowerCase()}`} key={key}>
             <img src={run.thumbnailPreviews[key]} alt="" />
             <figcaption>{key}</figcaption>
           </figure>
