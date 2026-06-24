@@ -7,8 +7,10 @@ import {
   Clipboard,
   ExternalLink,
   Filter,
+  Image,
   RefreshCw,
   Search,
+  Type,
   X
 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
@@ -362,9 +364,10 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
   const result = cardResult(run);
   const channel = displayChannel(run);
   const quickActions = quickActionOptions(run);
+  const TypeIcon = run.testType === "thumbnail" ? Image : Type;
   return (
     <article
-      className={`test-card ${statusKey(run)}`}
+      className={`test-card ${statusKey(run)} ${run.testType}-test result-${result.key}`}
       style={{ "--channel-hue": channelHue(channel) }}
     >
       <div className="card-topline">
@@ -372,7 +375,10 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
         <span className="date-pill">{run.effectiveFinishDate || "No finish date"}</span>
       </div>
       <div className="card-badges">
-        <span className="type-pill">{titleCase(run.testType)} test</span>
+        <span className={`type-pill ${run.testType}-type`}>
+          <TypeIcon size={14} />
+          {titleCase(run.testType)} test
+        </span>
         <span className={`result-pill ${result.tone}`}>{result.label}</span>
       </div>
       <CardVisual run={run} result={result} />
@@ -389,7 +395,6 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
       </div>
       <p className="outcome">{outcomeLabel(run)}</p>
       {run.possibleRetest ? <span className="badge warning">Possible Retest</span> : null}
-      {run.testType === "thumbnail" ? <ThumbnailStrip previews={run.thumbnailPreviews} /> : null}
       <div className="card-actions">
         <a className="studio-button" href={run.studioUrl || "#"} target="_blank" rel="noreferrer">
           <ExternalLink size={18} />
@@ -425,13 +430,40 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
 
 function CardVisual({ run, result }) {
   const channel = displayChannel(run);
-  const preview = firstThumbnailPreview(run.thumbnailPreviews);
-  const imageUrl = preview || run.currentYoutubeThumbnailUrl;
-  if (imageUrl) {
+  if (run.testType === "title" && Object.keys(run.options || {}).length) {
+    return (
+      <div className="card-visual title-option-visual">
+        {["A", "B", "C"]
+          .filter((key) => run.options?.[key])
+          .map((key) => (
+            <div className="title-option-card" key={key}>
+              <strong>{key}</strong>
+              <span>{run.options[key]}</span>
+            </div>
+          ))}
+      </div>
+    );
+  }
+
+  const thumbnailKeys = ["A", "B", "C"].filter((key) => run.thumbnailPreviews?.[key]);
+  if (run.testType === "thumbnail" && thumbnailKeys.length) {
+    return (
+      <div className={`card-visual thumbnail-visual-grid count-${thumbnailKeys.length}`}>
+        {thumbnailKeys.map((key) => (
+          <figure key={key}>
+            <img src={run.thumbnailPreviews[key]} alt="" />
+            <figcaption>{key}</figcaption>
+          </figure>
+        ))}
+      </div>
+    );
+  }
+
+  if (run.currentYoutubeThumbnailUrl) {
     return (
       <div className="card-visual has-image">
-        <img src={imageUrl} alt="" />
-        <span>{preview ? "Sheet preview" : "Current YouTube thumbnail"}</span>
+        <img src={run.currentYoutubeThumbnailUrl} alt="" />
+        <span>Current YouTube thumbnail</span>
       </div>
     );
   }
@@ -440,21 +472,6 @@ function CardVisual({ run, result }) {
       <span>{result.label}</span>
       <strong>{channelInitials(channel)}</strong>
       <em>{titleCase(run.testType)} test</em>
-    </div>
-  );
-}
-
-function ThumbnailStrip({ previews }) {
-  const keys = ["A", "B", "C"].filter((key) => previews?.[key]);
-  if (!keys.length) return <div className="thumbnail-missing">Thumbnail preview missing</div>;
-  return (
-    <div className="thumbnail-strip">
-      {keys.map((key) => (
-        <figure key={key}>
-          <img src={previews[key]} alt={`Thumbnail ${key}`} />
-          <figcaption>{key}</figcaption>
-        </figure>
-      ))}
     </div>
   );
 }
@@ -662,10 +679,6 @@ function quickActionOptions(run) {
   const available = Object.keys(run.options || {}).filter((key) => ["A", "B", "C"].includes(key));
   const base = available.length ? available : ["A", "B"];
   return base.includes("C") ? ["A", "B", "C"] : ["A", "B"];
-}
-
-function firstThumbnailPreview(previews) {
-  return ["A", "B", "C"].map((key) => previews?.[key]).find(Boolean) || "";
 }
 
 function matchesFinishWindow(run, windowValue) {
