@@ -38,6 +38,8 @@ const ACTIONS = [
   { value: "SKIP", label: "Skip" }
 ];
 
+const CHANNEL_PRIORITY = ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Sign"];
+
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -98,7 +100,10 @@ export default function DetectorPage({ session }) {
   }
 
   const channels = useMemo(
-    () => ["all", ...Array.from(new Set(runs.map((run) => run.channel).filter(Boolean))).sort()],
+    () => [
+      "all",
+      ...Array.from(new Set(runs.map((run) => run.channel).filter(Boolean))).sort(compareChannels)
+    ],
     [runs]
   );
 
@@ -552,7 +557,27 @@ function groupRuns(runs) {
     group.sections[key] ||= [];
     group.sections[key].push(run);
   }
-  return Array.from(map.values()).sort((a, b) => a.channel.localeCompare(b.channel));
+  return Array.from(map.values()).sort((a, b) => compareChannels(a.channel, b.channel));
+}
+
+function compareChannels(a, b) {
+  const aRank = channelRank(a);
+  const bRank = channelRank(b);
+  if (aRank !== bRank) return aRank - bRank;
+  return String(a || "").localeCompare(String(b || ""));
+}
+
+function channelRank(channel) {
+  const normalized = normalizeChannel(channel);
+  const idx = CHANNEL_PRIORITY.findIndex((item) => normalizeChannel(item) === normalized);
+  return idx >= 0 ? idx : CHANNEL_PRIORITY.length;
+}
+
+function normalizeChannel(channel) {
+  return String(channel || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 function statusKey(run) {
