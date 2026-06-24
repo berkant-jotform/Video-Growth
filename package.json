@@ -13,6 +13,7 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
     "@vercel/blob": "^2.0.0",
+    "@vercel/speed-insights": "^2.0.0",
     "exceljs": "^4.4.0",
     "googleapis": "^144.0.0",
     "lucide-react": "^0.468.0",
@@ -20,6 +21,5 @@
     "nodemailer": "^6.9.16",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
-  },
-  "devDependencies": {}
+  }
 }
