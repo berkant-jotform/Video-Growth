@@ -30,12 +30,19 @@ CLICK HERE TO OPEN YouTube A-B Tests.command
 Create `.env.local` locally or configure these in Vercel first:
 
 ```text
-APP_SHARED_PASSWORD_HASH=
 SESSION_SECRET=
 DATABASE_URL=
 ```
 
-These are bootstrap settings. The app cannot save anything until `DATABASE_URL` exists, and it cannot protect itself until `APP_SHARED_PASSWORD_HASH` exists.
+These are required bootstrap settings. The app cannot save anything until `DATABASE_URL` exists, and it needs `SESSION_SECRET` to sign reviewer sessions.
+
+Optional shared password gate:
+
+```text
+APP_SHARED_PASSWORD_HASH=
+```
+
+If `APP_SHARED_PASSWORD_HASH` is empty or removed, the login screen asks only for reviewer initials/name. If it is set, reviewers must enter the shared password.
 
 After those are configured, use the in-app Settings page to configure:
 
@@ -47,7 +54,7 @@ After those are configured, use the in-app Settings page to configure:
 - SMTP email settings
 - Digest recipients
 
-Generate the shared password hash:
+Generate the optional shared password hash:
 
 ```bash
 npm run hash-password
@@ -59,7 +66,7 @@ Neon Postgres is the recommended Vercel database. Vercel Blob is used for thumbn
 
 ## Workflow
 
-1. Open the app behind the shared password.
+1. Open the app.
 2. Configure title and thumbnail spreadsheet IDs in Settings.
 3. Click `Scan Now`.
 4. Review channel-grouped newly finished tests.

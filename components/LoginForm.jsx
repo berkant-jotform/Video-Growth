@@ -1,13 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LockKeyhole } from "lucide-react";
 
 export default function LoginForm() {
   const [actorName, setActorName] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordRequired, setPasswordRequired] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/status")
+      .then((response) => response.json())
+      .then((payload) => {
+        setPasswordRequired(Boolean(payload?.configured?.sharedPassword));
+      })
+      .catch(() => {
+        setPasswordRequired(true);
+      });
+  }, []);
 
   async function submit(event) {
     event.preventDefault();
@@ -39,14 +51,18 @@ export default function LoginForm() {
           Your name or initials
           <input value={actorName} onChange={(event) => setActorName(event.target.value)} />
         </label>
-        <label>
-          Shared password
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
+        {passwordRequired ? (
+          <label>
+            Shared password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+        ) : (
+          <p className="muted">Password is disabled. Enter your initials to continue.</p>
+        )}
         {error ? <p className="form-error">{error}</p> : null}
         <button className="primary-button" disabled={busy}>
           {busy ? "Checking" : "Enter"}

@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { createSessionToken, setSessionCookie, verifyPassword } from "@/lib/auth.js";
+import {
+  createSessionToken,
+  passwordConfigured,
+  setSessionCookie,
+  verifyPassword
+} from "@/lib/auth.js";
 import { badRequest, errorJson } from "@/lib/http.js";
 
 export const runtime = "nodejs";
@@ -10,7 +15,7 @@ export async function POST(request) {
     const password = String(body.password || "");
     const actorName = String(body.actorName || "").trim();
     if (!actorName) throw badRequest("Enter your name or initials.");
-    if (!verifyPassword(password)) {
+    if (passwordConfigured() && !verifyPassword(password)) {
       return NextResponse.json({ ok: false, error: "Wrong password." }, { status: 401 });
     }
     const token = createSessionToken({ actorName });

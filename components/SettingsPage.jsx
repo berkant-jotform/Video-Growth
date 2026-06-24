@@ -14,10 +14,10 @@ const BOOTSTRAP_ITEMS = [
   },
   {
     key: "sharedPassword",
-    label: "Shared Password",
+    label: "Shared Password Gate",
     env: "APP_SHARED_PASSWORD_HASH",
-    required: true,
-    fix: "Run npm run hash-password, paste the output into APP_SHARED_PASSWORD_HASH, then restart/redeploy."
+    required: false,
+    fix: "Optional. Set this only if you want a shared password. Without it, reviewers enter initials only."
   },
   {
     key: "sessionSecret",
@@ -130,9 +130,11 @@ const READINESS_ITEMS = [
   }
 ];
 
-const ENV_TEMPLATE = `APP_SHARED_PASSWORD_HASH=
-SESSION_SECRET=
-DATABASE_URL=`;
+const ENV_TEMPLATE = `SESSION_SECRET=
+DATABASE_URL=
+
+# Optional shared password gate:
+APP_SHARED_PASSWORD_HASH=`;
 
 export default function SettingsPage({ session }) {
   const [config, setConfig] = useState(null);
@@ -181,10 +183,10 @@ export default function SettingsPage({ session }) {
       <main className="workspace settings-grid">
         <section className="settings-panel full-width">
           <p className="eyebrow">Bootstrap</p>
-          <h2>Things the app cannot configure by itself</h2>
+          <h2>Cloud bootstrap and optional access gate</h2>
           <p className="muted">
-            These must exist before the app can store settings for the team. Everything else can
-            be configured in this page after the database is connected.
+            Database and session secret must exist before the app can store settings for the team.
+            The shared password is optional; leave it empty for initials-only login.
           </p>
           <div className="readiness-list">
             {BOOTSTRAP_ITEMS.map((item) => (
