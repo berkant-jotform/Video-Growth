@@ -1,15 +1,34 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bell, History, Settings, Upload, Youtube } from "lucide-react";
+import { Bell, History, Moon, Settings, Sun, Upload, Youtube } from "lucide-react";
+
+const THEME_STORAGE_KEY = "youtube-ab-tests-theme";
 
 export default function AppShell({ session, active, children }) {
+  const [theme, setTheme] = useState("dark");
   const nav = [
     { href: "/", label: "Detector", key: "detector", icon: Youtube },
     { href: "/history", label: "History", key: "history", icon: History },
     { href: "/uploads", label: "Uploads", key: "uploads", icon: Upload },
     { href: "/settings", label: "Settings", key: "settings", icon: Settings }
   ];
+  const ThemeIcon = theme === "dark" ? Sun : Moon;
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const initial = saved === "light" || saved === "dark" ? saved : systemTheme();
+    applyTheme(initial);
+    setTheme(initial);
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    window.localStorage.setItem(THEME_STORAGE_KEY, next);
+    applyTheme(next);
+    setTheme(next);
+  }
 
   return (
     <div className="app-shell">
@@ -19,6 +38,14 @@ export default function AppShell({ session, active, children }) {
           <h1>Test Finish Detector</h1>
         </div>
         <div className="topbar-actions">
+          <button
+            className="icon-button"
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            onClick={toggleTheme}
+          >
+            <ThemeIcon size={18} />
+          </button>
           <button
             className="icon-button"
             title="Enable browser notifications"
@@ -49,4 +76,12 @@ export default function AppShell({ session, active, children }) {
       {children}
     </div>
   );
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+}
+
+function systemTheme() {
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
