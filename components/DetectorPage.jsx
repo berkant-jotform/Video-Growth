@@ -49,6 +49,9 @@ export default function DetectorPage({ session }) {
   const [modalRun, setModalRun] = useState(null);
   const [channel, setChannel] = useState("all");
   const [type, setType] = useState("all");
+  const [resultFilter, setResultFilter] = useState("all");
+  const [finishWindow, setFinishWindow] = useState("all");
+  const [retestFilter, setRetestFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedStatus, setAdvancedStatus] = useState("all");
@@ -104,6 +107,10 @@ export default function DetectorPage({ session }) {
     return runs.filter((run) => {
       if (channel !== "all" && run.channel !== channel) return false;
       if (type !== "all" && run.testType !== type) return false;
+      if (resultFilter !== "all" && cardResult(run).key !== resultFilter) return false;
+      if (finishWindow !== "all" && !matchesFinishWindow(run, finishWindow)) return false;
+      if (retestFilter === "only" && !run.possibleRetest) return false;
+      if (retestFilter === "hide" && run.possibleRetest) return false;
       if (advancedStatus !== "all" && statusKey(run) !== advancedStatus) return false;
       if (query) {
         const haystack = `${run.videoTitle} ${run.channel} ${run.videoId} ${run.suggestedWinner}`.toLowerCase();
@@ -111,7 +118,7 @@ export default function DetectorPage({ session }) {
       }
       return true;
     });
-  }, [runs, channel, type, advancedStatus, search]);
+  }, [runs, channel, type, resultFilter, finishWindow, retestFilter, advancedStatus, search]);
 
   const grouped = useMemo(() => groupRuns(filtered), [filtered]);
 
@@ -156,6 +163,28 @@ export default function DetectorPage({ session }) {
               </button>
             ))}
           </div>
+          <label>
+            Result
+            <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value)}>
+              <option value="all">All results</option>
+              <option value="not_determined">Not determined</option>
+              <option value="missing_data">Cannot determine</option>
+              <option value="sheet_changed">Changed after done</option>
+              <option value="winner">Winner known</option>
+              <option value="no_clear">No clear</option>
+            </select>
+          </label>
+          <label>
+            Finished
+            <select value={finishWindow} onChange={(event) => setFinishWindow(event.target.value)}>
+              <option value="all">Any time</option>
+              <option value="7">Last 7 days</option>
+              <option value="14">Last 14 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="older">Older than 30 days</option>
+              <option value="missing">Missing date</option>
+            </select>
+          </label>
           <label className="search-box">
             <Search size={16} />
             <input
@@ -184,6 +213,17 @@ export default function DetectorPage({ session }) {
                         {SECTION_LABELS[key]}
                       </option>
                     ))}
+                  </select>
+                </label>
+                <label>
+                  Retests
+                  <select
+                    value={retestFilter}
+                    onChange={(event) => setRetestFilter(event.target.value)}
+                  >
+                    <option value="all">Show all</option>
+                    <option value="only">Only retests</option>
+                    <option value="hide">Hide retests</option>
                   </select>
                 </label>
               </div>
@@ -274,13 +314,32 @@ function ChannelGroup({ group, onDetails, onDone }) {
 }
 
 function TestCard({ run, onDetails, onDone }) {
+  const result = cardResult(run);
   return (
-    <article className={`test-card ${statusKey(run)}`}>
+    <article
+      className={`test-card ${statusKey(run)}`}
+      style={{ "--channel-hue": channelHue(run.channel) }}
+    >
       <div className="card-topline">
-        <span className="type-pill">{titleCase(run.testType)}</span>
+        <span className="channel-pill">{run.channel || "Unknown channel"}</span>
         <span className="date-pill">{run.effectiveFinishDate || "No finish date"}</span>
       </div>
+      <div className="card-badges">
+        <span className="type-pill">{titleCase(run.testType)} test</span>
+        <span className={`result-pill ${result.tone}`}>{result.label}</span>
+      </div>
+      <CardVisual run={run} result={result} />
       <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
+      <div className="card-meta-grid">
+        <div>
+          <span>Channel</span>
+          <strong>{run.channel || "Unknown"}</strong>
+        </div>
+        <div>
+          <span>Result</span>
+          <strong>{result.value}</strong>
+        </div>
+      </div>
       <p className="outcome">{outcomeLabel(run)}</p>
       {run.possibleRetest ? <span className="badge warning">Possible Retest</span> : null}
       {run.testType === "thumbnail" ? <ThumbnailStrip previews={run.thumbnailPreviews} /> : null}
@@ -301,6 +360,26 @@ function TestCard({ run, onDetails, onDone }) {
         </button>
       </div>
     </article>
+  );
+}
+
+function CardVisual({ run, result }) {
+  const preview = firstThumbnailPreview(run.thumbnailPreviews);
+  const imageUrl = preview || run.currentYoutubeThumbnailUrl;
+  if (imageUrl) {
+    return (
+      <div className="card-visual has-image">
+        <img src={imageUrl} alt="" />
+        <span>{preview ? "Sheet preview" : "Current YouTube thumbnail"}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="card-visual visual-placeholder">
+      <span>{result.label}</span>
+      <strong>{channelInitials(run.channel)}</strong>
+      <em>{titleCase(run.testType)} test</em>
+    </div>
   );
 }
 
@@ -487,6 +566,69 @@ function outcomeLabel(run) {
   if (run.status === "needs_review") return "Finished by date; result not logged yet";
   if (run.status === "missing_data") return "Missing source data";
   return run.winnerReason || titleCase(run.status);
+}
+
+function cardResult(run) {
+  if (run.queueStatus === "sheet_changed_after_done") {
+    return { key: "sheet_changed", label: "Recheck", value: "Sheet changed", tone: "warning" };
+  }
+  if (run.status === "missing_data") {
+    return { key: "missing_data", label: "Cannot determine", value: "Missing data", tone: "danger" };
+  }
+  if (run.suggestedWinner?.match(/^[ABC]$/)) {
+    return { key: "winner", label: `Winner ${run.suggestedWinner}`, value: `Option ${run.suggestedWinner}`, tone: "success" };
+  }
+  if (run.detectedOutcome === "no_clear" || run.suggestedWinner === "No clear winner") {
+    return { key: "no_clear", label: "No clear", value: "Not enough impressions", tone: "warning" };
+  }
+  if (run.status === "result_logged") {
+    return { key: "logged", label: "Logged", value: "Already in sheet", tone: "neutral" };
+  }
+  if (run.status === "sheet_marked_done") {
+    return { key: "logged", label: "Done", value: "Marked in sheet", tone: "neutral" };
+  }
+  return { key: "not_determined", label: "Not determined", value: "Review in Studio", tone: "neutral" };
+}
+
+function firstThumbnailPreview(previews) {
+  return ["A", "B", "C"].map((key) => previews?.[key]).find(Boolean) || "";
+}
+
+function matchesFinishWindow(run, windowValue) {
+  if (windowValue === "missing") return !run.effectiveFinishDate;
+  if (!run.effectiveFinishDate) return false;
+  const days = daysSince(run.effectiveFinishDate);
+  if (!Number.isFinite(days)) return false;
+  if (windowValue === "older") return days > 30;
+  return days >= 0 && days <= Number(windowValue);
+}
+
+function daysSince(dateText) {
+  const date = new Date(`${dateText}T00:00:00`);
+  if (Number.isNaN(date.valueOf())) return NaN;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.floor((today - date) / 86400000);
+}
+
+function channelHue(value) {
+  const text = String(value || "channel");
+  let hash = 0;
+  for (let idx = 0; idx < text.length; idx += 1) {
+    hash = (hash * 31 + text.charCodeAt(idx)) % 360;
+  }
+  return hash;
+}
+
+function channelInitials(value) {
+  const words = String(value || "Unknown")
+    .split(/\s+/)
+    .filter(Boolean);
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
 }
 
 function formatShare(value) {
