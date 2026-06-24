@@ -57,6 +57,14 @@ const SETTING_GROUPS = [
     ]
   },
   {
+    title: "Studio Connector",
+    note: "Chrome extension settings. Use the same connector token in the extension. Channels are comma-separated and define coverage priorities.",
+    fields: [
+      ["CONNECTOR_TOKEN", "Connector token", "input", true],
+      ["CONNECTOR_CHANNELS", "Monitored channels", "textarea"]
+    ]
+  },
+  {
     title: "Slack Digest",
     note: "Optional. Paste an incoming Slack webhook URL.",
     fields: [["SLACK_WEBHOOK_URL", "Slack webhook URL", "input", true]]
@@ -105,6 +113,18 @@ const READINESS_ITEMS = [
     label: "YouTube API",
     required: true,
     fix: "Paste a YouTube Data API key below."
+  },
+  {
+    key: "connectorToken",
+    label: "Studio Connector Token",
+    required: true,
+    fix: "Create a random token here, save it, then paste the same token into the Chrome extension."
+  },
+  {
+    key: "connectorChannels",
+    label: "Connector Channels",
+    required: true,
+    fix: "Keep Jotform, AI Agents Podcast, and AI Agents first. Add other channel names as needed."
   },
   {
     key: "blob",
@@ -278,6 +298,50 @@ export default function SettingsPage({ session }) {
             ))}
           </div>
         </section>
+
+        <section className="settings-panel readiness-panel">
+          <p className="eyebrow">Connector Coverage</p>
+          <h2>Last extension heartbeat</h2>
+          <div className="readiness-list">
+            {config?.connectorStatus?.length ? (
+              config.connectorStatus.slice(0, 5).map((item) => (
+                <div className="readiness-row detailed" key={item.connectorId}>
+                  <div>
+                    <span className="readiness-title">
+                      <ShieldCheck size={16} />
+                      {item.actorName || "Chrome extension"}
+                      <em>{item.active ? "Active" : "Stale"}</em>
+                    </span>
+                    <p>{(item.channels || []).join(", ") || "No channels reported"}</p>
+                    <code>{item.connectorId}</code>
+                  </div>
+                  <div className="readiness-meta">
+                    <strong className={item.active ? "ok" : "missing"}>
+                      {item.active ? "Watching" : "No recent heartbeat"}
+                    </strong>
+                    <span>{item.lastSeenAt ? formatDateTime(item.lastSeenAt) : "Never"}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="readiness-row detailed">
+                <div>
+                  <span className="readiness-title">
+                    <ShieldCheck size={16} />
+                    No extension heartbeat yet
+                    <em>Setup</em>
+                  </span>
+                  <p>Install the Chrome extension, paste the connector token, then send a heartbeat.</p>
+                  <code>extension/options.html</code>
+                </div>
+                <div className="readiness-meta">
+                  <strong className="missing">Missing</strong>
+                  <span>Settings</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       </main>
     </AppShell>
   );
@@ -354,4 +418,11 @@ function sourceLabel(source) {
   if (source === "env") return "From env";
   if (source === "default") return "Default";
   return "Missing";
+}
+
+function formatDateTime(value) {
+  return new Date(value).toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
 }

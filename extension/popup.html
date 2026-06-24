@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>YouTube A/B Tests Connector</title>
+    <link rel="stylesheet" href="extension.css" />
+  </head>
+  <body class="popup">
+    <main class="panel compact">
+      <h1>Studio Connector</h1>
+      <p id="summary">Checking status...</p>
+      <div class="actions stacked">
+        <button id="scan">Scan Studio tab</button>
+        <button id="heartbeat">Send heartbeat</button>
+        <button id="options">Settings</button>
+      </div>
+      <dl>
+        <div>
+          <dt>Last heartbeat</dt>
+          <dd id="lastHeartbeat">Never</dd>
+        </div>
+        <div>
+          <dt>Last event post</dt>
+          <dd id="lastEvent">Never</dd>
+        </div>
+      </dl>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

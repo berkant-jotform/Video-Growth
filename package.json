@@ -1,6 +1,6 @@
 {
   "name": "youtube-ab-tests-detector",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 8770",
     "test": "node --test test/*.test.mjs",
-    "hash-password": "node scripts/hash-password.mjs"
+    "hash-password": "node scripts/hash-password.mjs",
+    "package-extension": "scripts/package_chrome_extension.sh"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

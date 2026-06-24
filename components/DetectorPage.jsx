@@ -18,13 +18,20 @@ import AppShell from "@/components/AppShell.jsx";
 import { CHANNEL_PRIORITY, canonicalChannelName, compareChannels } from "@/lib/channels.mjs";
 
 const SECTION_ORDER = [
-  "needs_review",
+  "confirmed_finished",
+  "applied_change_observed",
+  "uncovered",
+  "watching",
   "sheet_changed_after_done",
   "missing_data"
 ];
 
 const SECTION_LABELS = {
-  needs_review: "Newly Finished",
+  confirmed_finished: "Confirmed Finished",
+  applied_change_observed: "Applied Change Observed",
+  uncovered: "Needs Signal",
+  watching: "Watching",
+  needs_review: "Explicit Sheet Finish",
   sheet_changed_after_done: "Sheet Changed After Done",
   missing_data: "Missing Data",
   result_logged: "Already Logged in Sheet",
@@ -56,6 +63,8 @@ const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
+  const [unmatchedEvents, setUnmatchedEvents] = useState([]);
+  const [connectorStatus, setConnectorStatus] = useState([]);
   const [summary, setSummary] = useState(null);
   const [lastScan, setLastScan] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -90,6 +99,8 @@ export default function DetectorPage({ session }) {
       const statusPayload = await statusResponse.json();
       if (!queueResponse.ok || !queuePayload.ok) throw new Error(queuePayload.error || "Queue failed.");
       setRuns(queuePayload.runs || []);
+      setUnmatchedEvents(queuePayload.unmatchedEvents || []);
+      setConnectorStatus(queuePayload.connectorStatus || []);
       setSummary(queuePayload.summary || null);
       setLastScan(statusPayload.lastScan || null);
     } catch (err) {
@@ -153,7 +164,7 @@ export default function DetectorPage({ session }) {
       const runChannel = displayChannel(run);
       if (channel !== "all" && runChannel !== channel) return false;
       if (type !== "all" && run.testType !== type) return false;
-      if (resultFilter !== "all" && cardResult(run).key !== resultFilter) return false;
+      if (resultFilter !== "all" && !matchesResultFilter(run, resultFilter)) return false;
       if (finishWindow !== "all" && !matchesFinishWindow(run, finishWindow)) return false;
       if (retestFilter === "only" && !run.possibleRetest) return false;
       if (retestFilter === "hide" && run.possibleRetest) return false;
@@ -177,9 +188,10 @@ export default function DetectorPage({ session }) {
         <section className="hero-row">
           <div>
             <p className="eyebrow">Shared team queue</p>
-            <h2>Newly finished tests to check in Studio</h2>
+            <h2>Real finish tracker</h2>
             <p className="muted">
-              Last scan: {lastScan?.completedAt ? formatDateTime(lastScan.completedAt) : "No scan yet"}
+              Last sheet scan: {lastScan?.completedAt ? formatDateTime(lastScan.completedAt) : "No scan yet"}.
+              Connector: {connectorSummary(connectorStatus)}
             </p>
           </div>
           <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
@@ -219,6 +231,10 @@ export default function DetectorPage({ session }) {
             Result
             <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value)}>
               <option value="all">All results</option>
+              <option value="confirmed">Confirmed finished</option>
+              <option value="observed">Applied change observed</option>
+              <option value="watching">Watching</option>
+              <option value="uncovered">Needs signal</option>
               <option value="not_determined">Not determined</option>
               <option value="missing_data">Cannot determine</option>
               <option value="sheet_changed">Changed after done</option>
@@ -227,7 +243,7 @@ export default function DetectorPage({ session }) {
             </select>
           </label>
           <label>
-            Finished
+            Signal time
             <select value={finishWindow} onChange={(event) => setFinishWindow(event.target.value)}>
               <option value="all">Any time</option>
               <option value="7">Last 7 days</option>
@@ -294,6 +310,10 @@ export default function DetectorPage({ session }) {
           </div>
         ) : null}
 
+        {!loading && unmatchedEvents.length ? (
+          <UnmatchedEvents events={unmatchedEvents} />
+        ) : null}
+
         <section className="channel-list">
           {grouped.map((group) => (
             <ChannelGroup
@@ -329,10 +349,11 @@ export default function DetectorPage({ session }) {
 
 function Summary({ summary }) {
   const items = [
-    ["Newly Finished", summary?.newlyFinished || 0],
+    ["Confirmed", summary?.confirmedFinished || summary?.newlyFinished || 0],
+    ["Observed", summary?.appliedChangeObserved || 0],
+    ["Needs Signal", summary?.uncovered || 0],
+    ["Watching", summary?.watching || 0],
     ["Missing", summary?.missingData || 0],
-    ["Changed", summary?.sheetChangedAfterDone || 0],
-    ["Retests", summary?.possibleRetest || 0],
     ["Total Active", summary?.total || 0]
   ];
   return (
@@ -343,6 +364,28 @@ function Summary({ summary }) {
           <strong>{value}</strong>
         </div>
       ))}
+    </section>
+  );
+}
+
+function UnmatchedEvents({ events }) {
+  return (
+    <section className="unmatched-events">
+      <div className="section-title">
+        <span>Unmatched Studio Events</span>
+        <span>{events.length}</span>
+      </div>
+      <div className="unmatched-list">
+        {events.slice(0, 6).map((event) => (
+          <article className="unmatched-event" key={event.eventId}>
+            <div>
+              <strong>{event.channel || event.videoId || "Unknown source"}</strong>
+              <p>{event.rawText || "Studio notification captured without text."}</p>
+            </div>
+            <span>{event.observedAt ? formatDateTime(event.observedAt) : "No time"}</span>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -417,7 +460,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
           >
             <InfoIcon size={14} />
           </button>
-          <span className="date-pill">{run.effectiveFinishDate || "No finish date"}</span>
+          <span className="date-pill">{signalDateLabel(run)}</span>
         </span>
       </div>
       <div className="card-badges">
@@ -435,7 +478,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
           <strong>{channel || "Unknown"}</strong>
         </div>
         <div>
-          <span>Result</span>
+          <span>Signal</span>
           <strong>{result.value}</strong>
         </div>
       </div>
@@ -544,9 +587,20 @@ function DetailDrawer({ run, onClose }) {
       <div className="detail-grid">
         <Info label="Video ID" value={run.videoId || "Missing"} />
         <Info label="Source row" value={`${run.sheetName} row ${run.rowNumber}`} />
+        <Info label="Signal" value={signalSourceLabel(run)} />
+        <Info label="Coverage" value={run.connectorCovered ? `Covered by ${run.connectorActorName || "connector"}` : "No active connector"} />
         <Info label="Start" value={run.startDate || "Missing"} />
-        <Info label="Finish" value={run.effectiveFinishDate || "Missing"} />
+        <Info label="Sheet finish" value={run.effectiveFinishDate || "Blank"} />
       </div>
+      {run.finishEventText ? (
+        <section className="drawer-section">
+          <h3>Finish Signal</h3>
+          <p>{run.finishEventText}</p>
+          <p className="muted">
+            {signalSourceLabel(run)} · {run.finishEventAt ? formatDateTime(run.finishEventAt) : "No timestamp"} · {run.matchedConfidence || "matched"}
+          </p>
+        </section>
+      ) : null}
       <section className="drawer-section">
         <h3>Options</h3>
         {Object.entries(run.options || {}).length ? (
@@ -715,11 +769,25 @@ function statusKey(run) {
   return run.queueStatus || run.status || "needs_review";
 }
 
+function matchesResultFilter(run, filter) {
+  if (filter === "confirmed") return run.queueStatus === "confirmed_finished";
+  if (filter === "observed") return run.queueStatus === "applied_change_observed";
+  if (filter === "watching") return run.queueStatus === "watching";
+  if (filter === "uncovered") return run.queueStatus === "uncovered";
+  return cardResult(run).key === filter;
+}
+
 function outcomeLabel(run) {
   if (run.queueStatus === "sheet_changed_after_done") return "Sheet changed after this was done";
+  if (run.queueStatus === "confirmed_finished") {
+    if (run.finishEventSource === "studio_bell") return "Studio notification confirmed this test finished";
+    return "Explicit sheet finish/result signal";
+  }
+  if (run.queueStatus === "applied_change_observed") return "Visible YouTube metadata changed to a B/C option";
+  if (run.queueStatus === "uncovered") return "No active Studio connector is watching this channel";
+  if (run.queueStatus === "watching") return "Active test; no real finish signal yet";
   if (run.status === "result_logged") return "Result already entered in sheet";
   if (run.status === "sheet_marked_done") return "Marked done in sheet";
-  if (run.status === "needs_review") return "Finished by date; result not logged yet";
   if (run.status === "missing_data") return "Missing source data";
   return run.winnerReason || titleCase(run.status);
 }
@@ -727,6 +795,30 @@ function outcomeLabel(run) {
 function cardResult(run) {
   if (run.queueStatus === "sheet_changed_after_done") {
     return { key: "sheet_changed", label: "Recheck", value: "Sheet changed", tone: "warning" };
+  }
+  if (run.queueStatus === "confirmed_finished") {
+    const detected = detectedOutcomeLabel(run.finishEventOutcome || run.detectedOutcome);
+    return {
+      key: detected.key === "winner" ? "winner" : detected.key === "no_clear" ? "no_clear" : "confirmed",
+      label: detected.label || "Confirmed",
+      value: signalSourceLabel(run),
+      tone: detected.tone || "success"
+    };
+  }
+  if (run.queueStatus === "applied_change_observed") {
+    const detected = detectedOutcomeLabel(run.finishEventOutcome);
+    return {
+      key: "observed",
+      label: detected.label || "B/C observed",
+      value: "Not final proof",
+      tone: "info"
+    };
+  }
+  if (run.queueStatus === "uncovered") {
+    return { key: "uncovered", label: "Needs signal", value: "No connector", tone: "warning" };
+  }
+  if (run.queueStatus === "watching") {
+    return { key: "watching", label: "Watching", value: "No finish signal", tone: "neutral" };
   }
   if (run.status === "missing_data") {
     return { key: "missing_data", label: "Cannot determine", value: "Missing data", tone: "danger" };
@@ -746,6 +838,18 @@ function cardResult(run) {
   return { key: "not_determined", label: "Not determined", value: "Review in Studio", tone: "neutral" };
 }
 
+function detectedOutcomeLabel(outcome) {
+  const text = String(outcome || "");
+  const winner = text.match(/^winner_([abc])$/i);
+  if (winner) {
+    const option = winner[1].toUpperCase();
+    return { key: "winner", label: `Winner ${option}`, tone: "success" };
+  }
+  if (text === "no_clear") return { key: "no_clear", label: "No clear", tone: "warning" };
+  if (text === "finished_unknown") return { key: "confirmed", label: "Confirmed", tone: "success" };
+  return { key: "", label: "", tone: "" };
+}
+
 function quickActionOptions(run) {
   const available = Object.keys(run.options || {}).filter((key) => ["A", "B", "C"].includes(key));
   const base = available.length ? available : ["A", "B"];
@@ -753,12 +857,40 @@ function quickActionOptions(run) {
 }
 
 function matchesFinishWindow(run, windowValue) {
-  if (windowValue === "missing") return !run.effectiveFinishDate;
-  if (!run.effectiveFinishDate) return false;
-  const days = daysSince(run.effectiveFinishDate);
+  const signalDate = dateOnlyText(run.finishEventAt) || run.effectiveFinishDate;
+  if (windowValue === "missing") return !signalDate;
+  if (!signalDate) return false;
+  const days = daysSince(signalDate);
   if (!Number.isFinite(days)) return false;
   if (windowValue === "older") return days > 30;
   return days >= 0 && days <= Number(windowValue);
+}
+
+function signalDateLabel(run) {
+  if (run.finishEventAt) return formatDateTime(run.finishEventAt);
+  if (run.effectiveFinishDate) return `Sheet ${run.effectiveFinishDate}`;
+  return "No signal yet";
+}
+
+function signalSourceLabel(run) {
+  if (run.finishEventSource === "studio_bell") return "Studio bell";
+  if (run.finishEventSource === "metadata") return "Metadata observed";
+  if (run.queueStatus === "confirmed_finished" && run.effectiveFinishDate) return "Sheet finish";
+  if (run.queueStatus === "watching") return "Watching";
+  if (run.queueStatus === "uncovered") return "Uncovered";
+  return "No signal";
+}
+
+function dateOnlyText(value) {
+  if (!value) return "";
+  return String(value).slice(0, 10);
+}
+
+function connectorSummary(items = []) {
+  const active = items.filter((item) => item.active);
+  if (!active.length) return "no active extension heartbeat";
+  const channels = new Set(active.flatMap((item) => item.channels || []));
+  return `${active.length} active extension${active.length === 1 ? "" : "s"} watching ${channels.size} channel${channels.size === 1 ? "" : "s"}`;
 }
 
 function daysSince(dateText) {

@@ -255,7 +255,7 @@ a {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -517,6 +517,22 @@ select {
   border-left-color: var(--green);
 }
 
+.test-card.confirmed_finished {
+  border-left-color: var(--green);
+}
+
+.test-card.applied_change_observed {
+  border-left-color: var(--blue);
+}
+
+.test-card.uncovered {
+  border-left-color: var(--amber);
+}
+
+.test-card.watching {
+  border-left-color: color-mix(in srgb, var(--muted) 70%, var(--border));
+}
+
 .test-card.no_clear {
   border-left-color: var(--amber);
 }
@@ -631,6 +647,51 @@ select {
   background: color-mix(in srgb, var(--red) 12%, var(--surface));
   border-color: color-mix(in srgb, var(--red) 45%, var(--border));
   color: var(--red);
+}
+
+.result-pill.info {
+  background: color-mix(in srgb, var(--blue) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--blue) 38%, var(--border));
+  color: var(--blue);
+}
+
+.unmatched-events {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.unmatched-list {
+  display: grid;
+  gap: 10px;
+}
+
+.unmatched-event {
+  align-items: center;
+  background: color-mix(in srgb, var(--amber) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--amber) 32%, var(--border));
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px 14px;
+}
+
+.unmatched-event strong {
+  display: block;
+  font-size: 13px;
+}
+
+.unmatched-event p {
+  color: var(--muted);
+  margin: 3px 0 0;
+}
+
+.unmatched-event > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
 }
 
 .card-visual {
@@ -950,6 +1011,22 @@ select {
 .badge.sheet_changed_after_done {
   border-color: color-mix(in srgb, var(--red) 45%, var(--border));
   color: var(--red);
+}
+
+.badge.uncovered {
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--border));
+  color: var(--amber);
+}
+
+.badge.confirmed_finished {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+  color: var(--green);
+}
+
+.badge.applied_change_observed,
+.badge.watching {
+  border-color: color-mix(in srgb, var(--blue) 38%, var(--border));
+  color: var(--blue);
 }
 
 .current-thumb {

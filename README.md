@@ -1,10 +1,10 @@
 # YouTube A/B Tests
 
-Cloud-first test finish detector for YouTube title and thumbnail A/B tests.
+Cloud-first real finish tracker for YouTube title and thumbnail A/B tests.
 
-V2 is a Next.js app for Vercel. It reads Google Sheets and YouTube Data API data, keeps shared team state in Postgres, and helps reviewers quickly open Studio and mark finished tests as handled. It does not write to Sheets, edit YouTube, upload thumbnails to YouTube, or use Apps Script.
+V3 is a Next.js app for Vercel plus a read-only Chrome extension for YouTube Studio. Sheets and YouTube Data API keep the active test registry fresh; Studio bell notifications provide the precise early-finish signal. The app keeps shared team state in Postgres, helps reviewers open Studio, and records Done actions. It does not write to Sheets, edit YouTube, upload thumbnails to YouTube, or use Apps Script.
 
-The active queue is intentionally a finish detector, not a full control center. If a row already has watch-time percentages or a "not enough impressions" result entered in the sheet, the app treats that run as already logged and keeps it out of the active queue. The main queue is for tests that appear newly finished by date but still have no result entered.
+The active queue is intentionally a finish tracker, not a full control center. If a row already has watch-time percentages or a "not enough impressions" result entered in the sheet, the app treats that run as already logged and keeps it out of the active queue. Blank finish dates do not become finished items from a time guess.
 
 ## Local Start
 
@@ -50,6 +50,7 @@ After those are configured, use the in-app Settings page to configure:
 - Google service account JSON
 - YouTube API key
 - Vercel Blob token
+- Connector token and monitored channels
 - Slack webhook
 - SMTP email settings
 - Digest recipients
@@ -68,11 +69,17 @@ Neon Postgres is the recommended Vercel database. Vercel Blob is used for thumbn
 
 1. Open the app.
 2. Configure title and thumbnail spreadsheet IDs in Settings.
-3. Click `Scan Now`.
-4. Review channel-grouped newly finished tests.
-5. Use the dominant `Open Studio` button.
-6. After handling the result in Studio, click `Done` and choose the outcome.
-7. Completed runs move to History for the whole team.
+3. Configure a connector token in Settings.
+4. Install the Chrome extension in the browser profile that is logged into YouTube Studio.
+5. Click `Scan Now` to refresh the active test registry.
+6. Review channel-grouped real finish signals:
+   - `Confirmed Finished`: Studio bell notification or explicit sheet finish/result signal.
+   - `Applied Change Observed`: YouTube metadata visibly changed to a B/C option; useful, but not final proof for A/no-clear cases.
+   - `Needs Signal`: no active extension heartbeat covers that channel.
+   - `Watching`: active test with no real finish signal yet.
+7. Use the dominant `Open Studio` button.
+8. After handling the result in Studio, click `Done` and choose the outcome.
+9. Completed runs move to History for the whole team.
 
 The app tracks both:
 
@@ -83,11 +90,38 @@ That keeps retests on the same video separate.
 
 Detection logic:
 
-- A test is newly finished when `Test Finish Date <= today`, or when finish date is blank and `Start Date + 14 <= today`.
+- A test is confirmed finished when a Studio bell finish notification is received, a sheet result value exists, or the sheet has an explicit finish date.
+- `Start Date + 14` is not used to mark a test finished.
 - A test is already logged when A/B/C watch-time-share percentages or a no-clear-winner text are present.
 - Already logged rows are not shown as active Studio work, because the sheet already contains the selected result.
-- Entered results override missing-data warnings for queue purposes; the row can be messy, but it is not newly finished work anymore.
+- Entered results override missing-data warnings for queue purposes; the row can be messy, but it is not active Studio work anymore.
 - Missing IDs, missing dates, and broken row shapes stay visible at the bottom as fix items.
+
+## Chrome Extension
+
+The extension lives in `extension/`.
+
+Unpacked install for testing:
+
+1. Open `chrome://extensions`.
+2. Enable Developer Mode.
+3. Click `Load unpacked`.
+4. Select the `extension/` folder from this repo.
+5. Open the extension options.
+6. Enter:
+   - Cloud app URL, for example `https://video-growth.vercel.app`
+   - Connector token from app Settings
+   - Reviewer initials
+   - Monitored channels, starting with `Jotform, AI Agents Podcast, AI Agents`
+7. Open YouTube Studio in the same Chrome profile and send a heartbeat from the extension popup.
+
+Package for internal sharing:
+
+```bash
+npm run package-extension
+```
+
+The zip is written to `dist/youtube-ab-tests-connector.zip`.
 
 ## Notifications
 
@@ -108,4 +142,4 @@ Reserved/configurable:
 npm test
 ```
 
-The current tests cover parsing, confirmed finish-date behavior, winner/no-clear inference, hybrid detection, retest IDs, and missing-data classification.
+The current tests cover parsing, no-guess finish behavior, Studio notification parsing/matching, metadata-observed detection, winner/no-clear inference, retest IDs, and missing-data classification.

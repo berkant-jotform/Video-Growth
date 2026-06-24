@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube A/B Tests Connector",
+  "description": "Reports YouTube Studio A/B test finish notifications to the Video Growth detector.",
+  "version": "0.1.0",
+  "permissions": ["alarms", "storage", "tabs"],
+  "host_permissions": [
+    "https://studio.youtube.com/*",
+    "https://*.vercel.app/*",
+    "http://127.0.0.1:8770/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://studio.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "YouTube A/B Tests Connector",
+    "default_popup": "popup.html"
+  }
+}
