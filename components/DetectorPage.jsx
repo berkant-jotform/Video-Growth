@@ -12,6 +12,7 @@ import {
   X
 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
+import { canonicalChannelName, compareChannels } from "@/lib/channels.mjs";
 
 const SECTION_ORDER = [
   "needs_review",
@@ -37,8 +38,6 @@ const ACTIONS = [
   { value: "RETEST_LATER", label: "Retest Later" },
   { value: "SKIP", label: "Skip" }
 ];
-
-const CHANNEL_PRIORITY = ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Sign"];
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -102,7 +101,7 @@ export default function DetectorPage({ session }) {
   const channels = useMemo(
     () => [
       "all",
-      ...Array.from(new Set(runs.map((run) => run.channel).filter(Boolean))).sort(compareChannels)
+      ...Array.from(new Set(runs.map((run) => displayChannel(run)).filter(Boolean))).sort(compareChannels)
     ],
     [runs]
   );
@@ -110,7 +109,8 @@ export default function DetectorPage({ session }) {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return runs.filter((run) => {
-      if (channel !== "all" && run.channel !== channel) return false;
+      const runChannel = displayChannel(run);
+      if (channel !== "all" && runChannel !== channel) return false;
       if (type !== "all" && run.testType !== type) return false;
       if (resultFilter !== "all" && cardResult(run).key !== resultFilter) return false;
       if (finishWindow !== "all" && !matchesFinishWindow(run, finishWindow)) return false;
@@ -118,7 +118,7 @@ export default function DetectorPage({ session }) {
       if (retestFilter === "hide" && run.possibleRetest) return false;
       if (advancedStatus !== "all" && statusKey(run) !== advancedStatus) return false;
       if (query) {
-        const haystack = `${run.videoTitle} ${run.channel} ${run.videoId} ${run.suggestedWinner}`.toLowerCase();
+        const haystack = `${run.videoTitle} ${runChannel} ${run.channel} ${run.videoId} ${run.suggestedWinner}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
       return true;
@@ -320,13 +320,14 @@ function ChannelGroup({ group, onDetails, onDone }) {
 
 function TestCard({ run, onDetails, onDone }) {
   const result = cardResult(run);
+  const channel = displayChannel(run);
   return (
     <article
       className={`test-card ${statusKey(run)}`}
-      style={{ "--channel-hue": channelHue(run.channel) }}
+      style={{ "--channel-hue": channelHue(channel) }}
     >
       <div className="card-topline">
-        <span className="channel-pill">{run.channel || "Unknown channel"}</span>
+        <span className="channel-pill">{channel || "Unknown channel"}</span>
         <span className="date-pill">{run.effectiveFinishDate || "No finish date"}</span>
       </div>
       <div className="card-badges">
@@ -338,7 +339,7 @@ function TestCard({ run, onDetails, onDone }) {
       <div className="card-meta-grid">
         <div>
           <span>Channel</span>
-          <strong>{run.channel || "Unknown"}</strong>
+          <strong>{channel || "Unknown"}</strong>
         </div>
         <div>
           <span>Result</span>
@@ -369,6 +370,7 @@ function TestCard({ run, onDetails, onDone }) {
 }
 
 function CardVisual({ run, result }) {
+  const channel = displayChannel(run);
   const preview = firstThumbnailPreview(run.thumbnailPreviews);
   const imageUrl = preview || run.currentYoutubeThumbnailUrl;
   if (imageUrl) {
@@ -382,7 +384,7 @@ function CardVisual({ run, result }) {
   return (
     <div className="card-visual visual-placeholder">
       <span>{result.label}</span>
-      <strong>{channelInitials(run.channel)}</strong>
+      <strong>{channelInitials(channel)}</strong>
       <em>{titleCase(run.testType)} test</em>
     </div>
   );
@@ -409,7 +411,7 @@ function DetailDrawer({ run, onClose }) {
       <button className="icon-button drawer-close" onClick={onClose} title="Close details">
         <X size={18} />
       </button>
-      <p className="eyebrow">{run.channel}</p>
+      <p className="eyebrow">{displayChannel(run)}</p>
       <h2>{run.videoTitle || run.currentYoutubeTitle || run.videoId}</h2>
       <div className="detail-status">
         <span className={`badge ${statusKey(run)}`}>{SECTION_LABELS[statusKey(run)] || titleCase(statusKey(run))}</span>
@@ -549,7 +551,7 @@ function Info({ label, value }) {
 function groupRuns(runs) {
   const map = new Map();
   for (const run of runs) {
-    const channel = run.channel || "Unknown channel";
+    const channel = displayChannel(run) || "Unknown channel";
     if (!map.has(channel)) map.set(channel, { channel, count: 0, sections: {} });
     const group = map.get(channel);
     group.count += 1;
@@ -560,24 +562,9 @@ function groupRuns(runs) {
   return Array.from(map.values()).sort((a, b) => compareChannels(a.channel, b.channel));
 }
 
-function compareChannels(a, b) {
-  const aRank = channelRank(a);
-  const bRank = channelRank(b);
-  if (aRank !== bRank) return aRank - bRank;
-  return String(a || "").localeCompare(String(b || ""));
-}
-
-function channelRank(channel) {
-  const normalized = normalizeChannel(channel);
-  const idx = CHANNEL_PRIORITY.findIndex((item) => normalizeChannel(item) === normalized);
-  return idx >= 0 ? idx : CHANNEL_PRIORITY.length;
-}
-
-function normalizeChannel(channel) {
-  return String(channel || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+function displayChannel(runOrChannel) {
+  const raw = typeof runOrChannel === "string" ? runOrChannel : runOrChannel?.channel;
+  return canonicalChannelName(raw) || raw || "";
 }
 
 function statusKey(run) {

@@ -9,6 +9,7 @@ import {
   parseDate,
   parseSheetRecords
 } from "../lib/domain.mjs";
+import { canonicalChannelName, compareChannels } from "../lib/channels.mjs";
 
 test("extracts YouTube video IDs from supported URLs", () => {
   assert.equal(extractVideoId("https://youtu.be/vTgIhkm1QJ0"), "vTgIhkm1QJ0");
@@ -178,5 +179,15 @@ test("classification treats entered results as logged even when source data is m
       detectedOutcome: "winner_b"
     }),
     "result_logged"
+  );
+});
+
+test("canonicalizes channel names and applies priority order", () => {
+  assert.equal(canonicalChannelName("AI Agents AB Test"), "AI Agents");
+  assert.equal(canonicalChannelName("AI Agents Podcast thumbnails"), "AI Agents Podcast");
+  assert.equal(canonicalChannelName("Jotform Apps Channel"), "Apps");
+  assert.deepEqual(
+    ["Sign", "Other", "AI Agents", "Jotform", "Apps", "AI Agents Podcast"].sort(compareChannels),
+    ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Sign", "Other"]
   );
 });
