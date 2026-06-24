@@ -199,6 +199,8 @@ export default function SettingsPage({ session }) {
   }
 
   const databaseReady = Boolean(config?.configured?.database);
+  const connectorToken = form.CONNECTOR_TOKEN || "";
+  const connectorChannels = form.CONNECTOR_CHANNELS || "Jotform, AI Agents Podcast, AI Agents";
 
   return (
     <AppShell session={session} active="settings">
@@ -240,6 +242,14 @@ export default function SettingsPage({ session }) {
             </a>
           </div>
         </section>
+
+        <InstallExtensionPanel
+          connectorToken={connectorToken}
+          connectorChannels={connectorChannels}
+          onGenerateToken={() =>
+            setForm((current) => ({ ...current, CONNECTOR_TOKEN: generateConnectorToken() }))
+          }
+        />
 
         <section className="settings-panel config-panel">
           <p className="eyebrow">Configuration</p>
@@ -347,6 +357,104 @@ export default function SettingsPage({ session }) {
   );
 }
 
+function InstallExtensionPanel({ connectorToken, connectorChannels, onGenerateToken }) {
+  const appUrl = typeof window === "undefined" ? "https://video-growth.vercel.app" : window.location.origin;
+  const visibleToken = connectorToken && connectorToken !== "********" ? connectorToken : "";
+  const copyText = [
+    `App URL: ${appUrl}`,
+    `Connector token: ${visibleToken || "generate-or-enter-token-first"}`,
+    `Channels: ${connectorChannels}`
+  ].join("\n");
+
+  return (
+    <section className="settings-panel full-width install-panel">
+      <p className="eyebrow">Install Chrome Extension</p>
+      <h2>Studio bell finish detector</h2>
+      <p className="muted">
+        This extension is the real finish signal. It runs in the Chrome profile that is logged into
+        YouTube Studio, reads visible Studio notification text, and reports matching finish events
+        back to this app.
+      </p>
+
+      <div className="install-actions">
+        <a
+          className="primary-button"
+          href="/downloads/youtube-ab-tests-connector.zip"
+          download
+        >
+          <ExternalLink size={16} />
+          Download Extension Zip
+        </a>
+        <button type="button" className="secondary-button" onClick={onGenerateToken}>
+          Generate Connector Token
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => navigator.clipboard?.writeText(copyText)}
+        >
+          <Clipboard size={16} />
+          Copy Extension Values
+        </button>
+      </div>
+
+      <div className="install-grid">
+        <div className="install-card">
+          <h3>1. Prepare the extension folder</h3>
+          <ol>
+            <li>Download the zip above.</li>
+            <li>Unzip it.</li>
+            <li>Keep the unzipped folder somewhere easy to find.</li>
+          </ol>
+          <p>
+            On this Mac, you can also use the local source folder:
+            <code>/Users/berkantgul/Documents/B Tests/extension</code>
+          </p>
+        </div>
+        <div className="install-card">
+          <h3>2. Load it in Chrome</h3>
+          <ol>
+            <li>Open <code>chrome://extensions</code>.</li>
+            <li>Turn on <strong>Developer Mode</strong>.</li>
+            <li>Click <strong>Load unpacked</strong>.</li>
+            <li>Select the unzipped extension folder.</li>
+          </ol>
+        </div>
+        <div className="install-card">
+          <h3>3. Configure the extension</h3>
+          <dl className="copy-values">
+            <div>
+              <dt>App URL</dt>
+              <dd>{appUrl}</dd>
+            </div>
+            <div>
+              <dt>Connector token</dt>
+              <dd>{visibleToken || "Generate or enter one below, then save."}</dd>
+            </div>
+            <div>
+              <dt>Channels</dt>
+              <dd>{connectorChannels}</dd>
+            </div>
+          </dl>
+          <p>
+            If the token shows <code>********</code> below, the saved secret is hidden. Generate a new
+            token if you need to set up another browser.
+          </p>
+        </div>
+        <div className="install-card">
+          <h3>4. Confirm coverage</h3>
+          <ol>
+            <li>Open YouTube Studio in the same Chrome profile.</li>
+            <li>Open the extension popup.</li>
+            <li>Click <strong>Send heartbeat</strong>.</li>
+            <li>Refresh this Settings page and check Connector Coverage.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SettingField({ label, name, type, secret, source, value, onChange }) {
   const markedForRemoval = value === DELETE_SECRET_VALUE;
   const maskedSecret = secret && value === "********";
@@ -418,6 +526,12 @@ function sourceLabel(source) {
   if (source === "env") return "From env";
   if (source === "default") return "Default";
   return "Missing";
+}
+
+function generateConnectorToken() {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return `ytab_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function formatDateTime(value) {
