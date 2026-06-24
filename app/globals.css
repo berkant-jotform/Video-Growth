@@ -379,9 +379,20 @@ select {
 }
 
 .channel-heading h3 {
-  color: hsl(var(--channel-hue) 58% 33%);
   margin: 0;
   font-size: 20px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.channel-heading h3::before {
+  content: "";
+  width: 4px;
+  height: 20px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--channel-accent) 76%, var(--muted));
 }
 
 .channel-heading span,
@@ -391,10 +402,10 @@ select {
 }
 
 .channel-heading > span {
-  background: hsl(var(--channel-hue) 44% 94%);
-  border: 1px solid hsl(var(--channel-hue) 36% 79%);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: hsl(var(--channel-hue) 45% 32%);
+  color: var(--muted);
   min-height: 28px;
   padding: 3px 10px;
 }
@@ -424,20 +435,20 @@ select {
   gap: 16px;
   padding: 22px;
   min-height: 360px;
-  border-left: 5px solid hsl(var(--channel-hue) 58% 42%);
+  border-left: 4px solid color-mix(in srgb, var(--channel-accent) 60%, var(--border));
   overflow: hidden;
   position: relative;
 }
 
 .test-card::before {
   content: "";
-  height: 5px;
+  height: 3px;
   inset: 0 0 auto 0;
   position: absolute;
   background: linear-gradient(
     90deg,
-    hsl(var(--channel-hue) 58% 42%),
-    var(--type-accent, var(--blue))
+    color-mix(in srgb, var(--channel-accent) 58%, var(--border)),
+    color-mix(in srgb, var(--type-accent, var(--blue)) 52%, var(--border))
   );
 }
 
@@ -471,13 +482,23 @@ select {
 
 .channel-pill {
   color: var(--text);
-  background: hsl(var(--channel-hue) 52% 93%);
-  border-color: hsl(var(--channel-hue) 42% 75%);
-  box-shadow: inset 0 0 0 1px hsl(var(--channel-hue) 42% 82%);
+  background: var(--surface-2);
+  border-color: var(--border);
+  box-shadow: none;
+  gap: 8px;
   max-width: min(250px, 58%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.channel-pill::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--channel-accent) 76%, var(--muted));
 }
 
 .date-pill {
@@ -524,15 +545,15 @@ select {
 }
 
 .type-pill.title-type {
-  background: color-mix(in srgb, var(--blue) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--blue) 42%, var(--border));
-  color: var(--blue);
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--blue) 26%, var(--border));
+  color: color-mix(in srgb, var(--blue) 82%, var(--text));
 }
 
 .type-pill.thumbnail-type {
-  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
-  border-color: color-mix(in srgb, var(--amber) 48%, var(--border));
-  color: var(--amber);
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--amber) 30%, var(--border));
+  color: color-mix(in srgb, var(--amber) 82%, var(--text));
 }
 
 .result-pill {
@@ -569,8 +590,8 @@ select {
 
 .title-option-visual {
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--blue) 9%, var(--surface)), transparent),
-    hsl(var(--channel-hue) 36% 94%);
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-2) 70%, transparent), transparent),
+    var(--surface);
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -611,18 +632,15 @@ select {
 }
 
 .thumbnail-visual-grid {
-  background: color-mix(in srgb, var(--amber) 8%, var(--surface-2));
+  background: var(--surface-2);
   display: grid;
-  gap: 3px;
+  gap: 4px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 4px;
 }
 
 .thumbnail-visual-grid.count-1 {
   grid-template-columns: 1fr;
-}
-
-.thumbnail-visual-grid.count-3 figure:first-child {
-  grid-row: span 2;
 }
 
 .thumbnail-visual-grid figure {
@@ -630,6 +648,7 @@ select {
   min-width: 0;
   overflow: hidden;
   position: relative;
+  border-radius: 6px;
 }
 
 .thumbnail-visual-grid img {
@@ -641,7 +660,7 @@ select {
 
 .thumbnail-visual-grid figcaption {
   align-items: center;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(12, 16, 20, 0.78);
   border-radius: 999px;
   color: #ffffff;
   display: inline-grid;
@@ -652,6 +671,22 @@ select {
   position: absolute;
   top: 8px;
   width: 26px;
+}
+
+.thumbnail-extra {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 840;
 }
 
 .card-visual.has-image {
@@ -681,8 +716,8 @@ select {
 
 .visual-placeholder {
   align-items: center;
-  background: hsl(var(--channel-hue) 38% 92%);
-  color: hsl(var(--channel-hue) 58% 22%);
+  background: var(--surface-2);
+  color: var(--text);
   display: grid;
   gap: 6px;
   justify-items: center;
@@ -691,7 +726,7 @@ select {
 }
 
 .visual-placeholder span {
-  border: 1px solid hsl(var(--channel-hue) 42% 76%);
+  border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 11px;
   font-weight: 840;
@@ -712,29 +747,29 @@ select {
 
 @media (prefers-color-scheme: dark) {
   .channel-heading h3 {
-    color: hsl(var(--channel-hue) 54% 78%);
+    color: var(--text);
   }
 
   .channel-heading > span {
-    background: hsl(var(--channel-hue) 24% 20%);
-    border-color: hsl(var(--channel-hue) 22% 37%);
-    color: hsl(var(--channel-hue) 48% 82%);
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--muted);
   }
 
   .channel-pill {
-    background: hsl(var(--channel-hue) 26% 22%);
-    border-color: hsl(var(--channel-hue) 24% 40%);
-    box-shadow: inset 0 0 0 1px hsl(var(--channel-hue) 22% 31%);
+    background: var(--surface-2);
+    border-color: var(--border);
+    box-shadow: none;
   }
 
   .mini-icon-button:hover {
-    background: color-mix(in srgb, var(--surface-2) 82%, hsl(var(--channel-hue) 24% 25%));
+    background: var(--surface-2);
   }
 
   .title-option-visual {
     background:
-      linear-gradient(135deg, color-mix(in srgb, var(--blue) 12%, var(--surface)), transparent),
-      hsl(var(--channel-hue) 18% 18%);
+      linear-gradient(135deg, color-mix(in srgb, var(--surface-2) 62%, transparent), transparent),
+      var(--surface);
   }
 
   .title-option-card {
@@ -742,25 +777,25 @@ select {
   }
 
   .visual-placeholder {
-    background: hsl(var(--channel-hue) 24% 22%);
-    color: hsl(var(--channel-hue) 40% 88%);
+    background: var(--surface-2);
+    color: var(--text);
   }
 
   .visual-placeholder span {
-    border-color: hsl(var(--channel-hue) 24% 42%);
+    border-color: var(--border);
   }
 
   .card-meta-grid .channel-meta {
-    background: hsl(var(--channel-hue) 24% 20%);
-    border-color: hsl(var(--channel-hue) 22% 37%);
+    background: var(--surface-2);
+    border-color: var(--border);
   }
 
   .card-meta-grid .channel-meta span {
-    color: hsl(var(--channel-hue) 44% 75%);
+    color: var(--muted);
   }
 
   .card-meta-grid .channel-meta strong {
-    color: hsl(var(--channel-hue) 52% 88%);
+    color: var(--text);
   }
 }
 
@@ -787,16 +822,28 @@ select {
 }
 
 .card-meta-grid .channel-meta {
-  background: hsl(var(--channel-hue) 46% 94%);
-  border-color: hsl(var(--channel-hue) 38% 78%);
+  background: var(--surface-2);
+  border-color: var(--border);
+  overflow: hidden;
+  padding-left: 14px;
+  position: relative;
+}
+
+.card-meta-grid .channel-meta::before {
+  content: "";
+  position: absolute;
+  inset: 9px auto 9px 0;
+  width: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--channel-accent) 76%, var(--muted));
 }
 
 .card-meta-grid .channel-meta span {
-  color: hsl(var(--channel-hue) 42% 34%);
+  color: var(--muted);
 }
 
 .card-meta-grid .channel-meta strong {
-  color: hsl(var(--channel-hue) 58% 24%);
+  color: var(--text);
 }
 
 .card-meta-grid span {

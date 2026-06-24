@@ -42,6 +42,16 @@ const ACTIONS = [
   { value: "SKIP", label: "Skip" }
 ];
 
+const CHANNEL_ACCENTS = new Map([
+  ["Jotform", "#c5162e"],
+  ["AI Agents Podcast", "#6f5cc2"],
+  ["AI Agents", "#287d6b"],
+  ["Apps", "#2f6f9f"],
+  ["Sign", "#9b6a21"]
+]);
+
+const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5f7464"];
+
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -334,7 +344,10 @@ function Summary({ summary }) {
 
 function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving }) {
   return (
-    <section className="channel-group" style={{ "--channel-hue": channelHue(group.channel) }}>
+    <section
+      className="channel-group"
+      style={{ "--channel-hue": channelHue(group.channel), "--channel-accent": channelAccent(group.channel) }}
+    >
       <div className="channel-heading">
         <h3>{group.channel}</h3>
         <span>{group.count} active</span>
@@ -375,7 +388,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
   return (
     <article
       className={`test-card ${statusKey(run)} ${run.testType}-test result-${result.key}`}
-      style={{ "--channel-hue": channelHue(channel) }}
+      style={{ "--channel-hue": channelHue(channel), "--channel-accent": channelAccent(channel) }}
     >
       <div className="card-topline">
         <span className="channel-pill">{channel || "Unknown channel"}</span>
@@ -466,14 +479,23 @@ function CardVisual({ run, result }) {
 
   const thumbnailKeys = ["A", "B", "C"].filter((key) => run.thumbnailPreviews?.[key]);
   if (run.testType === "thumbnail" && thumbnailKeys.length) {
+    const primaryKeys = ["A", "B"].filter((key) => run.thumbnailPreviews?.[key]);
+    const fallbackKeys = thumbnailKeys
+      .filter((key) => !primaryKeys.includes(key))
+      .slice(0, Math.max(0, 2 - primaryKeys.length));
+    const shownKeys = [...primaryKeys, ...fallbackKeys];
+    const extraKeys = thumbnailKeys.filter((key) => !shownKeys.includes(key));
     return (
-      <div className={`card-visual thumbnail-visual-grid count-${thumbnailKeys.length}`}>
-        {thumbnailKeys.map((key) => (
+      <div className={`card-visual thumbnail-visual-grid count-${shownKeys.length}`}>
+        {shownKeys.map((key) => (
           <figure key={key}>
             <img src={run.thumbnailPreviews[key]} alt="" />
             <figcaption>{key}</figcaption>
           </figure>
         ))}
+        {extraKeys.length ? (
+          <span className="thumbnail-extra">+ {extraKeys.join("/")} available</span>
+        ) : null}
       </div>
     );
   }
@@ -724,6 +746,13 @@ function channelHue(value) {
     hash = (hash * 31 + text.charCodeAt(idx)) % 360;
   }
   return hash;
+}
+
+function channelAccent(value) {
+  const channel = displayChannel(value);
+  if (CHANNEL_ACCENTS.has(channel)) return CHANNEL_ACCENTS.get(channel);
+  const index = Math.abs(channelHue(channel)) % DEFAULT_CHANNEL_ACCENTS.length;
+  return DEFAULT_CHANNEL_ACCENTS[index];
 }
 
 function channelInitials(value) {
