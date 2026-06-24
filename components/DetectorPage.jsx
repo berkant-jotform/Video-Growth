@@ -48,6 +48,8 @@ export default function DetectorPage({ session }) {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
   const [modalRun, setModalRun] = useState(null);
+  const [modalInitialAction, setModalInitialAction] = useState("");
+  const [quickSaving, setQuickSaving] = useState("");
   const [channel, setChannel] = useState("all");
   const [type, setType] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
@@ -95,6 +97,30 @@ export default function DetectorPage({ session }) {
       setError(err.message);
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function quickComplete(run, action) {
+    if (run.possibleRetest) {
+      setModalInitialAction(action);
+      setModalRun(run);
+      return;
+    }
+    setQuickSaving(`${run.testRunId}:${action}`);
+    setError("");
+    try {
+      const response = await fetch("/api/actions/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ testRunId: run.testRunId, action, retestConfirmed: true })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save action.");
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setQuickSaving("");
     }
   }
 
@@ -250,7 +276,12 @@ export default function DetectorPage({ session }) {
               key={group.channel}
               group={group}
               onDetails={setSelected}
-              onDone={setModalRun}
+              onDone={(run) => {
+                setModalInitialAction("");
+                setModalRun(run);
+              }}
+              onQuickAction={quickComplete}
+              quickSaving={quickSaving}
             />
           ))}
         </section>
@@ -260,8 +291,10 @@ export default function DetectorPage({ session }) {
         <DoneModal
           run={modalRun}
           onClose={() => setModalRun(null)}
+          initialAction={modalInitialAction}
           onDone={async () => {
             setModalRun(null);
+            setModalInitialAction("");
             await refresh();
           }}
         />
@@ -290,7 +323,7 @@ function Summary({ summary }) {
   );
 }
 
-function ChannelGroup({ group, onDetails, onDone }) {
+function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving }) {
   return (
     <section className="channel-group">
       <div className="channel-heading">
@@ -308,7 +341,14 @@ function ChannelGroup({ group, onDetails, onDone }) {
             </div>
             <div className="card-grid">
               {runs.map((run) => (
-                <TestCard run={run} key={run.testRunId} onDetails={onDetails} onDone={onDone} />
+                <TestCard
+                  run={run}
+                  key={run.testRunId}
+                  onDetails={onDetails}
+                  onDone={onDone}
+                  onQuickAction={onQuickAction}
+                  quickSaving={quickSaving}
+                />
               ))}
             </div>
           </div>
@@ -318,9 +358,10 @@ function ChannelGroup({ group, onDetails, onDone }) {
   );
 }
 
-function TestCard({ run, onDetails, onDone }) {
+function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
   const result = cardResult(run);
   const channel = displayChannel(run);
+  const quickActions = quickActionOptions(run);
   return (
     <article
       className={`test-card ${statusKey(run)}`}
@@ -354,6 +395,19 @@ function TestCard({ run, onDetails, onDone }) {
           <ExternalLink size={18} />
           Open Studio
         </a>
+        <div className="quick-actions" aria-label="Quick outcome actions">
+          {quickActions.map((action) => (
+            <button
+              className={`quick-action ${action.toLowerCase()}`}
+              key={action}
+              title={`Mark ${action} done`}
+              disabled={Boolean(quickSaving)}
+              onClick={() => onQuickAction(run, action)}
+            >
+              {quickSaving === `${run.testRunId}:${action}` ? "..." : action}
+            </button>
+          ))}
+        </div>
         <button className="icon-button" title="Copy video ID" onClick={() => copyText(run.videoId)}>
           <Clipboard size={17} />
         </button>
@@ -470,8 +524,10 @@ function DetailDrawer({ run, onClose }) {
   );
 }
 
-function DoneModal({ run, onClose, onDone }) {
-  const [action, setAction] = useState(run.suggestedWinner?.match(/^[ABC]$/) ? run.suggestedWinner : "");
+function DoneModal({ run, initialAction = "", onClose, onDone }) {
+  const [action, setAction] = useState(
+    initialAction || (run.suggestedWinner?.match(/^[ABC]$/) ? run.suggestedWinner : "")
+  );
   const [retestConfirmed, setRetestConfirmed] = useState(!run.possibleRetest);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -600,6 +656,12 @@ function cardResult(run) {
     return { key: "logged", label: "Done", value: "Marked in sheet", tone: "neutral" };
   }
   return { key: "not_determined", label: "Not determined", value: "Review in Studio", tone: "neutral" };
+}
+
+function quickActionOptions(run) {
+  const available = Object.keys(run.options || {}).filter((key) => ["A", "B", "C"].includes(key));
+  const base = available.length ? available : ["A", "B"];
+  return base.includes("C") ? ["A", "B", "C"] : ["A", "B"];
 }
 
 function firstThumbnailPreview(previews) {
