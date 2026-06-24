@@ -40,7 +40,7 @@ const SETTING_GROUPS = [
   },
   {
     title: "Google Read-Only Access",
-    note: "Preferred path: paste service account JSON here, then share each sheet with the service account email as Viewer.",
+    note: "Optional. Preferred private path: service account JSON. If Google Cloud access is blocked, leave this blank and share each cloned sheet as Anyone with the link: Viewer so the XLSX export fallback can read it.",
     fields: [
       ["GOOGLE_SERVICE_ACCOUNT_JSON", "Service account JSON", "textarea", true],
       ["GOOGLE_OAUTH_ACCESS_TOKEN", "OAuth fallback token", "input", true]
@@ -89,8 +89,8 @@ const READINESS_ITEMS = [
   {
     key: "googleServiceAccount",
     label: "Google Service Account",
-    required: true,
-    fix: "Paste service account JSON below and share the sheets with its client_email as Viewer."
+    required: false,
+    fix: "Optional. If blocked, remove this value and share each cloned sheet as Anyone with the link: Viewer."
   },
   {
     key: "googleOauthFallback",
@@ -225,7 +225,8 @@ export default function SettingsPage({ session }) {
           {databaseReady ? (
             <p className="muted">
               These values are saved in the app database. Existing env vars remain a fallback.
-              For configured secrets, leave <code>********</code> unchanged unless replacing them.
+              For configured secrets, leave <code>********</code> unchanged unless replacing them;
+              clear the field to remove a saved secret.
             </p>
           ) : (
             <p className="setup-warning">

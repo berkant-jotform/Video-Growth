@@ -60,7 +60,7 @@ Generate the optional shared password hash:
 npm run hash-password
 ```
 
-Use a Google service account for read-only Sheets access, then share the title and thumbnail spreadsheets with the service account email as Viewer. If service accounts are blocked, `GOOGLE_OAUTH_ACCESS_TOKEN` is supported as a readonly fallback.
+Use a Google service account for private read-only Sheets access, then share the title and thumbnail spreadsheets with the service account email as Viewer. If Google Cloud access is blocked, leave service-account settings empty and share the cloned sheets as `Anyone with the link: Viewer`; the app will read them through Google Sheets XLSX export without using the Sheets API. If service accounts are blocked but you have a valid readonly token, `GOOGLE_OAUTH_ACCESS_TOKEN` is still supported as a fallback.
 
 Neon Postgres is the recommended Vercel database. Vercel Blob is used for thumbnail preview image storage when `BLOB_READ_WRITE_TOKEN` is configured; local development can temporarily store small imported previews as data URLs.
 
