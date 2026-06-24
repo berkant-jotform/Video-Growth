@@ -114,7 +114,7 @@ test("hybrid detection treats not-enough-impressions text as already logged", ()
   assert.equal(records[0].suggestedWinner, "No clear winner");
 });
 
-test("date fallback marks finished tests as needing review", () => {
+test("blank finish date does not create a guessed finished signal", () => {
   const records = parseSheetRecords({
     spreadsheetId: "sheet",
     sourceKind: "thumbnail",
@@ -132,6 +132,41 @@ test("date fallback marks finished tests as needing review", () => {
         "Done"
       ],
       ["2026-06-01", "https://youtu.be/abc123XYZ89", "Video", "", "", "", "", "False"]
+    ]
+  });
+  assert.equal(records[0].effectiveFinishDate, "");
+  assert.equal(records[0].status, "running");
+});
+
+test("explicit finish date marks tests as needing review", () => {
+  const records = parseSheetRecords({
+    spreadsheetId: "sheet",
+    sourceKind: "thumbnail",
+    sheetName: "Jotform",
+    today: "2026-06-22",
+    values: [
+      [
+        "Test Start / Published Date",
+        "Test Finish Date",
+        "Video URL",
+        "Video Title",
+        "Thumbnail A",
+        "Thumbnail B",
+        "A - Watch-Time Share",
+        "B - Watch-Time Share",
+        "Done"
+      ],
+      [
+        "2026-06-01",
+        "2026-06-15",
+        "https://youtu.be/abc123XYZ89",
+        "Video",
+        "",
+        "",
+        "",
+        "",
+        "False"
+      ]
     ]
   });
   assert.equal(records[0].effectiveFinishDate, "2026-06-15");

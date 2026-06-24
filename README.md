@@ -108,4 +108,4 @@ Reserved/configurable:
 npm test
 ```
 
-The current tests cover parsing, date fallback, winner/no-clear inference, hybrid detection, retest IDs, and missing-data classification.
+The current tests cover parsing, confirmed finish-date behavior, winner/no-clear inference, hybrid detection, retest IDs, and missing-data classification.
