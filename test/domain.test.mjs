@@ -188,6 +188,6 @@ test("canonicalizes channel names and applies priority order", () => {
   assert.equal(canonicalChannelName("Jotform Apps Channel"), "Apps");
   assert.deepEqual(
     ["Sign", "Other", "AI Agents", "Jotform", "Apps", "AI Agents Podcast"].sort(compareChannels),
-    ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Sign", "Other"]
+    ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Other", "Sign"]
   );
 });

@@ -15,7 +15,7 @@ import {
   X
 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
-import { canonicalChannelName, compareChannels } from "@/lib/channels.mjs";
+import { CHANNEL_PRIORITY, canonicalChannelName, compareChannels } from "@/lib/channels.mjs";
 
 const SECTION_ORDER = [
   "needs_review",
@@ -31,6 +31,8 @@ const SECTION_LABELS = {
   sheet_marked_done: "Marked Done in Sheet",
   running: "Running"
 };
+
+const OTHER_CHANNELS_LABEL = "Other channels";
 
 const ACTIONS = [
   { value: "A", label: "A" },
@@ -164,7 +166,10 @@ export default function DetectorPage({ session }) {
     });
   }, [runs, channel, type, resultFilter, finishWindow, retestFilter, advancedStatus, search]);
 
-  const grouped = useMemo(() => groupRuns(filtered), [filtered]);
+  const grouped = useMemo(
+    () => groupRuns(filtered, { groupOtherChannels: channel === "all" }),
+    [filtered, channel]
+  );
 
   return (
     <AppShell session={session} active="detector">
@@ -352,6 +357,9 @@ function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving }) 
         <h3>{group.channel}</h3>
         <span>{group.count} active</span>
       </div>
+      {group.channelCount > 1 ? (
+        <p className="channel-group-note">{group.channelCount} lower-volume channels grouped here.</p>
+      ) : null}
       {SECTION_ORDER.map((section) => {
         const runs = group.sections[section] || [];
         if (!runs.length) return null;
@@ -662,23 +670,45 @@ function Info({ label, value }) {
   );
 }
 
-function groupRuns(runs) {
+function groupRuns(runs, { groupOtherChannels = false } = {}) {
   const map = new Map();
   for (const run of runs) {
     const channel = displayChannel(run) || "Unknown channel";
-    if (!map.has(channel)) map.set(channel, { channel, count: 0, sections: {} });
-    const group = map.get(channel);
+    const groupKey = groupOtherChannels && !isPriorityChannel(channel) ? OTHER_CHANNELS_LABEL : channel;
+    if (!map.has(groupKey)) {
+      map.set(groupKey, {
+        channel: groupKey,
+        count: 0,
+        originalChannels: new Set(),
+        sections: {}
+      });
+    }
+    const group = map.get(groupKey);
     group.count += 1;
+    group.originalChannels.add(channel);
     const key = statusKey(run);
     group.sections[key] ||= [];
     group.sections[key].push(run);
   }
-  return Array.from(map.values()).sort((a, b) => compareChannels(a.channel, b.channel));
+  return Array.from(map.values())
+    .map((group) => ({ ...group, channelCount: group.originalChannels.size }))
+    .sort(compareGroups);
 }
 
 function displayChannel(runOrChannel) {
   const raw = typeof runOrChannel === "string" ? runOrChannel : runOrChannel?.channel;
   return canonicalChannelName(raw) || raw || "";
+}
+
+function isPriorityChannel(channel) {
+  const canonical = displayChannel(channel);
+  return CHANNEL_PRIORITY.includes(canonical);
+}
+
+function compareGroups(a, b) {
+  if (a.channel === OTHER_CHANNELS_LABEL && b.channel !== OTHER_CHANNELS_LABEL) return 1;
+  if (b.channel === OTHER_CHANNELS_LABEL && a.channel !== OTHER_CHANNELS_LABEL) return -1;
+  return compareChannels(a.channel, b.channel);
 }
 
 function statusKey(run) {

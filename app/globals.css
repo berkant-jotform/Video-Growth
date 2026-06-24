@@ -410,6 +410,13 @@ select {
   padding: 3px 10px;
 }
 
+.channel-group-note {
+  color: var(--muted);
+  margin: -8px 2px 0;
+  font-size: 13px;
+  font-weight: 680;
+}
+
 .status-section {
   display: grid;
   gap: 14px;
@@ -481,7 +488,7 @@ select {
 }
 
 .channel-pill {
-  color: var(--text);
+  color: color-mix(in srgb, var(--channel-accent) 78%, var(--text));
   background: var(--surface-2);
   border-color: var(--border);
   box-shadow: none;
@@ -795,7 +802,7 @@ select {
   }
 
   .card-meta-grid .channel-meta strong {
-    color: var(--text);
+    color: color-mix(in srgb, var(--channel-accent) 78%, var(--text));
   }
 }
 
@@ -843,7 +850,7 @@ select {
 }
 
 .card-meta-grid .channel-meta strong {
-  color: var(--text);
+  color: color-mix(in srgb, var(--channel-accent) 78%, var(--text));
 }
 
 .card-meta-grid span {
