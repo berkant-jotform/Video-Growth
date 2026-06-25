@@ -952,7 +952,7 @@ select {
 
 .card-meta-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 10px;
 }
 
@@ -1572,6 +1572,16 @@ textarea {
 
 .readiness-row .missing {
   color: var(--red);
+}
+
+.coverage-ok {
+  color: var(--green) !important;
+  font-weight: 760;
+}
+
+.coverage-warning {
+  color: var(--amber) !important;
+  font-weight: 780;
 }
 
 .setup-warning {

@@ -320,14 +320,19 @@ export default function SettingsPage({ session }) {
                     <span className="readiness-title">
                       <ShieldCheck size={16} />
                       {item.actorName || "Chrome extension"}
-                      <em>{item.active ? "Active" : "Stale"}</em>
+                      <em>{connectorCoverageState(item)}</em>
                     </span>
                     <p>{(item.channels || []).join(", ") || "No channels reported"}</p>
+                    <p className={connectorOpenStudioTabs(item) > 0 ? "coverage-ok" : "coverage-warning"}>
+                      {connectorOpenStudioTabs(item) > 0
+                        ? `${connectorOpenStudioTabs(item)} YouTube Studio tab${connectorOpenStudioTabs(item) === 1 ? "" : "s"} open at last heartbeat.`
+                        : "Heartbeat is active, but no YouTube Studio tab was open. It cannot see finish notifications until Studio is open."}
+                    </p>
                     <code>{item.connectorId}</code>
                   </div>
                   <div className="readiness-meta">
-                    <strong className={item.active ? "ok" : "missing"}>
-                      {item.active ? "Watching" : "No recent heartbeat"}
+                    <strong className={item.active && connectorOpenStudioTabs(item) > 0 ? "ok" : "missing"}>
+                      {item.active && connectorOpenStudioTabs(item) > 0 ? "Watching Studio" : item.active ? "Heartbeat only" : "No recent heartbeat"}
                     </strong>
                     <span>{item.lastSeenAt ? formatDateTime(item.lastSeenAt) : "Never"}</span>
                   </div>
@@ -526,6 +531,15 @@ function sourceLabel(source) {
   if (source === "env") return "From env";
   if (source === "default") return "Default";
   return "Missing";
+}
+
+function connectorOpenStudioTabs(item) {
+  return Number(item?.payload?.openStudioTabs || 0);
+}
+
+function connectorCoverageState(item) {
+  if (!item.active) return "Stale";
+  return connectorOpenStudioTabs(item) > 0 ? "Active" : "Blind";
 }
 
 function generateConnectorToken() {

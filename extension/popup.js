@@ -20,12 +20,22 @@ async function render() {
   const local = await chrome.storage.local.get([
     "lastHeartbeatAt",
     "lastHeartbeatOk",
+    "lastHeartbeatResult",
     "lastEventPostAt",
-    "lastEventPostOk"
+    "lastEventPostOk",
+    "lastEventPostResult"
   ]);
-  setSummary(sync.appUrl ? `Connected to ${sync.appUrl}` : "Open Settings to connect.");
+  const latestHeartbeat = latestOwnHeartbeat(local.lastHeartbeatResult, sync.actorName);
+  const openStudioTabs = Number(latestHeartbeat?.payload?.openStudioTabs || 0);
+  if (!sync.appUrl) {
+    setSummary("Open Settings to connect.");
+  } else if (local.lastHeartbeatOk && openStudioTabs === 0) {
+    setSummary("Connected, but no YouTube Studio tab is open. Open Studio before expecting detection.");
+  } else {
+    setSummary(`Connected to ${sync.appUrl}`);
+  }
   document.getElementById("lastHeartbeat").textContent = local.lastHeartbeatAt
-    ? `${formatTime(local.lastHeartbeatAt)} (${local.lastHeartbeatOk ? "ok" : "failed"})`
+    ? `${formatTime(local.lastHeartbeatAt)} (${local.lastHeartbeatOk ? "ok" : "failed"}${local.lastHeartbeatOk ? `, ${openStudioTabs} Studio tab${openStudioTabs === 1 ? "" : "s"}` : ""})`
     : "Never";
   document.getElementById("lastEvent").textContent = local.lastEventPostAt
     ? `${formatTime(local.lastEventPostAt)} (${local.lastEventPostOk ? "ok" : "failed"})`
@@ -38,4 +48,11 @@ function setSummary(text) {
 
 function formatTime(value) {
   return new Date(value).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+}
+
+function latestOwnHeartbeat(result, actorName) {
+  const statuses = result?.connectorStatus || [];
+  if (!statuses.length) return null;
+  if (!actorName) return statuses[0];
+  return statuses.find((item) => item.actorName === actorName) || statuses[0];
 }

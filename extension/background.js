@@ -89,6 +89,7 @@ async function postEvents(events, tabUrl) {
 async function sendHeartbeat() {
   const settings = await getSettings();
   requireConfigured(settings);
+  const studioTabs = await chrome.tabs.query({ url: "https://studio.youtube.com/*" });
   const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/heartbeat`, {
     method: "POST",
     headers: {
@@ -102,6 +103,8 @@ async function sendHeartbeat() {
       channels: splitChannels(settings.channels),
       status: "online",
       location: "chrome-extension",
+      openStudioTabs: studioTabs.length,
+      studioTabUrls: studioTabs.map((tab) => tab.url || "").filter(Boolean).slice(0, 10),
       userAgent: navigator.userAgent,
       observedAt: new Date().toISOString()
     })

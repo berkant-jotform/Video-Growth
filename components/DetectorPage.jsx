@@ -494,8 +494,12 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
           <strong>{channel || "Unknown"}</strong>
         </div>
         <div>
-          <span>Signal</span>
+          <span>Source</span>
           <strong>{result.value}</strong>
+        </div>
+        <div>
+          <span>Duration</span>
+          <strong>{testDurationLabel(run)}</strong>
         </div>
       </div>
       <p className="outcome">{outcomeLabel(run)}</p>
@@ -604,6 +608,7 @@ function DetailDrawer({ run, onClose }) {
         <Info label="Video ID" value={run.videoId || "Missing"} />
         <Info label="Source row" value={`${run.sheetName} row ${run.rowNumber}`} />
         <Info label="Signal" value={signalSourceLabel(run)} />
+        <Info label="Test lasted" value={testDurationLabel(run)} />
         <Info label="Coverage" value={run.connectorCovered ? `Covered by ${run.connectorActorName || "connector"}` : "No active connector"} />
         <Info label="Start" value={run.startDate || "Missing"} />
         <Info label="Sheet finish" value={run.effectiveFinishDate || "Blank"} />
@@ -889,12 +894,30 @@ function signalDateLabel(run) {
 }
 
 function signalSourceLabel(run) {
-  if (run.finishEventSource === "studio_bell") return "Studio bell";
+  if (run.finishEventSource === "studio_bell") return "Studio extension";
   if (run.finishEventSource === "metadata") return "Metadata observed";
-  if (run.queueStatus === "confirmed_finished" && run.effectiveFinishDate) return "Sheet finish";
+  if (run.queueStatus === "confirmed_finished" && run.effectiveFinishDate) return "Sheet finish date";
   if (run.queueStatus === "watching") return "Watching";
   if (run.queueStatus === "uncovered") return "Uncovered";
   return "No signal";
+}
+
+function testDurationLabel(run) {
+  const endDate = signalEndDate(run);
+  if (!run.startDate || !endDate) return "Unknown";
+  const start = new Date(`${run.startDate}T00:00:00`);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.valueOf()) || Number.isNaN(end.valueOf()) || end < start) return "Unknown";
+  const hours = Math.max(1, Math.round((end - start) / 3600000));
+  if (hours < 36) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+function signalEndDate(run) {
+  if (run.finishEventAt) return run.finishEventAt;
+  if (run.effectiveFinishDate) return `${run.effectiveFinishDate}T00:00:00`;
+  return "";
 }
 
 function dateOnlyText(value) {
