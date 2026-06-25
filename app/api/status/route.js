@@ -10,6 +10,11 @@ export async function GET() {
   const session = await readSession();
   let lastScan = null;
   let connectorStatus = [];
+  let connector = {
+    configured: false,
+    channels: [],
+    watcherTabs: []
+  };
   let connectorConfigured = false;
   let databaseOk = false;
   let databaseError = "";
@@ -23,6 +28,11 @@ export async function GET() {
       lastScan = scan;
       connectorStatus = status;
       connectorConfigured = Boolean(config.connectorToken);
+      connector = {
+        configured: connectorConfigured,
+        channels: config.connectorChannels,
+        watcherTabs: config.connectorWatcherTabs
+      };
       databaseOk = true;
     } catch (error) {
       databaseError = error.message;
@@ -42,6 +52,7 @@ export async function GET() {
     },
     databaseError,
     lastScan,
+    connector,
     connectorStatus
   });
 }

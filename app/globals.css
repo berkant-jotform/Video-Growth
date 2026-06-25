@@ -289,6 +289,96 @@ a {
   font-size: 28px;
 }
 
+.connector-coverage-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+  margin: -6px 0 24px;
+  padding: 18px;
+}
+
+.connector-coverage-panel.ok {
+  border-color: color-mix(in srgb, var(--green) 28%, var(--border));
+}
+
+.connector-coverage-panel.warn {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+}
+
+.connector-coverage-panel.danger {
+  border-color: color-mix(in srgb, var(--red) 34%, var(--border));
+}
+
+.connector-coverage-copy h3 {
+  font-size: 18px;
+  line-height: 1.25;
+  margin: 4px 0;
+}
+
+.connector-coverage-copy p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.connector-channel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.connector-channel-chip {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 10px;
+}
+
+.connector-channel-chip strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.connector-channel-chip em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.connector-channel-chip.watching {
+  background: color-mix(in srgb, var(--green) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--green) 34%, var(--border));
+}
+
+.connector-channel-chip.watching em {
+  color: var(--green);
+}
+
+.connector-channel-chip.heartbeat {
+  background: color-mix(in srgb, var(--amber) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+}
+
+.connector-channel-chip.heartbeat em {
+  color: var(--amber);
+}
+
+.connector-channel-chip.missing {
+  background: color-mix(in srgb, var(--red) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--red) 28%, var(--border));
+}
+
+.connector-channel-chip.missing em {
+  color: var(--red);
+}
+
 .scan-progress-panel {
   background: var(--surface);
   border: 1px solid var(--border);

@@ -65,6 +65,7 @@ export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
   const [unmatchedEvents, setUnmatchedEvents] = useState([]);
   const [connectorStatus, setConnectorStatus] = useState([]);
+  const [connectorConfig, setConnectorConfig] = useState({ configured: false, channels: [], watcherTabs: [] });
   const [summary, setSummary] = useState(null);
   const [lastScan, setLastScan] = useState(null);
   const [scanProgress, setScanProgress] = useState(null);
@@ -110,6 +111,7 @@ export default function DetectorPage({ session }) {
       setRuns(queuePayload.runs || []);
       setUnmatchedEvents(queuePayload.unmatchedEvents || []);
       setConnectorStatus(queuePayload.connectorStatus || []);
+      setConnectorConfig(statusPayload.connector || { configured: false, channels: [], watcherTabs: [] });
       setSummary(queuePayload.summary || null);
       setLastScan(statusPayload.lastScan || null);
       setScanProgress(statusPayload.lastScan?.progress || null);
@@ -128,6 +130,7 @@ export default function DetectorPage({ session }) {
       setLastScan(payload.lastScan || null);
       setScanProgress(payload.lastScan?.progress || null);
       setConnectorStatus(payload.connectorStatus || []);
+      setConnectorConfig(payload.connector || { configured: false, channels: [], watcherTabs: [] });
     } catch {
       // Progress polling is best-effort; the main scan request still reports failures.
     }
@@ -228,6 +231,13 @@ export default function DetectorPage({ session }) {
             {scanning ? "Scanning" : "Scan Now"}
           </button>
         </section>
+
+        <ConnectorCoveragePanel
+          connectorConfig={connectorConfig}
+          connectorStatus={connectorStatus}
+          runs={runs}
+          selectedChannel={channel}
+        />
 
         <ScanProgress scan={lastScan} progress={scanProgress} scanning={scanning} />
 
@@ -443,6 +453,29 @@ function ScanProgress({ scan, progress, scanning }) {
           ))}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function ConnectorCoveragePanel({ connectorConfig, connectorStatus, runs, selectedChannel }) {
+  const coverage = buildConnectorCoverage({ connectorConfig, connectorStatus, runs, selectedChannel });
+  if (!coverage.channels.length) return null;
+
+  return (
+    <section className={`connector-coverage-panel ${coverage.tone}`}>
+      <div className="connector-coverage-copy">
+        <span className="eyebrow">Extension coverage</span>
+        <h3>{coverage.title}</h3>
+        <p>{coverage.message}</p>
+      </div>
+      <div className="connector-channel-list">
+        {coverage.channels.map((item) => (
+          <span className={`connector-channel-chip ${item.state}`} key={item.channel}>
+            <strong>{item.channel}</strong>
+            <em>{item.label}</em>
+          </span>
+        ))}
+      </div>
     </section>
   );
 }
@@ -1009,6 +1042,110 @@ function connectorSummary(items = []) {
   if (!active.length) return "no active extension heartbeat";
   const channels = new Set(active.flatMap((item) => item.channels || []));
   return `${active.length} active extension${active.length === 1 ? "" : "s"} watching ${channels.size} channel${channels.size === 1 ? "" : "s"}`;
+}
+
+function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, selectedChannel }) {
+  const channels = coverageChannelNames({ connectorConfig, runs, selectedChannel });
+  const activeStatuses = connectorStatus.filter((item) => item.active);
+  const openUrls = activeStatuses.flatMap((item) => item.payload?.studioTabUrls || []).filter(Boolean);
+  const statuses = channels.map((channel) => {
+    if (!connectorConfig?.configured) {
+      return {
+        channel,
+        state: "missing",
+        label: "Not configured"
+      };
+    }
+    const watcher = findWatcherForChannel(channel, connectorConfig?.watcherTabs || []);
+    const hasOpenWatcher = watcher?.url ? openUrls.some((url) => sameStudioTarget(url, watcher.url)) : false;
+    const hasHeartbeat = activeStatuses.some((item) =>
+      (item.channels || []).some((candidate) => sameChannel(candidate, channel))
+    );
+    if (hasOpenWatcher) {
+      return { channel, state: "watching", label: "Watching" };
+    }
+    if (hasHeartbeat) {
+      return { channel, state: "heartbeat", label: "Heartbeat only" };
+    }
+    return { channel, state: "missing", label: "Not connected" };
+  });
+
+  const watching = statuses.filter((item) => item.state === "watching").length;
+  const heartbeatOnly = statuses.filter((item) => item.state === "heartbeat").length;
+  const missing = statuses.filter((item) => item.state === "missing").length;
+
+  if (!connectorConfig?.configured) {
+    return {
+      tone: "danger",
+      title: "Extension connector is not configured",
+      message: "Scan can still read Sheets and YouTube, but Studio finish notifications will not be captured.",
+      channels: statuses
+    };
+  }
+  if (!activeStatuses.length) {
+    return {
+      tone: "danger",
+      title: "Extension is not connected",
+      message: "Scan can still run, but every channel is blind to real Studio finish notifications until the extension sends heartbeat.",
+      channels: statuses
+    };
+  }
+  if (missing || heartbeatOnly) {
+    return {
+      tone: "warn",
+      title: "Some channels are not actively watched",
+      message:
+        "Scan will still update sheet and YouTube data, but channels marked heartbeat only or not connected may miss real finish notifications.",
+      channels: statuses
+    };
+  }
+  return {
+    tone: "ok",
+    title: "Extension is watching selected channels",
+    message: `${watching} channel${watching === 1 ? " is" : "s are"} connected with an open Studio watcher tab.`,
+    channels: statuses
+  };
+}
+
+function coverageChannelNames({ connectorConfig, runs, selectedChannel }) {
+  if (selectedChannel && selectedChannel !== "all") return [selectedChannel];
+  const names = new Set();
+  for (const channel of connectorConfig?.channels || []) {
+    if (channel) names.add(displayChannel(channel));
+  }
+  for (const tab of connectorConfig?.watcherTabs || []) {
+    if (tab.label) names.add(displayChannel(tab.label));
+  }
+  for (const run of runs || []) {
+    const channel = displayChannel(run);
+    if (isPriorityChannel(channel)) names.add(channel);
+  }
+  return Array.from(names).filter(Boolean).sort(compareChannels);
+}
+
+function findWatcherForChannel(channel, watcherTabs) {
+  return watcherTabs.find((tab) => sameChannel(tab.label, channel)) || null;
+}
+
+function sameStudioTarget(openUrl, watcherUrl) {
+  const open = String(openUrl || "").replace(/\/+$/, "");
+  const watcher = String(watcherUrl || "").replace(/\/+$/, "");
+  const watcherChannelId = watcher.match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] || "";
+  if (watcherChannelId) return open.includes(watcherChannelId);
+  return watcher ? open.startsWith(watcher) : false;
+}
+
+function sameChannel(a, b) {
+  return normalizeText(displayChannel(a)) === normalizeText(displayChannel(b));
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function daysSince(dateText) {
