@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.0";
+const EXTENSION_VERSION = "0.1.1";
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
   connectorToken: "",

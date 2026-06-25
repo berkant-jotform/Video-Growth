@@ -22,7 +22,7 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
   const channel = detectChannelName();
   const candidates = [...document.querySelectorAll(NOTIFICATION_SELECTORS.join(","))];
 
-  const events = [];
+  const events = collectStudioPageStatusEvents(channel);
   for (const element of candidates) {
     if (!isVisible(element)) continue;
     const rawText = collapseText(element.innerText || element.textContent || "");
@@ -43,6 +43,23 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
     if (events.length >= 20) break;
   }
   return compactEvents(events);
+}
+
+function collectStudioPageStatusEvents(channel) {
+  const videoId = extractVideoId(location.href);
+  if (!videoId || !/\/video\/[A-Za-z0-9_-]{6,}\/edit/i.test(location.href)) return [];
+  const rawText = findTestFinishedSnippet(document.body?.innerText || "");
+  if (!rawText || !isRelevant(rawText)) return [];
+  return [
+    {
+      source: "studio_page_status",
+      rawText,
+      url: location.href,
+      videoId,
+      channel,
+      observedAt: new Date().toISOString()
+    }
+  ];
 }
 
 async function sendEvents(events) {
@@ -72,6 +89,9 @@ function isRelevant(text) {
   if (/^(?:a\/b|ab|thumbnail|title)?\s*test\s+(?:completed|ready)(?:\s+set\s+test)?$/i.test(text)) {
     return false;
   }
+  if (/^test finished\.\s*ran from .{8,180}? to .{8,180}?\.$/i.test(text)) {
+    return true;
+  }
   if (/\brunning\b/i.test(text) && !/\b(finished|complete|completed|ended|result|results|winner|won|selected|ready|not enough|no clear)\b/i.test(text)) {
     return false;
   }
@@ -86,6 +106,14 @@ function collapseText(value) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 1000);
+}
+
+function findTestFinishedSnippet(value) {
+  const text = collapseText(value);
+  const exact = text.match(/(?:Title|Thumbnail|A\/B)?\s*Test finished\.\s*Ran from .{8,180}? to .{8,180}?\./i);
+  if (exact?.[0]) return collapseText(exact[0]);
+  const fallback = text.match(/(?:test and compare|test & compare|a\/b|thumbnail test|title test).{0,160}(?:finished|completed|ended|results? ready)/i);
+  return fallback?.[0] ? collapseText(fallback[0]) : "";
 }
 
 function isVisible(element) {

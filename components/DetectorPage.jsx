@@ -20,6 +20,7 @@ import { CHANNEL_PRIORITY, canonicalChannelName, compareChannels } from "@/lib/c
 const SECTION_ORDER = [
   "confirmed_finished",
   "applied_change_observed",
+  "past_due_check",
   "uncovered",
   "watching",
   "sheet_changed_after_done",
@@ -29,6 +30,7 @@ const SECTION_ORDER = [
 const SECTION_LABELS = {
   confirmed_finished: "Confirmed Finished",
   applied_change_observed: "Applied Change Observed",
+  past_due_check: "Past 14 Days - Check Studio",
   uncovered: "Needs Signal",
   watching: "Watching",
   needs_review: "Explicit Sheet Finish",
@@ -274,6 +276,7 @@ export default function DetectorPage({ session }) {
               <option value="all">All results</option>
               <option value="confirmed">Confirmed finished</option>
               <option value="observed">Applied change observed</option>
+              <option value="past_due_check">Past 14 days</option>
               <option value="watching">Watching</option>
               <option value="uncovered">Needs signal</option>
               <option value="not_determined">Not determined</option>
@@ -392,6 +395,7 @@ function Summary({ summary }) {
   const items = [
     ["Confirmed", summary?.confirmedFinished || summary?.newlyFinished || 0],
     ["Observed", summary?.appliedChangeObserved || 0],
+    ["Past 14d", summary?.pastDueCheck || 0],
     ["Needs Signal", summary?.uncovered || 0],
     ["Watching", summary?.watching || 0],
     ["Missing", summary?.missingData || 0],
@@ -513,6 +517,7 @@ function UnmatchedEvents({ events }) {
 
 function eventSourceLabel(source) {
   if (source === "studio_bell") return "Chrome extension Studio scrape";
+  if (source === "studio_page_status") return "Studio page status";
   if (source === "metadata") return "YouTube metadata scan";
   if (source === "sheet") return "Sheet signal";
   return titleCase(source || "unknown source");
@@ -905,6 +910,7 @@ function statusKey(run) {
 function matchesResultFilter(run, filter) {
   if (filter === "confirmed") return run.queueStatus === "confirmed_finished";
   if (filter === "observed") return run.queueStatus === "applied_change_observed";
+  if (filter === "past_due_check") return run.queueStatus === "past_due_check";
   if (filter === "watching") return run.queueStatus === "watching";
   if (filter === "uncovered") return run.queueStatus === "uncovered";
   return cardResult(run).key === filter;
@@ -914,9 +920,11 @@ function outcomeLabel(run) {
   if (run.queueStatus === "sheet_changed_after_done") return "Sheet changed after this was done";
   if (run.queueStatus === "confirmed_finished") {
     if (run.finishEventSource === "studio_bell") return "Studio notification confirmed this test finished";
+    if (run.finishEventSource === "studio_page_status") return "Studio edit page says this test finished";
     return "Explicit sheet finish/result signal";
   }
   if (run.queueStatus === "applied_change_observed") return "Visible YouTube metadata changed to a B/C option";
+  if (run.queueStatus === "past_due_check") return "Past 14 days with no real finish signal; open Studio to verify";
   if (run.queueStatus === "uncovered") return "No active Studio connector is watching this channel";
   if (run.queueStatus === "watching") return "Active test; no real finish signal yet";
   if (run.status === "result_logged") return "Result already entered in sheet";
@@ -946,6 +954,9 @@ function cardResult(run) {
       value: "Not final proof",
       tone: "info"
     };
+  }
+  if (run.queueStatus === "past_due_check") {
+    return { key: "past_due_check", label: "Check Studio", value: "Past 14 days", tone: "warning" };
   }
   if (run.queueStatus === "uncovered") {
     return { key: "uncovered", label: "Needs signal", value: "No connector", tone: "warning" };
@@ -1001,13 +1012,16 @@ function matchesFinishWindow(run, windowValue) {
 
 function signalDateLabel(run) {
   if (run.finishEventAt) return formatDateTime(run.finishEventAt);
+  if (run.queueStatus === "past_due_check") return "Past 14 days";
   if (run.effectiveFinishDate) return `Sheet ${run.effectiveFinishDate}`;
   return "No signal yet";
 }
 
 function signalSourceLabel(run) {
   if (run.finishEventSource === "studio_bell") return "Studio extension";
+  if (run.finishEventSource === "studio_page_status") return "Studio page status";
   if (run.finishEventSource === "metadata") return "Metadata observed";
+  if (run.queueStatus === "past_due_check") return "Date fallback";
   if (run.queueStatus === "confirmed_finished" && run.effectiveFinishDate) return "Sheet finish date";
   if (run.queueStatus === "watching") return "Watching";
   if (run.queueStatus === "uncovered") return "Uncovered";

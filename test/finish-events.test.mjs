@@ -50,6 +50,10 @@ test("filters Studio edit-page noise from finish notifications", () => {
   assert.equal(isLikelyFinishNotification("A/B Test completed"), false);
   assert.equal(isLikelyFinishNotification("Thumbnail test ready"), false);
   assert.equal(isLikelyFinishNotification("Thumbnail test ready Set test"), false);
+  assert.equal(
+    isLikelyFinishNotification("Test finished. Ran from February 26, 2026 at 4:16 PM to March 12, 2026 at 5:03 PM."),
+    true
+  );
 });
 
 test("parses watcher tabs from channel IDs and Studio URLs", () => {
