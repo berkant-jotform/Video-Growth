@@ -14,6 +14,7 @@ export async function GET(request) {
     return json({
       ok: true,
       channels: config.connectorChannels,
+      watcherTabs: config.connectorWatcherTabs,
       pollMinutes: 60,
       activeTests: runs.map((run) => ({
         testRunId: run.testRunId,

@@ -5,6 +5,7 @@ import {
   detectNotificationOutcome,
   isLikelyFinishNotification,
   matchFinishEventToRun,
+  parseWatcherTabs,
   parseStudioNotification
 } from "../lib/finish-events.mjs";
 import { parseSheetRecords } from "../lib/domain.mjs";
@@ -41,6 +42,27 @@ test("filters Studio edit-page noise from finish notifications", () => {
   assert.equal(
     isLikelyFinishNotification("Not enough impressions to declare a winner."),
     true
+  );
+});
+
+test("parses watcher tabs from channel IDs and Studio URLs", () => {
+  assert.deepEqual(
+    parseWatcherTabs(
+      [
+        "Jotform | UC12345678901234567890",
+        "AI Agents Podcast | https://studio.youtube.com/channel/UCabcdefabcdefabcdefab"
+      ].join("\n")
+    ),
+    [
+      {
+        label: "Jotform",
+        url: "https://studio.youtube.com/channel/UC12345678901234567890"
+      },
+      {
+        label: "AI Agents Podcast",
+        url: "https://studio.youtube.com/channel/UCabcdefabcdefabcdefab"
+      }
+    ]
   );
 });
 

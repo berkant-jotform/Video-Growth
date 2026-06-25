@@ -1,6 +1,5 @@
 const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
-const SCAN_DEBOUNCE_MS = 8000;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
   "tp-yt-paper-toast",
@@ -11,7 +10,6 @@ const NOTIFICATION_SELECTORS = [
   "[aria-live]"
 ];
 const seen = new Set();
-let scanTimer = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "scrape-studio-notifications") return false;
@@ -19,20 +17,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   sendEvents(events).then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });
-
-scheduleScan();
-
-const observer = new MutationObserver(() => scheduleScan());
-observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-
-function scheduleScan() {
-  if (scanTimer) return;
-  scanTimer = window.setTimeout(async () => {
-    scanTimer = null;
-    const events = collectNotificationEvents();
-    if (events.length) await sendEvents(events);
-  }, SCAN_DEBOUNCE_MS);
-}
 
 function collectNotificationEvents({ includeSeen = false } = {}) {
   const channel = detectChannelName();

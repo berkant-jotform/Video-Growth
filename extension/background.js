@@ -12,13 +12,16 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (!settings.connectorId) {
     await chrome.storage.sync.set({ connectorId: crypto.randomUUID() });
   }
-  chrome.alarms.create("youtube-ab-heartbeat", { periodInMinutes: 60, delayInMinutes: 1 });
+  scheduleHourlyAlarm();
 });
+
+chrome.runtime.onStartup.addListener(() => scheduleHourlyAlarm());
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "youtube-ab-heartbeat") return;
   await sendHeartbeat();
   await requestStudioScrape();
+  scheduleHourlyAlarm();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -40,8 +43,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
+  if (message?.type === "open-watcher-tabs") {
+    openWatcherTabs()
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   return false;
 });
+
+function scheduleHourlyAlarm() {
+  chrome.alarms.create("youtube-ab-heartbeat", {
+    delayInMinutes: minutesUntilNextHour(),
+    periodInMinutes: 60
+  });
+}
 
 async function requestStudioScrape() {
   const tabs = await chrome.tabs.query({ url: "https://studio.youtube.com/*" });
@@ -83,6 +99,38 @@ async function postEvents(events, tabUrl) {
     lastEventPostOk: response.ok
   });
   if (!response.ok) throw new Error(payload.error || `Connector event post failed: ${response.status}`);
+  return payload;
+}
+
+async function openWatcherTabs() {
+  const settings = await getSettings();
+  requireConfigured(settings);
+  const config = await fetchConnectorConfig(settings);
+  const watcherTabs = config.watcherTabs || [];
+  const targets = watcherTabs.length
+    ? watcherTabs
+    : [{ label: "YouTube Studio", url: "https://studio.youtube.com" }];
+  const opened = [];
+  for (const target of targets) {
+    if (!target.url) continue;
+    const tab = await chrome.tabs.create({ url: target.url, active: opened.length === 0 });
+    opened.push({ label: target.label || target.url, url: target.url, tabId: tab.id });
+  }
+  await chrome.storage.local.set({
+    lastWatcherOpenAt: new Date().toISOString(),
+    lastWatcherOpenCount: opened.length
+  });
+  return { ok: true, opened };
+}
+
+async function fetchConnectorConfig(settings) {
+  const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/config`, {
+    headers: {
+      "Authorization": `Bearer ${settings.connectorToken}`
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Connector config failed: ${response.status}`);
   return payload;
 }
 
@@ -141,4 +189,12 @@ function splitChannels(value) {
     .split(/[\n,]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function minutesUntilNextHour() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setMinutes(0, 0, 0);
+  next.setHours(now.getHours() + 1);
+  return Math.max(1, Math.ceil((next - now) / 60000));
 }

@@ -1,5 +1,11 @@
 document.addEventListener("DOMContentLoaded", async () => {
   await render();
+  document.getElementById("openWatchers").addEventListener("click", async () => {
+    setSummary("Opening configured Studio watcher tabs...");
+    const response = await chrome.runtime.sendMessage({ type: "open-watcher-tabs" });
+    setSummary(response?.ok ? `Opened ${response.opened?.length || 0} watcher tab${response.opened?.length === 1 ? "" : "s"}.` : response?.error || "Could not open watcher tabs.");
+    await render();
+  });
   document.getElementById("scan").addEventListener("click", async () => {
     setSummary("Scanning open Studio tabs...");
     const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
@@ -32,7 +38,7 @@ async function render() {
   } else if (local.lastHeartbeatOk && openStudioTabs === 0) {
     setSummary("Connected, but no YouTube Studio tab is open. Open Studio before expecting detection.");
   } else {
-    setSummary(`Connected to ${sync.appUrl}`);
+    setSummary(`Connected to ${sync.appUrl}. Passive checks run hourly.`);
   }
   document.getElementById("lastHeartbeat").textContent = local.lastHeartbeatAt
     ? `${formatTime(local.lastHeartbeatAt)} (${local.lastHeartbeatOk ? "ok" : "failed"}${local.lastHeartbeatOk ? `, ${openStudioTabs} Studio tab${openStudioTabs === 1 ? "" : "s"}` : ""})`

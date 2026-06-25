@@ -58,10 +58,11 @@ const SETTING_GROUPS = [
   },
   {
     title: "Studio Connector",
-    note: "Chrome extension settings. Use the same connector token in the extension. Channels are comma-separated and define coverage priorities.",
+    note: "Chrome extension settings. Use the same connector token in the extension. Watcher tabs can use direct Studio URLs or channel IDs.",
     fields: [
       ["CONNECTOR_TOKEN", "Connector token", "input", true],
-      ["CONNECTOR_CHANNELS", "Monitored channels", "textarea"]
+      ["CONNECTOR_CHANNELS", "Monitored channels", "textarea"],
+      ["CONNECTOR_WATCHER_TABS", "Watcher tabs", "textarea"]
     ]
   },
   {
@@ -125,6 +126,12 @@ const READINESS_ITEMS = [
     label: "Connector Channels",
     required: true,
     fix: "Keep Jotform, AI Agents Podcast, and AI Agents first. Add other channel names as needed."
+  },
+  {
+    key: "connectorWatcherTabs",
+    label: "Watcher Tab URLs",
+    required: false,
+    fix: "Optional but recommended. Add one per line: Channel name | Studio URL or YouTube channel ID."
   },
   {
     key: "blob",
@@ -201,6 +208,7 @@ export default function SettingsPage({ session }) {
   const databaseReady = Boolean(config?.configured?.database);
   const connectorToken = form.CONNECTOR_TOKEN || "";
   const connectorChannels = form.CONNECTOR_CHANNELS || "Jotform, AI Agents Podcast, AI Agents";
+  const connectorWatcherTabs = form.CONNECTOR_WATCHER_TABS || "";
 
   return (
     <AppShell session={session} active="settings">
@@ -246,6 +254,7 @@ export default function SettingsPage({ session }) {
         <InstallExtensionPanel
           connectorToken={connectorToken}
           connectorChannels={connectorChannels}
+          connectorWatcherTabs={connectorWatcherTabs}
           onGenerateToken={() =>
             setForm((current) => ({ ...current, CONNECTOR_TOKEN: generateConnectorToken() }))
           }
@@ -362,13 +371,14 @@ export default function SettingsPage({ session }) {
   );
 }
 
-function InstallExtensionPanel({ connectorToken, connectorChannels, onGenerateToken }) {
+function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWatcherTabs, onGenerateToken }) {
   const appUrl = typeof window === "undefined" ? "https://video-growth.vercel.app" : window.location.origin;
   const visibleToken = connectorToken && connectorToken !== "********" ? connectorToken : "";
   const copyText = [
     `App URL: ${appUrl}`,
     `Connector token: ${visibleToken || "generate-or-enter-token-first"}`,
-    `Channels: ${connectorChannels}`
+    `Channels: ${connectorChannels}`,
+    `Watcher tabs:\n${connectorWatcherTabs || "Add Studio URLs or channel IDs in Settings"}`
   ].join("\n");
 
   return (
@@ -377,8 +387,12 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, onGenerateTo
       <h2>Studio bell finish detector</h2>
       <p className="muted">
         This extension is the real finish signal. It runs in the Chrome profile that is logged into
-        YouTube Studio, reads visible Studio notification text, and reports matching finish events
-        back to this app.
+        YouTube Studio, reads visible Studio notification text at the top of each hour or when you
+        click manual scan, and reports matching finish events back to this app.
+      </p>
+      <p className="setup-warning">
+        Heartbeat only means the extension is alive. Detection only works when this page shows
+        <strong> Watching Studio </strong> for at least one open Studio tab.
       </p>
 
       <div className="install-actions">
@@ -447,12 +461,28 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, onGenerateTo
           </p>
         </div>
         <div className="install-card">
-          <h3>4. Confirm coverage</h3>
+          <h3>4. Open watcher tabs</h3>
           <ol>
-            <li>Open YouTube Studio in the same Chrome profile.</li>
+            <li>In Studio Connector settings below, add watcher tabs.</li>
+            <li>Use one line per channel: <code>Jotform | UC...</code></li>
+            <li>Open the extension popup.</li>
+            <li>Click <strong>Open watcher tabs</strong>.</li>
+          </ol>
+          <p>The extension checks open Studio tabs hourly. Heartbeat alone is not detection.</p>
+        </div>
+        <div className="install-card">
+          <h3>Watcher tab examples</h3>
+          <p>Paste channel IDs or direct Studio URLs into the Watcher tabs field below.</p>
+          <code>Jotform | UCxxxxxxxxxxxxxxxxxxxxxx</code>
+          <code>AI Agents Podcast | https://studio.youtube.com/channel/UC...</code>
+        </div>
+        <div className="install-card">
+          <h3>5. Confirm coverage</h3>
+          <ol>
             <li>Open the extension popup.</li>
             <li>Click <strong>Send heartbeat</strong>.</li>
-            <li>Refresh this Settings page and check Connector Coverage.</li>
+            <li>Refresh this Settings page.</li>
+            <li>Look for <strong>Watching Studio</strong>, not just heartbeat.</li>
           </ol>
         </div>
       </div>
