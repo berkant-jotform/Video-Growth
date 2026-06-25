@@ -9,8 +9,15 @@
     <main class="panel compact">
       <h1>Studio Connector</h1>
       <p id="summary">Checking status...</p>
+      <section class="watcher-menu">
+        <div class="menu-title">
+          <strong>Watcher Studio channels</strong>
+          <span id="watcherCount">Loading...</span>
+        </div>
+        <div id="watcherButtons" class="watcher-buttons"></div>
+      </section>
       <div class="actions stacked">
-        <button id="openWatchers">Open watcher tabs</button>
+        <button id="openWatchers">Open all watcher tabs</button>
         <button id="scan">Scan Studio tab</button>
         <button id="heartbeat">Send heartbeat</button>
         <button id="options">Settings</button>

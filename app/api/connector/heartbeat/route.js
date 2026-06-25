@@ -17,6 +17,10 @@ export async function POST(request) {
       status: body.status || "online",
       payload: {
         location: body.location || "",
+        openStudioTabs: Number(body.openStudioTabs || 0),
+        studioTabUrls: Array.isArray(body.studioTabUrls)
+          ? body.studioTabUrls.map(String).filter(Boolean).slice(0, 20)
+          : [],
         userAgent: body.userAgent || "",
         observedAt: body.observedAt || new Date().toISOString()
       }

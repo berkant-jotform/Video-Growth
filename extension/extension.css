@@ -86,6 +86,37 @@ textarea {
   display: grid;
 }
 
+.watcher-menu {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.menu-title {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.menu-title strong {
+  font-size: 13px;
+}
+
+.menu-title span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.watcher-buttons {
+  display: grid;
+  gap: 8px;
+}
+
 button {
   align-items: center;
   background: var(--accent);
@@ -101,10 +132,52 @@ button {
   padding: 0 12px;
 }
 
-button + button {
+button + button,
+.watcher-button {
   background: var(--surface);
   border-color: var(--border);
   color: var(--text);
+}
+
+.watcher-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-content: stretch;
+  min-height: 42px;
+  text-align: left;
+}
+
+.watcher-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watcher-button em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.watcher-button.open {
+  background: color-mix(in srgb, #16794a 10%, var(--surface));
+  border-color: color-mix(in srgb, #16794a 40%, var(--border));
+}
+
+.watcher-button.open em {
+  color: #16794a;
+}
+
+.mini-warning {
+  background: #fff7e8;
+  border: 1px solid #ead5ad;
+  border-radius: 8px;
+  color: #7a510f;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 9px;
 }
 
 .status {

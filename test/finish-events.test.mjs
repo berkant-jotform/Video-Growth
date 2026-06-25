@@ -43,6 +43,10 @@ test("filters Studio edit-page noise from finish notifications", () => {
     isLikelyFinishNotification("Not enough impressions to declare a winner."),
     true
   );
+  assert.equal(
+    isLikelyFinishNotification("Introducing Jotform AI App Builder A/B Test running"),
+    false
+  );
 });
 
 test("parses watcher tabs from channel IDs and Studio URLs", () => {

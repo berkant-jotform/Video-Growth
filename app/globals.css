@@ -1314,6 +1314,76 @@ select {
   grid-column: 1 / -1;
 }
 
+.setup-overview {
+  display: grid;
+  gap: 18px;
+}
+
+.setup-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.setup-step {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 16px;
+}
+
+.setup-step > strong {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 13px;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.setup-step h3 {
+  font-size: 15px;
+  line-height: 1.25;
+  margin: 0 0 5px;
+}
+
+.setup-step p {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 670;
+  margin: 0;
+}
+
+.setup-step > span {
+  align-self: end;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 4px 9px;
+}
+
+.setup-step.ok > span {
+  background: color-mix(in srgb, var(--green) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--green) 35%, var(--border));
+  color: var(--green);
+}
+
+.setup-step.warn > span {
+  background: color-mix(in srgb, var(--amber) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--amber) 35%, var(--border));
+  color: var(--amber);
+}
+
 .install-panel {
   display: grid;
   gap: 18px;
@@ -1423,6 +1493,51 @@ select {
   padding: 18px;
 }
 
+.settings-fieldset.optional-settings {
+  background: var(--surface-2);
+  padding: 0;
+}
+
+.settings-fieldset.optional-settings summary,
+.advanced-settings summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 18px;
+}
+
+.settings-fieldset.optional-settings summary span,
+.advanced-settings summary span {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-fieldset.optional-settings summary strong,
+.advanced-settings summary strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.settings-fieldset.optional-settings summary em,
+.advanced-settings summary em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 720;
+}
+
+.optional-settings-grid {
+  display: grid;
+  gap: 16px;
+  padding: 0 18px 18px;
+}
+
+.settings-fieldset.nested {
+  background: var(--surface);
+}
+
 .settings-fieldset:disabled {
   opacity: 0.62;
 }
@@ -1483,6 +1598,81 @@ select {
   margin: -4px 0 0;
 }
 
+.watcher-manager-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.watcher-manager {
+  display: grid;
+  gap: 10px;
+}
+
+.watcher-header,
+.watcher-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.55fr) minmax(260px, 1fr) 94px 80px;
+  gap: 10px;
+  align-items: center;
+}
+
+.watcher-header {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.watcher-row {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.watcher-row input {
+  background: var(--surface);
+}
+
+.watcher-status {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  justify-self: start;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+
+.watcher-status.open {
+  background: color-mix(in srgb, var(--green) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--green) 35%, var(--border));
+  color: var(--green);
+}
+
+.watcher-status.closed {
+  background: color-mix(in srgb, var(--amber) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--amber) 24%, var(--border));
+  color: var(--amber);
+}
+
+.mini-remove-button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 820;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.add-watcher-button,
+.save-inline-button {
+  justify-self: start;
+}
+
 textarea {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1500,6 +1690,21 @@ textarea {
   display: grid;
   gap: 14px;
   margin-top: 22px;
+}
+
+.readiness-optional {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 14px;
+}
+
+.readiness-optional summary {
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 840;
+  padding: 13px 0;
 }
 
 .readiness-row,
@@ -1669,7 +1874,19 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .setup-steps {
+    grid-template-columns: 1fr;
+  }
+
   .install-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .watcher-header {
+    display: none;
+  }
+
+  .watcher-row {
     grid-template-columns: 1fr;
   }
 

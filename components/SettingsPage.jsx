@@ -43,6 +43,7 @@ const SETTING_GROUPS = [
   {
     title: "Google Read-Only Access",
     note: "Optional. Preferred private path: service account JSON. If Google Cloud access is blocked, leave this blank and share each cloned sheet as Anyone with the link: Viewer so the XLSX export fallback can read it.",
+    advanced: true,
     fields: [
       ["GOOGLE_SERVICE_ACCOUNT_JSON", "Service account JSON", "textarea", true],
       ["GOOGLE_OAUTH_ACCESS_TOKEN", "OAuth fallback token", "input", true]
@@ -61,18 +62,19 @@ const SETTING_GROUPS = [
     note: "Chrome extension settings. Use the same connector token in the extension. Watcher tabs can use direct Studio URLs or channel IDs.",
     fields: [
       ["CONNECTOR_TOKEN", "Connector token", "input", true],
-      ["CONNECTOR_CHANNELS", "Monitored channels", "textarea"],
-      ["CONNECTOR_WATCHER_TABS", "Watcher tabs", "textarea"]
+      ["CONNECTOR_CHANNELS", "Monitored channels", "textarea"]
     ]
   },
   {
     title: "Slack Digest",
     note: "Optional. Paste an incoming Slack webhook URL.",
+    advanced: true,
     fields: [["SLACK_WEBHOOK_URL", "Slack webhook URL", "input", true]]
   },
   {
     title: "Email Digest",
     note: "Optional SMTP sender settings for email digests.",
+    advanced: true,
     fields: [
       ["SMTP_HOST", "SMTP host", "input"],
       ["SMTP_PORT", "SMTP port", "input"],
@@ -165,6 +167,12 @@ DATABASE_URL=
 # Optional shared password gate:
 APP_SHARED_PASSWORD_HASH=`;
 
+const DEFAULT_WATCHER_ROWS = [
+  { label: "Jotform", target: "" },
+  { label: "AI Agents Podcast", target: "" },
+  { label: "AI Agents", target: "" }
+];
+
 export default function SettingsPage({ session }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({});
@@ -187,7 +195,7 @@ export default function SettingsPage({ session }) {
   }
 
   async function save(event) {
-    event.preventDefault();
+    event?.preventDefault?.();
     setMessage("");
     setError("");
     const response = await fetch("/api/config", {
@@ -209,45 +217,34 @@ export default function SettingsPage({ session }) {
   const connectorToken = form.CONNECTOR_TOKEN || "";
   const connectorChannels = form.CONNECTOR_CHANNELS || "Jotform, AI Agents Podcast, AI Agents";
   const connectorWatcherTabs = form.CONNECTOR_WATCHER_TABS || "";
+  const connectorStatus = config?.connectorStatus || [];
 
   return (
     <AppShell session={session} active="settings">
       <main className="workspace settings-grid">
-        <section className="settings-panel full-width">
-          <p className="eyebrow">Bootstrap</p>
-          <h2>Cloud bootstrap and optional access gate</h2>
-          <p className="muted">
-            Database and session secret must exist before the app can store settings for the team.
-            The shared password is optional; leave it empty for initials-only login.
-          </p>
-          <div className="readiness-list">
-            {BOOTSTRAP_ITEMS.map((item) => (
-              <SetupRow
-                key={item.key}
-                item={item}
-                ready={Boolean(config?.configured?.[item.key])}
-                location="Vercel env / .env.local"
-              />
-            ))}
-          </div>
-          <pre className="env-template">{ENV_TEMPLATE}</pre>
-          <div className="setup-actions">
-            <button
-              className="secondary-button"
-              onClick={() => navigator.clipboard?.writeText(ENV_TEMPLATE)}
-            >
-              <Clipboard size={16} />
-              Copy Bootstrap Env Names
-            </button>
-            <a
-              className="secondary-button"
-              href="https://vercel.com/docs/environment-variables"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink size={16} />
-              Vercel Env Docs
-            </a>
+        <section className="settings-panel full-width setup-overview">
+          <p className="eyebrow">Connector Setup</p>
+          <h2>Make the detector actually watch Studio</h2>
+          <div className="setup-steps">
+            <SetupStep
+              number="1"
+              title="Install extension"
+              text="Load the Chrome extension in the browser profile that is logged into YouTube Studio."
+              state={config?.configured?.connectorToken ? "Ready for extension" : "Needs token"}
+            />
+            <SetupStep
+              number="2"
+              title="Open watcher tabs"
+              text="Use channel watcher buttons so Studio pages stay open for the channels you care about."
+              state={watchingStudioCount(connectorStatus) > 0 ? `${watchingStudioCount(connectorStatus)} Studio tab${watchingStudioCount(connectorStatus) === 1 ? "" : "s"}` : "No open Studio tabs"}
+              tone={watchingStudioCount(connectorStatus) > 0 ? "ok" : "warn"}
+            />
+            <SetupStep
+              number="3"
+              title="Wait or scan"
+              text="Passive checks run near the start of each hour. Manual scan is only for testing right now."
+              state="Hourly"
+            />
           </div>
         </section>
 
@@ -260,9 +257,27 @@ export default function SettingsPage({ session }) {
           }
         />
 
+        <section className="settings-panel full-width watcher-manager-panel">
+          <p className="eyebrow">Watcher Channels</p>
+          <h2>Channels the extension can open</h2>
+          <p className="muted">
+            Add the channels you want watched. Use a YouTube channel ID starting with <code>UC</code> or a direct
+            Studio channel URL. Save, then use the extension popup to open one channel or all channels.
+          </p>
+          <WatcherTabManager
+            value={connectorWatcherTabs}
+            connectorStatus={connectorStatus}
+            onChange={(value) => setForm((current) => ({ ...current, CONNECTOR_WATCHER_TABS: value }))}
+          />
+          <button className="primary-button save-inline-button" type="button" disabled={!databaseReady} onClick={save}>
+            <Save size={17} />
+            Save Watcher Channels
+          </button>
+        </section>
+
         <section className="settings-panel config-panel">
           <p className="eyebrow">Configuration</p>
-          <h2>App-managed settings</h2>
+          <h2>Core app settings</h2>
           {databaseReady ? (
             <p className="muted">
               These values are saved in the app database. Existing env vars remain a fallback.
@@ -276,7 +291,7 @@ export default function SettingsPage({ session }) {
             </p>
           )}
           <form onSubmit={save} className="form-stack">
-            {SETTING_GROUPS.map((group) => (
+            {SETTING_GROUPS.filter((group) => !group.advanced).map((group) => (
               <fieldset className="settings-fieldset" disabled={!databaseReady} key={group.title}>
                 <legend>{group.title}</legend>
                 <p>{group.note}</p>
@@ -294,6 +309,34 @@ export default function SettingsPage({ session }) {
                 ))}
               </fieldset>
             ))}
+            <details className="settings-fieldset optional-settings">
+              <summary>
+                <span>
+                  <strong>Optional integrations</strong>
+                  <em>Google private access, Blob, Slack, and email</em>
+                </span>
+              </summary>
+              <div className="optional-settings-grid">
+                {SETTING_GROUPS.filter((group) => group.advanced).map((group) => (
+                  <fieldset className="settings-fieldset nested" disabled={!databaseReady} key={group.title}>
+                    <legend>{group.title}</legend>
+                    <p>{group.note}</p>
+                    {group.fields.map(([key, label, type, secret]) => (
+                      <SettingField
+                        key={key}
+                        label={label}
+                        name={key}
+                        type={type}
+                        secret={Boolean(secret)}
+                        source={config?.sources?.[key]}
+                        value={form[key] || ""}
+                        onChange={(value) => setForm((current) => ({ ...current, [key]: value }))}
+                      />
+                    ))}
+                  </fieldset>
+                ))}
+              </div>
+            </details>
             {error ? <p className="form-error">{error}</p> : null}
             {message ? <p className="form-success">{message}</p> : null}
             <button className="primary-button" disabled={!databaseReady}>
@@ -304,10 +347,10 @@ export default function SettingsPage({ session }) {
         </section>
 
         <section className="settings-panel readiness-panel">
-          <p className="eyebrow">Readiness</p>
+          <p className="eyebrow">Health</p>
           <h2>What still needs fixing</h2>
           <div className="readiness-list">
-            {READINESS_ITEMS.map((item) => (
+            {READINESS_ITEMS.filter((item) => item.required).map((item) => (
               <SetupRow
                 key={item.key}
                 item={item}
@@ -315,6 +358,17 @@ export default function SettingsPage({ session }) {
                 location="Settings form"
               />
             ))}
+            <details className="readiness-optional">
+              <summary>Optional checks</summary>
+              {READINESS_ITEMS.filter((item) => !item.required).map((item) => (
+                <SetupRow
+                  key={item.key}
+                  item={item}
+                  ready={Boolean(config?.configured?.[item.key])}
+                  location="Settings form"
+                />
+              ))}
+            </details>
           </div>
         </section>
 
@@ -366,8 +420,62 @@ export default function SettingsPage({ session }) {
             )}
           </div>
         </section>
+
+        <details className="settings-panel full-width advanced-settings">
+          <summary>
+            <span>
+              <strong>Advanced cloud setup</strong>
+              <em>Database, Vercel env, and password gate</em>
+            </span>
+          </summary>
+          <p className="muted">
+            These are infrastructure settings. Most reviewers do not need this section after the app is online.
+          </p>
+          <div className="readiness-list">
+            {BOOTSTRAP_ITEMS.map((item) => (
+              <SetupRow
+                key={item.key}
+                item={item}
+                ready={Boolean(config?.configured?.[item.key])}
+                location="Vercel env / .env.local"
+              />
+            ))}
+          </div>
+          <pre className="env-template">{ENV_TEMPLATE}</pre>
+          <div className="setup-actions">
+            <button
+              className="secondary-button"
+              onClick={() => navigator.clipboard?.writeText(ENV_TEMPLATE)}
+            >
+              <Clipboard size={16} />
+              Copy Bootstrap Env Names
+            </button>
+            <a
+              className="secondary-button"
+              href="https://vercel.com/docs/environment-variables"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ExternalLink size={16} />
+              Vercel Env Docs
+            </a>
+          </div>
+        </details>
       </main>
     </AppShell>
+  );
+}
+
+function SetupStep({ number, title, text, state, tone = "neutral" }) {
+  return (
+    <article className={`setup-step ${tone}`}>
+      <strong>{number}</strong>
+      <div>
+        <h3>{title}</h3>
+        <p>{text}</p>
+      </div>
+      <span>{state}</span>
+    </article>
   );
 }
 
@@ -490,6 +598,59 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
   );
 }
 
+function WatcherTabManager({ value, connectorStatus = [], onChange }) {
+  const rows = parseWatcherRows(value);
+  const openUrls = connectorStatus
+    .flatMap((item) => item?.payload?.studioTabUrls || [])
+    .filter(Boolean);
+
+  function updateRow(index, patch) {
+    const next = rows.map((row, idx) => (idx === index ? { ...row, ...patch } : row));
+    onChange(serializeWatcherRows(next));
+  }
+
+  function addRow() {
+    onChange(serializeWatcherRows([...rows, { label: "", target: "" }]));
+  }
+
+  function removeRow(index) {
+    onChange(serializeWatcherRows(rows.filter((_, idx) => idx !== index)));
+  }
+
+  return (
+    <div className="watcher-manager">
+      <div className="watcher-header">
+        <span>Channel</span>
+        <span>Studio URL or channel ID</span>
+        <span>Status</span>
+      </div>
+      {rows.map((row, index) => (
+        <div className="watcher-row" key={`${index}-${row.label}`}>
+          <input
+            value={row.label}
+            placeholder="Jotform"
+            onChange={(event) => updateRow(index, { label: event.target.value })}
+          />
+          <input
+            value={row.target}
+            placeholder="UC... or https://studio.youtube.com/channel/UC..."
+            onChange={(event) => updateRow(index, { target: event.target.value })}
+          />
+          <span className={`watcher-status ${isWatcherOpen(row, openUrls) ? "open" : "closed"}`}>
+            {isWatcherOpen(row, openUrls) ? "Open" : "Not open"}
+          </span>
+          <button type="button" className="mini-remove-button" onClick={() => removeRow(index)}>
+            Remove
+          </button>
+        </div>
+      ))}
+      <button type="button" className="secondary-button add-watcher-button" onClick={addRow}>
+        Add Channel
+      </button>
+    </div>
+  );
+}
+
 function SettingField({ label, name, type, secret, source, value, onChange }) {
   const markedForRemoval = value === DELETE_SECRET_VALUE;
   const maskedSecret = secret && value === "********";
@@ -570,6 +731,52 @@ function connectorOpenStudioTabs(item) {
 function connectorCoverageState(item) {
   if (!item.active) return "Stale";
   return connectorOpenStudioTabs(item) > 0 ? "Active" : "Blind";
+}
+
+function watchingStudioCount(statuses) {
+  return statuses.reduce((sum, item) => sum + connectorOpenStudioTabs(item), 0);
+}
+
+function parseWatcherRows(value) {
+  const lines = String(value || "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rows = lines.map((line) => {
+    const separator = line.includes("|") ? "|" : line.includes("=") ? "=" : "";
+    if (separator) {
+      const [label, ...rest] = line.split(separator);
+      return { label: label.trim(), target: rest.join(separator).trim() };
+    }
+    return { label: "", target: line };
+  });
+  return rows.length ? rows : DEFAULT_WATCHER_ROWS;
+}
+
+function serializeWatcherRows(rows) {
+  return rows
+    .map((row) => {
+      const label = String(row.label || "").trim();
+      const target = String(row.target || "").trim();
+      if (!label && !target) return "";
+      return label ? `${label} | ${target}` : target;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function isWatcherOpen(row, openUrls) {
+  const target = String(row?.target || "").trim();
+  const channelId =
+    target.match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] ||
+    String(row?.label || "").match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] ||
+    "";
+  if (channelId) return openUrls.some((url) => String(url).includes(channelId));
+  if (/^https:\/\/studio\.youtube\.com\//i.test(target)) {
+    const normalized = target.replace(/\/+$/, "");
+    return openUrls.some((url) => String(url).replace(/\/+$/, "").startsWith(normalized));
+  }
+  return false;
 }
 
 function generateConnectorToken() {

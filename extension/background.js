@@ -44,7 +44,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === "open-watcher-tabs") {
-    openWatcherTabs()
+    openWatcherTabs(message.targets || [])
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "get-connector-config") {
+    getSettings()
+      .then((settings) => {
+        requireConfigured(settings);
+        return fetchConnectorConfig(settings);
+      })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -102,11 +112,11 @@ async function postEvents(events, tabUrl) {
   return payload;
 }
 
-async function openWatcherTabs() {
+async function openWatcherTabs(requestedTargets = []) {
   const settings = await getSettings();
   requireConfigured(settings);
   const config = await fetchConnectorConfig(settings);
-  const watcherTabs = config.watcherTabs || [];
+  const watcherTabs = requestedTargets.length ? requestedTargets : config.watcherTabs || [];
   const targets = watcherTabs.length
     ? watcherTabs
     : [{ label: "YouTube Studio", url: "https://studio.youtube.com" }];
@@ -116,11 +126,14 @@ async function openWatcherTabs() {
     const tab = await chrome.tabs.create({ url: target.url, active: opened.length === 0 });
     opened.push({ label: target.label || target.url, url: target.url, tabId: tab.id });
   }
+  const heartbeat = await sendHeartbeat().catch((error) => ({ ok: false, error: error.message }));
+  await delay(2500);
+  const scan = await requestStudioScrape().catch((error) => ({ ok: false, error: error.message }));
   await chrome.storage.local.set({
     lastWatcherOpenAt: new Date().toISOString(),
     lastWatcherOpenCount: opened.length
   });
-  return { ok: true, opened };
+  return { ok: true, opened, heartbeat, scan };
 }
 
 async function fetchConnectorConfig(settings) {
@@ -197,4 +210,8 @@ function minutesUntilNextHour() {
   next.setMinutes(0, 0, 0);
   next.setHours(now.getHours() + 1);
   return Math.max(1, Math.ceil((next - now) / 60000));
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

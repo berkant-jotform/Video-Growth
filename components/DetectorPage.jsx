@@ -381,13 +381,13 @@ function UnmatchedEvents({ events }) {
             <div>
               <strong>{event.channel || event.videoId || "Unknown source"}</strong>
               <span className="event-source-line">
-                {eventSourceLabel(event.source)} · No matching active sheet row
+                Source: {eventSourceLabel(event.source)} · Not matched to an active sheet row
                 {event.videoId ? ` · Video ${event.videoId}` : ""}
               </span>
               <p>{event.rawText || "Studio notification captured without text."}</p>
               {event.notificationUrl ? (
                 <a href={event.notificationUrl} target="_blank" rel="noreferrer">
-                  Open source URL
+                  Open Studio page
                 </a>
               ) : null}
             </div>
