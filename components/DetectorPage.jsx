@@ -67,6 +67,7 @@ export default function DetectorPage({ session }) {
   const [connectorStatus, setConnectorStatus] = useState([]);
   const [summary, setSummary] = useState(null);
   const [lastScan, setLastScan] = useState(null);
+  const [scanProgress, setScanProgress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
@@ -87,6 +88,14 @@ export default function DetectorPage({ session }) {
     refresh();
   }, []);
 
+  useEffect(() => {
+    if (!scanning) return undefined;
+    const interval = window.setInterval(() => {
+      pollScanStatus();
+    }, 1200);
+    return () => window.clearInterval(interval);
+  }, [scanning]);
+
   async function refresh() {
     setLoading(true);
     setError("");
@@ -103,6 +112,7 @@ export default function DetectorPage({ session }) {
       setConnectorStatus(queuePayload.connectorStatus || []);
       setSummary(queuePayload.summary || null);
       setLastScan(statusPayload.lastScan || null);
+      setScanProgress(statusPayload.lastScan?.progress || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -110,9 +120,28 @@ export default function DetectorPage({ session }) {
     }
   }
 
+  async function pollScanStatus() {
+    try {
+      const response = await fetch("/api/status");
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) return;
+      setLastScan(payload.lastScan || null);
+      setScanProgress(payload.lastScan?.progress || null);
+      setConnectorStatus(payload.connectorStatus || []);
+    } catch {
+      // Progress polling is best-effort; the main scan request still reports failures.
+    }
+  }
+
   async function scanNow() {
     setScanning(true);
     setError("");
+    setScanProgress({
+      stage: "starting",
+      label: "Starting scan",
+      detail: "Preparing sheet and YouTube checks.",
+      percent: 2
+    });
     try {
       const response = await fetch("/api/scan", { method: "POST" });
       const payload = await response.json();
@@ -199,6 +228,8 @@ export default function DetectorPage({ session }) {
             {scanning ? "Scanning" : "Scan Now"}
           </button>
         </section>
+
+        <ScanProgress scan={lastScan} progress={scanProgress} scanning={scanning} />
 
         <Summary summary={summary} />
 
@@ -364,6 +395,54 @@ function Summary({ summary }) {
           <strong>{value}</strong>
         </div>
       ))}
+    </section>
+  );
+}
+
+function ScanProgress({ scan, progress, scanning }) {
+  if (!scanning && scan?.status !== "running") return null;
+  const percent = clampPercent(progress?.percent ?? 0);
+  const counts = progress?.counts || {};
+  const steps = progress?.steps || [];
+  const countItems = [
+    ["Title rows", counts.titleRows],
+    ["Thumbnail rows", counts.thumbnailRows],
+    ["Previews", counts.thumbnailPreviews],
+    ["YouTube rows", counts.enrichedRows],
+    ["Signals", counts.appliedSignals]
+  ].filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0);
+
+  return (
+    <section className="scan-progress-panel">
+      <div className="scan-progress-header">
+        <div>
+          <span className="eyebrow">Scan progress</span>
+          <h3>{progress?.label || "Scanning"}</h3>
+          <p>{progress?.detail || "Working through sheets, thumbnails, YouTube data, and finish signals."}</p>
+        </div>
+        <strong>{percent}%</strong>
+      </div>
+      <div className="scan-progress-track" aria-label="Scan progress">
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      {steps.length ? (
+        <div className="scan-step-list">
+          {steps.map((step) => (
+            <span className={`scan-step ${step.state}`} key={step.stage}>
+              {step.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {countItems.length ? (
+        <div className="scan-count-list">
+          {countItems.map(([label, value]) => (
+            <span key={label}>
+              {label}: <strong>{value}</strong>
+            </span>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -984,6 +1063,10 @@ function formatDateTime(value) {
     dateStyle: "medium",
     timeStyle: "short"
   });
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 }
 
 function copyText(value) {

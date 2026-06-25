@@ -289,6 +289,99 @@ a {
   font-size: 28px;
 }
 
+.scan-progress-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+  margin: -6px 0 24px;
+  padding: 18px;
+}
+
+.scan-progress-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.scan-progress-header h3 {
+  font-size: 18px;
+  line-height: 1.25;
+  margin: 4px 0 4px;
+}
+
+.scan-progress-header p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.scan-progress-header strong {
+  color: var(--text);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.scan-progress-track {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.scan-progress-track span {
+  background: linear-gradient(90deg, var(--accent), var(--blue));
+  display: block;
+  height: 100%;
+  transition: width 0.35s ease;
+}
+
+.scan-step-list,
+.scan-count-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scan-step,
+.scan-count-list span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 820;
+  padding: 5px 9px;
+}
+
+.scan-step.done {
+  background: color-mix(in srgb, var(--green) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+  color: var(--green);
+}
+
+.scan-step.active {
+  background: color-mix(in srgb, var(--blue) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--border));
+  color: var(--blue);
+}
+
+.scan-step.failed {
+  background: color-mix(in srgb, var(--red) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--red) 35%, var(--border));
+  color: var(--red);
+}
+
+.scan-count-list {
+  color: var(--muted);
+}
+
+.scan-count-list strong {
+  color: var(--text);
+}
+
 .filters {
   position: sticky;
   top: 0;
