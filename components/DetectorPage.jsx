@@ -380,7 +380,16 @@ function UnmatchedEvents({ events }) {
           <article className="unmatched-event" key={event.eventId}>
             <div>
               <strong>{event.channel || event.videoId || "Unknown source"}</strong>
+              <span className="event-source-line">
+                {eventSourceLabel(event.source)} · No matching active sheet row
+                {event.videoId ? ` · Video ${event.videoId}` : ""}
+              </span>
               <p>{event.rawText || "Studio notification captured without text."}</p>
+              {event.notificationUrl ? (
+                <a href={event.notificationUrl} target="_blank" rel="noreferrer">
+                  Open source URL
+                </a>
+              ) : null}
             </div>
             <span>{event.observedAt ? formatDateTime(event.observedAt) : "No time"}</span>
           </article>
@@ -388,6 +397,13 @@ function UnmatchedEvents({ events }) {
       </div>
     </section>
   );
+}
+
+function eventSourceLabel(source) {
+  if (source === "studio_bell") return "Chrome extension Studio scrape";
+  if (source === "metadata") return "YouTube metadata scan";
+  if (source === "sheet") return "Sheet signal";
+  return titleCase(source || "unknown source");
 }
 
 function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving }) {

@@ -1,7 +1,15 @@
-const FINISH_RE =
-  /(test|compare|a\/b|thumbnail|title|experiment|winner|finished|complete|completed|ended|result|not enough impressions|no clear)/i;
 const MIN_TEXT_LENGTH = 18;
+const MAX_TEXT_LENGTH = 700;
 const SCAN_DEBOUNCE_MS = 8000;
+const NOTIFICATION_SELECTORS = [
+  "ytcp-notification",
+  "tp-yt-paper-toast",
+  "ytd-notification-renderer",
+  "ytcp-notifications-dialog",
+  "ytcp-notification-menu",
+  "[role='alert']",
+  "[aria-live]"
+];
 const seen = new Set();
 let scanTimer = null;
 
@@ -28,20 +36,7 @@ function scheduleScan() {
 
 function collectNotificationEvents({ includeSeen = false } = {}) {
   const channel = detectChannelName();
-  const candidates = [
-    ...document.querySelectorAll(
-      [
-        "ytcp-notification",
-        "tp-yt-paper-toast",
-        "ytd-notification-renderer",
-        "[role='alert']",
-        "[aria-live]",
-        "a[href*='/video/']",
-        "div",
-        "span"
-      ].join(",")
-    )
-  ];
+  const candidates = [...document.querySelectorAll(NOTIFICATION_SELECTORS.join(","))];
 
   const events = [];
   for (const element of candidates) {
@@ -82,8 +77,18 @@ function compactEvents(events) {
 
 function isRelevant(text) {
   if (!text || text.length < MIN_TEXT_LENGTH) return false;
-  if (!FINISH_RE.test(text)) return false;
-  return /(test|compare|a\/b|thumbnail|title|winner|finished|complete|completed|ended|result|not enough impressions|no clear)/i.test(text);
+  if (text.length > MAX_TEXT_LENGTH) return false;
+  if (
+    /set a thumbnail that stands out|made for kids|coppa|age restriction|personalized ads and notifications|description i tested|running… get suggestions/i.test(
+      text
+    )
+  ) {
+    return false;
+  }
+  if (/not enough (?:impressions|data|traffic)|no clear|inconclusive/i.test(text)) return true;
+  const hasTestContext = /\b(test and compare|test & compare|a\/b|ab test|experiment|thumbnail test|title test)\b/i.test(text);
+  const hasFinishContext = /\b(finished|complete|completed|ended|result|results|winner|won|selected|ready)\b/i.test(text);
+  return hasTestContext && hasFinishContext;
 }
 
 function collapseText(value) {

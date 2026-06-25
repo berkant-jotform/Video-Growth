@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   detectAppliedChange,
   detectNotificationOutcome,
+  isLikelyFinishNotification,
   matchFinishEventToRun,
   parseStudioNotification
 } from "../lib/finish-events.mjs";
@@ -22,6 +23,25 @@ test("parses Studio notification video IDs and no-clear outcome", () => {
 test("detects winner option from notification text", () => {
   assert.equal(detectNotificationOutcome("Thumbnail test completed. Option B won."), "winner_b");
   assert.equal(detectNotificationOutcome("Title test finished. Winner: C"), "winner_c");
+});
+
+test("filters Studio edit-page noise from finish notifications", () => {
+  assert.equal(
+    isLikelyFinishNotification("Set a thumbnail that stands out and draws viewers' attention. Learn more"),
+    false
+  );
+  assert.equal(
+    isLikelyFinishNotification("Features like personalized ads and notifications won’t be available on videos made for kids."),
+    false
+  );
+  assert.equal(
+    isLikelyFinishNotification("Test & Compare results are ready for your thumbnail test."),
+    true
+  );
+  assert.equal(
+    isLikelyFinishNotification("Not enough impressions to declare a winner."),
+    true
+  );
 });
 
 test("matches finish events by video ID first", () => {

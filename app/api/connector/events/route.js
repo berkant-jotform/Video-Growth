@@ -25,6 +25,7 @@ export async function POST(request) {
       received: events.length,
       matched: results.filter((item) => item.processingStatus === "matched").length,
       unmatched: results.filter((item) => item.processingStatus === "unmatched").length,
+      ignored: results.filter((item) => item.processingStatus === "ignored").length,
       results
     });
   } catch (error) {
