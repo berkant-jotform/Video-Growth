@@ -47,6 +47,9 @@ test("filters Studio edit-page noise from finish notifications", () => {
     isLikelyFinishNotification("Introducing Jotform AI App Builder A/B Test running"),
     false
   );
+  assert.equal(isLikelyFinishNotification("A/B Test completed"), false);
+  assert.equal(isLikelyFinishNotification("Thumbnail test ready"), false);
+  assert.equal(isLikelyFinishNotification("Thumbnail test ready Set test"), false);
 });
 
 test("parses watcher tabs from channel IDs and Studio URLs", () => {

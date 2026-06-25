@@ -69,6 +69,9 @@ function isRelevant(text) {
   ) {
     return false;
   }
+  if (/^(?:a\/b|ab|thumbnail|title)?\s*test\s+(?:completed|ready)(?:\s+set\s+test)?$/i.test(text)) {
+    return false;
+  }
   if (/\brunning\b/i.test(text) && !/\b(finished|complete|completed|ended|result|results|winner|won|selected|ready|not enough|no clear)\b/i.test(text)) {
     return false;
   }
