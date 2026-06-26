@@ -36,8 +36,7 @@ const SETTING_GROUPS = [
     note: "Paste spreadsheet URLs or IDs. These are read-only sources.",
     fields: [
       ["TITLE_SPREADSHEET_ID", "Title spreadsheet ID or URL", "input"],
-      ["THUMBNAIL_SPREADSHEET_ID", "Thumbnail spreadsheet ID or URL", "input"],
-      ["DAILY_DIGEST_TIME_LOCAL", "Digest time", "input"]
+      ["THUMBNAIL_SPREADSHEET_ID", "Thumbnail spreadsheet ID or URL", "input"]
     ]
   },
   {
@@ -63,25 +62,6 @@ const SETTING_GROUPS = [
     fields: [
       ["CONNECTOR_TOKEN", "Connector token", "input", true],
       ["CONNECTOR_CHANNELS", "Monitored channels", "textarea"]
-    ]
-  },
-  {
-    title: "Slack Digest",
-    note: "Optional. Paste an incoming Slack webhook URL.",
-    advanced: true,
-    fields: [["SLACK_WEBHOOK_URL", "Slack webhook URL", "input", true]]
-  },
-  {
-    title: "Email Digest",
-    note: "Optional SMTP sender settings for email digests.",
-    advanced: true,
-    fields: [
-      ["SMTP_HOST", "SMTP host", "input"],
-      ["SMTP_PORT", "SMTP port", "input"],
-      ["SMTP_USERNAME", "SMTP username", "input"],
-      ["SMTP_PASSWORD", "SMTP password", "input", true],
-      ["SMTP_FROM", "From email", "input"],
-      ["DIGEST_EMAIL_RECIPIENTS", "Digest recipients", "input"]
     ]
   }
 ];
@@ -140,24 +120,6 @@ const READINESS_ITEMS = [
     label: "Thumbnail Image Storage",
     required: false,
     fix: "Paste BLOB_READ_WRITE_TOKEN below if hosted thumbnail previews are needed."
-  },
-  {
-    key: "slack",
-    label: "Slack Digest",
-    required: false,
-    fix: "Paste Slack webhook URL below."
-  },
-  {
-    key: "smtp",
-    label: "SMTP Email",
-    required: false,
-    fix: "Fill SMTP host, username, and password below."
-  },
-  {
-    key: "digestEmail",
-    label: "Digest Recipients",
-    required: false,
-    fix: "Add comma-separated recipient emails below."
   }
 ];
 
@@ -313,7 +275,7 @@ export default function SettingsPage({ session }) {
               <summary>
                 <span>
                   <strong>Optional integrations</strong>
-                  <em>Google private access, Blob, Slack, and email</em>
+                  <em>Google private access and Blob storage</em>
                 </span>
               </summary>
               <div className="optional-settings-grid">

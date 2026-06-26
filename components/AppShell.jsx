@@ -12,6 +12,7 @@ export default function AppShell({ session, active, children }) {
     { href: "/", label: "Detector", key: "detector", icon: Youtube },
     { href: "/history", label: "History", key: "history", icon: History },
     { href: "/uploads", label: "Uploads", key: "uploads", icon: Upload },
+    { href: "/notifications", label: "Notifications", key: "notifications", icon: Bell },
     { href: "/settings", label: "Settings", key: "settings", icon: Settings }
   ];
   const ThemeIcon = theme === "dark" ? Sun : Moon;

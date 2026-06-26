@@ -1863,6 +1863,150 @@ select {
   justify-self: start;
 }
 
+.notifications-workspace {
+  display: grid;
+  gap: 24px;
+}
+
+.notification-hero {
+  align-items: flex-end;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.notification-hero h2 {
+  margin-bottom: 6px;
+}
+
+.notification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.notifications-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.notification-schedule,
+.notification-method-card,
+.notification-save-panel {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.notification-method-card {
+  min-height: 100%;
+}
+
+.notification-method-title {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.notification-method-title h2 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.notification-method-icon {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: inline-flex;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.notification-method-icon.slack {
+  background: color-mix(in srgb, #4a154b 12%, var(--surface));
+  border-color: color-mix(in srgb, #4a154b 30%, var(--border));
+  color: #b985bc;
+}
+
+.notification-method-icon.email {
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--blue) 30%, var(--border));
+  color: var(--blue);
+}
+
+.notification-method-icon.browser {
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--amber) 32%, var(--border));
+  color: var(--amber);
+}
+
+.notification-fields {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 14px;
+  padding-top: 16px;
+}
+
+.rule-picker {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.rule-picker > div:first-child {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rule-picker strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.rule-picker span,
+.rule-picker p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  margin: 0;
+}
+
+.rule-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rule-option {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.rule-option.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  color: var(--text);
+}
+
+.notification-save-panel {
+  align-items: start;
+}
+
 textarea {
   border: 1px solid var(--border);
   border-radius: 8px;

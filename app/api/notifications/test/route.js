@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export async function POST() {
   try {
     await requireSession();
-    const digest = await buildDigest();
+    const digest = await buildDigest("browser");
     return json({
       ok: true,
       browserNotification: {
