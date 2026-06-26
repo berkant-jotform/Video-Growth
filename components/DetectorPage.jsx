@@ -63,6 +63,7 @@ const CHANNEL_ACCENTS = new Map([
 
 const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5f7464"];
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
+const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -88,6 +89,7 @@ export default function DetectorPage({ session }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedStatus, setAdvancedStatus] = useState("all");
   const [openedStudioRuns, setOpenedStudioRuns] = useState(() => new Set());
+  const [collapsedChannels, setCollapsedChannels] = useState(() => new Set());
 
   useEffect(() => {
     refresh();
@@ -99,6 +101,15 @@ export default function DetectorPage({ session }) {
       if (stored) setOpenedStudioRuns(new Set(JSON.parse(stored)));
     } catch {
       setOpenedStudioRuns(new Set());
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(COLLAPSED_CHANNELS_STORAGE_KEY);
+      if (stored) setCollapsedChannels(new Set(JSON.parse(stored)));
+    } catch {
+      setCollapsedChannels(new Set());
     }
   }, []);
 
@@ -217,6 +228,23 @@ export default function DetectorPage({ session }) {
         window.localStorage.setItem(OPENED_STUDIO_STORAGE_KEY, JSON.stringify(Array.from(next)));
       } catch {
         // Local visual state is helpful but non-critical.
+      }
+      return next;
+    });
+  }
+
+  function toggleChannelCollapsed(channelName) {
+    setCollapsedChannels((current) => {
+      const next = new Set(current);
+      if (next.has(channelName)) {
+        next.delete(channelName);
+      } else {
+        next.add(channelName);
+      }
+      try {
+        window.localStorage.setItem(COLLAPSED_CHANNELS_STORAGE_KEY, JSON.stringify(Array.from(next)));
+      } catch {
+        // Accordion state is local presentation only.
       }
       return next;
     });
@@ -439,6 +467,8 @@ export default function DetectorPage({ session }) {
               quickSaving={quickSaving}
               openedStudioRuns={openedStudioRuns}
               onStudioOpen={markStudioOpened}
+              collapsed={collapsedChannels.has(group.channel)}
+              onToggleCollapsed={toggleChannelCollapsed}
             />
           ))}
         </section>
@@ -614,23 +644,41 @@ function eventSourceLabel(source) {
   return titleCase(source || "unknown source");
 }
 
-function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving, openedStudioRuns, onStudioOpen }) {
+function ChannelGroup({
+  group,
+  onDetails,
+  onDone,
+  onQuickAction,
+  quickSaving,
+  openedStudioRuns,
+  onStudioOpen,
+  collapsed,
+  onToggleCollapsed
+}) {
   return (
     <section
-      className="channel-group"
+      className={`channel-group${collapsed ? " collapsed" : ""}`}
       style={{ "--channel-hue": channelHue(group.channel), "--channel-accent": channelAccent(group.channel) }}
     >
-      <div className="channel-heading">
+      <button
+        className="channel-heading"
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={() => onToggleCollapsed(group.channel)}
+      >
         <div className="channel-heading-main">
           <ChannelAvatar channel={group.channel} logoUrl={group.channelLogoUrl} size="large" />
-          <h3>{group.channel}</h3>
+          <span className="channel-heading-title">{group.channel}</span>
         </div>
-        <span>{group.count} active</span>
-      </div>
-      {group.channelCount > 1 ? (
+        <span className="channel-heading-meta">
+          <strong>{group.count} active</strong>
+          <ChevronDown size={18} />
+        </span>
+      </button>
+      {!collapsed && group.channelCount > 1 ? (
         <p className="channel-group-note">{group.channelCount} lower-volume channels grouped here.</p>
       ) : null}
-      {SECTION_ORDER.map((section) => {
+      {collapsed ? null : SECTION_ORDER.map((section) => {
         const runs = group.sections[section] || [];
         if (!runs.length) return null;
         return (

@@ -666,8 +666,21 @@ select {
 }
 
 .channel-heading {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--channel-accent) 8%, var(--surface)), var(--surface));
+  border: 1px solid var(--border);
+  border-left: 4px solid color-mix(in srgb, var(--channel-accent) 72%, var(--border));
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
   justify-content: space-between;
-  padding: 0 2px;
+  padding: 14px 16px 14px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.channel-heading:hover {
+  border-color: color-mix(in srgb, var(--channel-accent) 36%, var(--border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--channel-accent) 11%, var(--surface)), var(--surface));
 }
 
 .channel-heading-main {
@@ -677,28 +690,42 @@ select {
   min-width: 0;
 }
 
-.channel-heading h3 {
-  margin: 0;
-  font-size: 20px;
+.channel-heading-title {
   color: var(--text);
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+  font-size: 20px;
+  font-weight: 850;
+  line-height: 1.15;
+  margin: 0;
 }
 
-.channel-heading span,
+.channel-heading-meta,
 .section-title span:last-child {
   color: var(--muted);
   font-weight: 760;
 }
 
-.channel-heading > span {
+.channel-heading-meta {
+  align-items: center;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--muted);
+  display: inline-flex;
+  gap: 8px;
   min-height: 28px;
   padding: 3px 10px;
+}
+
+.channel-heading-meta svg {
+  transition: transform 160ms ease;
+}
+
+.channel-group.collapsed .channel-heading-meta svg {
+  transform: rotate(-90deg);
+}
+
+.channel-group.collapsed {
+  gap: 8px;
 }
 
 .channel-group-note {
@@ -1176,11 +1203,11 @@ select {
 }
 
 @media (prefers-color-scheme: dark) {
-  .channel-heading h3 {
+  .channel-heading-title {
     color: var(--text);
   }
 
-  .channel-heading > span {
+  .channel-heading-meta {
     background: var(--surface-2);
     border-color: var(--border);
     color: var(--muted);
