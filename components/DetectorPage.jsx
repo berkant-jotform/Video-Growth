@@ -62,6 +62,7 @@ const CHANNEL_ACCENTS = new Map([
 ]);
 
 const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5f7464"];
+const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -86,9 +87,19 @@ export default function DetectorPage({ session }) {
   const [search, setSearch] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedStatus, setAdvancedStatus] = useState("all");
+  const [openedStudioRuns, setOpenedStudioRuns] = useState(() => new Set());
 
   useEffect(() => {
     refresh();
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(OPENED_STUDIO_STORAGE_KEY);
+      if (stored) setOpenedStudioRuns(new Set(JSON.parse(stored)));
+    } catch {
+      setOpenedStudioRuns(new Set());
+    }
   }, []);
 
   useEffect(() => {
@@ -195,6 +206,20 @@ export default function DetectorPage({ session }) {
     } finally {
       setQuickSaving("");
     }
+  }
+
+  function markStudioOpened(run) {
+    if (!run?.testRunId) return;
+    setOpenedStudioRuns((current) => {
+      const next = new Set(current);
+      next.add(run.testRunId);
+      try {
+        window.localStorage.setItem(OPENED_STUDIO_STORAGE_KEY, JSON.stringify(Array.from(next)));
+      } catch {
+        // Local visual state is helpful but non-critical.
+      }
+      return next;
+    });
   }
 
   const channels = useMemo(
@@ -383,11 +408,20 @@ export default function DetectorPage({ session }) {
               }}
               onQuickAction={quickComplete}
               quickSaving={quickSaving}
+              openedStudioRuns={openedStudioRuns}
+              onStudioOpen={markStudioOpened}
             />
           ))}
         </section>
       </main>
-      {selected ? <DetailDrawer run={selected} onClose={() => setSelected(null)} /> : null}
+      {selected ? (
+        <DetailDrawer
+          run={selected}
+          onClose={() => setSelected(null)}
+          opened={openedStudioRuns.has(selected.testRunId)}
+          onStudioOpen={markStudioOpened}
+        />
+      ) : null}
       {modalRun ? (
         <DoneModal
           run={modalRun}
@@ -551,14 +585,17 @@ function eventSourceLabel(source) {
   return titleCase(source || "unknown source");
 }
 
-function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving }) {
+function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving, openedStudioRuns, onStudioOpen }) {
   return (
     <section
       className="channel-group"
       style={{ "--channel-hue": channelHue(group.channel), "--channel-accent": channelAccent(group.channel) }}
     >
       <div className="channel-heading">
-        <h3>{group.channel}</h3>
+        <div className="channel-heading-main">
+          <ChannelAvatar channel={group.channel} logoUrl={group.channelLogoUrl} size="large" />
+          <h3>{group.channel}</h3>
+        </div>
         <span>{group.count} active</span>
       </div>
       {group.channelCount > 1 ? (
@@ -582,6 +619,8 @@ function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving }) 
                   onDone={onDone}
                   onQuickAction={onQuickAction}
                   quickSaving={quickSaving}
+                  opened={openedStudioRuns.has(run.testRunId)}
+                  onStudioOpen={onStudioOpen}
                 />
               ))}
             </div>
@@ -592,18 +631,21 @@ function ChannelGroup({ group, onDetails, onDone, onQuickAction, quickSaving }) 
   );
 }
 
-function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
+function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving, opened, onStudioOpen }) {
   const result = cardResult(run);
   const channel = displayChannel(run);
   const quickActions = quickActionOptions(run);
   const TypeIcon = run.testType === "thumbnail" ? Image : Type;
   return (
     <article
-      className={`test-card ${statusKey(run)} ${run.testType}-test result-${result.key}`}
+      className={`test-card ${statusKey(run)} ${run.testType}-test result-${result.key}${opened ? " studio-opened" : ""}`}
       style={{ "--channel-hue": channelHue(channel), "--channel-accent": channelAccent(channel) }}
     >
       <div className="card-topline">
-        <span className="channel-pill">{channel || "Unknown channel"}</span>
+        <span className="channel-pill">
+          <ChannelAvatar channel={channel} logoUrl={run.youtubeChannelThumbnailUrl} size="small" />
+          {channel || "Unknown channel"}
+        </span>
         <span className="card-top-actions">
           <button
             className="mini-icon-button"
@@ -650,9 +692,15 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving }) {
       <p className="outcome">{outcomeLabel(run)}</p>
       {run.possibleRetest ? <span className="badge warning">Possible Retest</span> : null}
       <div className="card-actions">
-        <a className="studio-button" href={run.studioUrl || "#"} target="_blank" rel="noreferrer">
-          <ExternalLink size={18} />
-          Open Studio
+        <a
+          className={`studio-button${opened ? " opened" : ""}`}
+          href={run.studioUrl || "#"}
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => onStudioOpen(run)}
+        >
+          {opened ? <Check size={18} /> : <ExternalLink size={18} />}
+          {opened ? "Opened Studio" : "Open Studio"}
         </a>
         <div className="quick-actions" aria-label="Quick outcome actions">
           {quickActions.map((action) => (
@@ -733,7 +781,7 @@ function CardVisual({ run, result }) {
   );
 }
 
-function DetailDrawer({ run, onClose }) {
+function DetailDrawer({ run, onClose, opened, onStudioOpen }) {
   return (
     <aside className="drawer">
       <button className="icon-button drawer-close" onClick={onClose} title="Close details">
@@ -745,9 +793,15 @@ function DetailDrawer({ run, onClose }) {
         <span className={`badge ${statusKey(run)}`}>{SECTION_LABELS[statusKey(run)] || titleCase(statusKey(run))}</span>
         {run.suggestedWinner ? <strong>{run.suggestedWinner}</strong> : null}
       </div>
-      <a className="studio-button wide" href={run.studioUrl || "#"} target="_blank" rel="noreferrer">
-        <ExternalLink size={18} />
-        Open Studio
+      <a
+        className={`studio-button wide${opened ? " opened" : ""}`}
+        href={run.studioUrl || "#"}
+        target="_blank"
+        rel="noreferrer"
+        onClick={() => onStudioOpen(run)}
+      >
+        {opened ? <Check size={18} /> : <ExternalLink size={18} />}
+        {opened ? "Opened Studio" : "Open Studio"}
       </a>
       <div className="detail-grid">
         <Info label="Video ID" value={run.videoId || "Missing"} />
@@ -890,6 +944,14 @@ function Info({ label, value }) {
   );
 }
 
+function ChannelAvatar({ channel, logoUrl, size = "small" }) {
+  const label = channel || "Unknown channel";
+  if (logoUrl) {
+    return <img className={`channel-avatar ${size}`} src={logoUrl} alt="" loading="lazy" />;
+  }
+  return <span className={`channel-avatar fallback ${size}`}>{channelInitials(label)}</span>;
+}
+
 function groupRuns(runs, { groupOtherChannels = false } = {}) {
   const map = new Map();
   for (const run of runs) {
@@ -899,6 +961,7 @@ function groupRuns(runs, { groupOtherChannels = false } = {}) {
       map.set(groupKey, {
         channel: groupKey,
         count: 0,
+        channelLogoUrl: "",
         originalChannels: new Set(),
         sections: {}
       });
@@ -906,6 +969,9 @@ function groupRuns(runs, { groupOtherChannels = false } = {}) {
     const group = map.get(groupKey);
     group.count += 1;
     group.originalChannels.add(channel);
+    if (!group.channelLogoUrl && groupKey !== OTHER_CHANNELS_LABEL && run.youtubeChannelThumbnailUrl) {
+      group.channelLogoUrl = run.youtubeChannelThumbnailUrl;
+    }
     const key = statusKey(run);
     group.sections[key] ||= [];
     group.sections[key].push(run);
