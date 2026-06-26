@@ -11,7 +11,11 @@
         <h1>Studio Connector</h1>
         <span id="versionBadge" class="version-badge">v...</span>
       </div>
-      <p id="summary">Checking status...</p>
+      <section id="healthPanel" class="health-panel neutral">
+        <strong id="healthTitle">Checking connector...</strong>
+        <p id="healthText">Looking for Studio watcher tabs.</p>
+      </section>
+      <p id="summary" class="status">Checking status...</p>
       <section class="watcher-menu">
         <div class="menu-title">
           <strong>Watcher Studio channels</strong>
@@ -22,6 +26,7 @@
       <div class="actions stacked">
         <button id="openWatchers">Open all watcher tabs</button>
         <button id="scan">Scan Studio tab</button>
+        <button id="deepScan">Deep scan active videos</button>
         <button id="heartbeat">Send heartbeat</button>
         <button id="options">Settings</button>
       </div>

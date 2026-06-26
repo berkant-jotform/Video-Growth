@@ -323,6 +323,13 @@ a {
   margin: 0;
 }
 
+.connector-coverage-copy .connector-version-warning {
+  color: var(--amber);
+  font-size: 13px;
+  font-weight: 850;
+  margin-top: 6px;
+}
+
 .connector-channel-list {
   display: flex;
   flex-wrap: wrap;

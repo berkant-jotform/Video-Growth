@@ -1,4 +1,5 @@
-const EXTENSION_VERSION = "0.1.2";
+const EXTENSION_VERSION = "0.1.3";
+const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
   connectorToken: "",
@@ -39,6 +40,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === "scan-studio-tab") {
     requestStudioScrape()
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "deep-scan-active-videos") {
+    deepScanActiveVideos()
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -144,7 +151,64 @@ async function fetchConnectorConfig(settings) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Connector config failed: ${response.status}`);
+  await chrome.storage.local.set({
+    lastConnectorConfigAt: new Date().toISOString(),
+    lastConnectorConfig: payload
+  });
   return payload;
+}
+
+async function deepScanActiveVideos() {
+  const settings = await getSettings();
+  requireConfigured(settings);
+  const config = await fetchConnectorConfig(settings);
+  const activeTests = Array.isArray(config.activeTests) ? config.activeTests : [];
+  const targets = uniqueStudioTargets(activeTests).slice(0, DEEP_SCAN_LIMIT);
+  const opened = [];
+  const results = [];
+
+  for (const target of targets) {
+    try {
+      const tab = await chrome.tabs.create({ url: target.studioUrl, active: false });
+      opened.push({ tabId: tab.id, videoId: target.videoId, channel: target.channel, title: target.videoTitle });
+    } catch (error) {
+      results.push({ ok: false, videoId: target.videoId, error: error.message });
+    }
+  }
+
+  if (opened.length) await delay(5000);
+
+  for (const item of opened) {
+    try {
+      const response = await chrome.tabs.sendMessage(item.tabId, { type: "scrape-studio-notifications" });
+      results.push({ ...item, ...response });
+    } catch (error) {
+      results.push({ ...item, ok: false, error: error.message });
+    }
+  }
+
+  await delay(500);
+  const tabIds = opened.map((item) => item.tabId).filter(Boolean);
+  if (tabIds.length) {
+    await chrome.tabs.remove(tabIds).catch(() => {});
+  }
+
+  const received = results.reduce((sum, item) => sum + Number(item.received || item.inserted || 0), 0);
+  await chrome.storage.local.set({
+    lastDeepScanAt: new Date().toISOString(),
+    lastDeepScanCount: targets.length,
+    lastDeepScanResult: { opened: opened.length, scanned: results.length, received }
+  });
+
+  return {
+    ok: true,
+    limit: DEEP_SCAN_LIMIT,
+    candidates: activeTests.length,
+    opened: opened.length,
+    scanned: results.length,
+    received,
+    results
+  };
 }
 
 async function sendHeartbeat() {
@@ -202,6 +266,21 @@ function splitChannels(value) {
     .split(/[\n,]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function uniqueStudioTargets(activeTests) {
+  const map = new Map();
+  for (const run of activeTests) {
+    if (!run?.studioUrl || !run.videoId) continue;
+    if (map.has(run.videoId)) continue;
+    map.set(run.videoId, {
+      videoId: run.videoId,
+      studioUrl: run.studioUrl,
+      channel: run.channel || "",
+      videoTitle: run.videoTitle || ""
+    });
+  }
+  return Array.from(map.values());
 }
 
 function minutesUntilNextHour() {

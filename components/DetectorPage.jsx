@@ -471,6 +471,7 @@ function ConnectorCoveragePanel({ connectorConfig, connectorStatus, runs, select
         <span className="eyebrow">Extension coverage</span>
         <h3>{coverage.title}</h3>
         <p>{coverage.message}</p>
+        {coverage.versionWarning ? <p className="connector-version-warning">{coverage.versionWarning}</p> : null}
       </div>
       <div className="connector-channel-list">
         {coverage.channels.map((item) => (
@@ -1062,6 +1063,15 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
   const channels = coverageChannelNames({ connectorConfig, runs, selectedChannel });
   const activeStatuses = connectorStatus.filter((item) => item.active);
   const openUrls = activeStatuses.flatMap((item) => item.payload?.studioTabUrls || []).filter(Boolean);
+  const latestVersion = connectorConfig?.latestExtensionVersion || "";
+  const outdated = activeStatuses
+    .map((item) => item.version || "")
+    .filter((version) => latestVersion && isOlderVersion(version, latestVersion));
+  const wrongStudioTabOpen = Boolean(
+    openUrls.length &&
+      connectorConfig?.watcherTabs?.length &&
+      !connectorConfig.watcherTabs.some((tab) => openUrls.some((url) => sameStudioTarget(url, tab.url)))
+  );
   const statuses = channels.map((channel) => {
     if (!connectorConfig?.configured) {
       return {
@@ -1107,9 +1117,14 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
   if (missing || heartbeatOnly) {
     return {
       tone: "warn",
-      title: "Some channels are not actively watched",
+      title: wrongStudioTabOpen ? "Studio tab is open, but not a watcher channel" : "Some channels are not actively watched",
       message:
-        "Scan will still update sheet and YouTube data, but channels marked heartbeat only or not connected may miss real finish notifications.",
+        wrongStudioTabOpen
+          ? "Open the configured watcher tabs from the extension so real finish notifications are captured for the right channels."
+          : "Scan will still update sheet and YouTube data, but channels marked heartbeat only or not connected may miss real finish notifications.",
+      versionWarning: outdated.length
+        ? `Extension update available. Active version ${outdated[0]}, latest ${latestVersion}.`
+        : "",
       channels: statuses
     };
   }
@@ -1117,8 +1132,21 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
     tone: "ok",
     title: "Extension is watching selected channels",
     message: `${watching} channel${watching === 1 ? " is" : "s are"} connected with an open Studio watcher tab.`,
+    versionWarning: outdated.length
+      ? `Extension update available. Active version ${outdated[0]}, latest ${latestVersion}.`
+      : "",
     channels: statuses
   };
+}
+
+function isOlderVersion(current, latest) {
+  const a = String(current || "0").split(".").map((item) => Number(item) || 0);
+  const b = String(latest || "0").split(".").map((item) => Number(item) || 0);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    if ((a[index] || 0) < (b[index] || 0)) return true;
+    if ((a[index] || 0) > (b[index] || 0)) return false;
+  }
+  return false;
 }
 
 function coverageChannelNames({ connectorConfig, runs, selectedChannel }) {

@@ -10,6 +10,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     setSummary(response?.ok ? "Scan request sent." : response?.error || "Scan failed.");
     await render();
   });
+  document.getElementById("deepScan").addEventListener("click", async () => {
+    setSummary("Opening active video edit pages in the background...");
+    const response = await chrome.runtime.sendMessage({ type: "deep-scan-active-videos" });
+    const text = response?.ok
+      ? `Deep scan checked ${response.scanned || 0} active video page${response.scanned === 1 ? "" : "s"}.`
+      : response?.error || "Deep scan failed.";
+    setSummary(text);
+    await render();
+  });
   document.getElementById("heartbeat").addEventListener("click", async () => {
     setSummary("Sending heartbeat...");
     const response = await chrome.runtime.sendMessage({ type: "send-heartbeat" });
@@ -27,7 +36,9 @@ async function render() {
     "lastHeartbeatResult",
     "lastEventPostAt",
     "lastEventPostOk",
-    "lastEventPostResult"
+    "lastEventPostResult",
+    "lastDeepScanAt",
+    "lastDeepScanResult"
   ]);
   const connectorConfig = await chrome.runtime
     .sendMessage({ type: "get-connector-config" })
@@ -36,6 +47,7 @@ async function render() {
   const openStudioTabs = Number(latestHeartbeat?.payload?.openStudioTabs || 0);
   const openStudioUrls = latestHeartbeat?.payload?.studioTabUrls || [];
   renderWatcherButtons(connectorConfig?.watcherTabs || [], openStudioUrls, connectorConfig);
+  renderHealthPanel({ sync, local, connectorConfig, openStudioTabs, openStudioUrls });
   if (!sync.appUrl) {
     setSummary("Open Settings to connect.");
   } else if (local.lastHeartbeatOk && openStudioTabs === 0) {
@@ -51,6 +63,50 @@ async function render() {
   document.getElementById("lastEvent").textContent = local.lastEventPostAt
     ? `${formatTime(local.lastEventPostAt)} (${local.lastEventPostOk ? "ok" : "failed"})`
     : "Never";
+}
+
+function renderHealthPanel({ sync, local, connectorConfig, openStudioTabs, openStudioUrls }) {
+  const watcherTabs = connectorConfig?.watcherTabs || [];
+  const openWatchers = watcherTabs.filter((target) => isWatcherOpen(target, openStudioUrls));
+  const missingWatchers = watcherTabs.filter((target) => !isWatcherOpen(target, openStudioUrls));
+  const anyConfiguredWatcherOpen = openWatchers.length > 0;
+  const health = document.getElementById("healthPanel");
+  const title = document.getElementById("healthTitle");
+  const text = document.getElementById("healthText");
+  let state = {
+    tone: "neutral",
+    title: "Watching status unknown",
+    text: "Send a heartbeat after opening YouTube Studio."
+  };
+
+  if (!sync.appUrl) {
+    state = { tone: "warn", title: "Connect extension", text: "Open Settings and add the app URL plus connector token." };
+  } else if (connectorConfig?.ok === false) {
+    state = { tone: "warn", title: "Cannot reach app", text: connectorConfig.error || "Check the connector token." };
+  } else if (!local.lastHeartbeatAt) {
+    state = { tone: "warn", title: "No heartbeat yet", text: "Open watcher tabs, then send a heartbeat." };
+  } else if (openStudioTabs === 0) {
+    state = { tone: "warn", title: "No Studio tab open", text: "Open at least one watcher tab before relying on live detection." };
+  } else if (watcherTabs.length && !anyConfiguredWatcherOpen) {
+    state = { tone: "warn", title: "Wrong Studio tab open", text: "A Studio tab is open, but not a configured watcher channel." };
+  } else if (missingWatchers.length) {
+    const names = missingWatchers.map((item) => item.label || "Studio").slice(0, 2).join(", ");
+    state = {
+      tone: "warn",
+      title: `${missingWatchers.length} watcher${missingWatchers.length === 1 ? "" : "s"} missing`,
+      text: `Open ${names}${missingWatchers.length > 2 ? "..." : ""}.`
+    };
+  } else {
+    state = {
+      tone: "ok",
+      title: `Watching ${openWatchers.length || openStudioTabs} Studio tab${(openWatchers.length || openStudioTabs) === 1 ? "" : "s"}`,
+      text: "Passive checks run hourly. Use deep scan only when you want an immediate check."
+    };
+  }
+
+  health.className = `health-panel ${state.tone}`;
+  title.textContent = state.title;
+  text.textContent = state.text;
 }
 
 async function openWatcherTargets(targets, loadingText) {

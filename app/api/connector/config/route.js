@@ -3,6 +3,7 @@ import { json, errorJson } from "@/lib/http.js";
 import { listConnectorActiveRuns, getConnectorStatus } from "@/lib/repository.js";
 
 export const runtime = "nodejs";
+const LATEST_EXTENSION_VERSION = "0.1.3";
 
 export async function GET(request) {
   try {
@@ -16,6 +17,7 @@ export async function GET(request) {
       channels: config.connectorChannels,
       watcherTabs: config.connectorWatcherTabs,
       pollMinutes: 60,
+      latestExtensionVersion: LATEST_EXTENSION_VERSION,
       activeTests: runs.map((run) => ({
         testRunId: run.testRunId,
         videoId: run.videoId,

@@ -5,6 +5,7 @@ import { readSession } from "@/lib/auth.js";
 import { json } from "@/lib/http.js";
 
 export const runtime = "nodejs";
+const LATEST_EXTENSION_VERSION = "0.1.3";
 
 export async function GET() {
   const session = await readSession();
@@ -31,7 +32,8 @@ export async function GET() {
       connector = {
         configured: connectorConfigured,
         channels: config.connectorChannels,
-        watcherTabs: config.connectorWatcherTabs
+        watcherTabs: config.connectorWatcherTabs,
+        latestExtensionVersion: LATEST_EXTENSION_VERSION
       };
       databaseOk = true;
     } catch (error) {
