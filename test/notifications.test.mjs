@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterQueue } from "../lib/notification-rules.mjs";
+import { emailSubject, filterQueue } from "../lib/notification-rules.mjs";
 
 test("notification rules filter by channel, test type, and status", () => {
   const queue = [
@@ -41,4 +41,18 @@ test("empty notification rules include the full shared queue", () => {
   ];
 
   assert.equal(filterQueue(queue, {}).length, 2);
+});
+
+test("email subject prioritizes action count over noisy total", () => {
+  const subject = emailSubject(
+    {
+      total: 63,
+      confirmedFinished: 1,
+      appliedChangeObserved: 0,
+      pastDueCheck: 62
+    },
+    { displayName: "BG" }
+  );
+
+  assert.equal(subject, "YouTube A/B Tests for BG: 1 ready to check");
 });
