@@ -7,7 +7,7 @@ import AppShell from "@/components/AppShell.jsx";
 const STATUS_OPTIONS = [
   ["confirmed_finished", "Confirmed finished"],
   ["applied_change_observed", "Applied change observed"],
-  ["past_due_check", "Past due check"],
+  ["past_due_check", "Needs manual check"],
   ["uncovered", "Needs signal"],
   ["watching", "Watching"],
   ["missing_data", "Missing data"],
@@ -214,7 +214,7 @@ export default function NotificationsPage({ session }) {
             <p className="eyebrow">Profile Defaults</p>
             <h2>Recommended routing</h2>
             <div className="notification-guidance">
-              <span><Bell size={16} /> Start with confirmed finished, applied change observed, and past due check.</span>
+              <span><Bell size={16} /> Start with confirmed finished, applied change observed, and needs manual check.</span>
               <span><Mail size={16} /> Use email recipients for people, Slack webhooks for channels or DMs.</span>
               <span><Slack size={16} /> Leave a filter empty when that profile should receive all values.</span>
             </div>

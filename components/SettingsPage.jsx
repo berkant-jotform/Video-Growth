@@ -30,42 +30,6 @@ const BOOTSTRAP_ITEMS = [
   }
 ];
 
-const SETTING_GROUPS = [
-  {
-    title: "Sheet Sources",
-    note: "Paste spreadsheet URLs or IDs. These are read-only sources.",
-    fields: [
-      ["TITLE_SPREADSHEET_ID", "Title spreadsheet ID or URL", "input"],
-      ["THUMBNAIL_SPREADSHEET_ID", "Thumbnail spreadsheet ID or URL", "input"]
-    ]
-  },
-  {
-    title: "Google Read-Only Access",
-    note: "Optional. Preferred private path: service account JSON. If Google Cloud access is blocked, leave this blank and share each cloned sheet as Anyone with the link: Viewer so the XLSX export fallback can read it.",
-    advanced: true,
-    fields: [
-      ["GOOGLE_SERVICE_ACCOUNT_JSON", "Service account JSON", "textarea", true],
-      ["GOOGLE_OAUTH_ACCESS_TOKEN", "OAuth fallback token", "input", true]
-    ]
-  },
-  {
-    title: "YouTube And Thumbnail Previews",
-    note: "YouTube API is read-only enrichment. Blob is only for hosted thumbnail preview uploads.",
-    fields: [
-      ["YOUTUBE_API_KEY", "YouTube API key", "input", true],
-      ["BLOB_READ_WRITE_TOKEN", "Vercel Blob token", "input", true]
-    ]
-  },
-  {
-    title: "Studio Connector",
-    note: "Chrome extension settings. Use the same connector token in the extension. Watcher tabs can use direct Studio URLs or channel IDs.",
-    fields: [
-      ["CONNECTOR_TOKEN", "Connector token", "input", true],
-      ["CONNECTOR_CHANNELS", "Monitored channels", "textarea"]
-    ]
-  }
-];
-
 const READINESS_ITEMS = [
   {
     key: "titleSpreadsheet",
@@ -99,19 +63,19 @@ const READINESS_ITEMS = [
   },
   {
     key: "connectorToken",
-    label: "Studio Connector Token",
+    label: "Extension Token",
     required: true,
     fix: "Create a random token here, save it, then paste the same token into the Chrome extension."
   },
   {
     key: "connectorChannels",
-    label: "Connector Channels",
+    label: "Watched Channels",
     required: true,
     fix: "Keep Jotform, AI Agents Podcast, and AI Agents first. Add other channel names as needed."
   },
   {
     key: "connectorWatcherTabs",
-    label: "Watcher Tab URLs",
+    label: "Studio Watchers",
     required: false,
     fix: "Optional but recommended. Add one per line: Channel name | Studio URL or YouTube channel ID."
   },
@@ -185,79 +149,98 @@ export default function SettingsPage({ session }) {
     <AppShell session={session} active="settings">
       <main className="workspace settings-grid">
         <section className="settings-panel full-width setup-overview">
-          <p className="eyebrow">Connector Setup</p>
-          <h2>Make the detector actually watch Studio</h2>
+          <p className="eyebrow">Guided setup</p>
+          <h2>Set up the detector in order</h2>
           <div className="setup-steps">
             <SetupStep
               number="1"
-              title="Install extension"
-              text="Load the Chrome extension in the browser profile that is logged into YouTube Studio."
-              state={config?.configured?.connectorToken ? "Ready for extension" : "Needs token"}
+              title="Data Sources"
+              text="Connect the title and thumbnail sheets that the detector reads."
+              state={config?.configured?.titleSpreadsheet && config?.configured?.thumbnailSpreadsheet ? "Ready" : "Setup needed"}
+              tone={config?.configured?.titleSpreadsheet && config?.configured?.thumbnailSpreadsheet ? "ok" : "warn"}
             />
             <SetupStep
               number="2"
-              title="Open watcher tabs"
-              text="Use channel watcher buttons so Studio pages stay open for the channels you care about."
-              state={watchingStudioCount(connectorStatus) > 0 ? `${watchingStudioCount(connectorStatus)} Studio tab${watchingStudioCount(connectorStatus) === 1 ? "" : "s"}` : "No open Studio tabs"}
+              title="YouTube / Extension"
+              text="Add the YouTube API key and keep Studio watchers open."
+              state={watchingStudioCount(connectorStatus) > 0 ? `Watching ${watchingStudioCount(connectorStatus)}` : "Open Studio watcher"}
               tone={watchingStudioCount(connectorStatus) > 0 ? "ok" : "warn"}
             />
             <SetupStep
               number="3"
-              title="Wait or scan"
-              text="Passive checks run near the start of each hour. Manual scan is only for testing right now."
-              state="Hourly"
+              title="Notifications"
+              text="Create personal email/browser notification profiles for the team."
+              state={config?.configured?.smtp || config?.configured?.digestEmail ? "Configured" : "Optional"}
+              tone={config?.configured?.smtp || config?.configured?.digestEmail ? "ok" : "neutral"}
+            />
+            <SetupStep
+              number="4"
+              title="Advanced / Admin"
+              text="Database, Vercel env, Blob storage, and raw debug details."
+              state={databaseReady ? "Online" : "Setup needed"}
+              tone={databaseReady ? "ok" : "warn"}
             />
           </div>
         </section>
 
-        <InstallExtensionPanel
-          connectorToken={connectorToken}
-          connectorChannels={connectorChannels}
-          connectorWatcherTabs={connectorWatcherTabs}
-          onGenerateToken={() =>
-            setForm((current) => ({ ...current, CONNECTOR_TOKEN: generateConnectorToken() }))
-          }
-        />
+        <form onSubmit={save} className="settings-guide full-width">
+          <section className="settings-panel guided-settings-section">
+            <p className="eyebrow">1. Data Sources</p>
+            <h2>Read the A/B test sheets</h2>
+            <p className="muted">These are read-only sources. The app does not write to Sheets.</p>
+            <fieldset className="settings-fieldset" disabled={!databaseReady}>
+              <legend>Sheets</legend>
+              {["TITLE_SPREADSHEET_ID", "THUMBNAIL_SPREADSHEET_ID"].map((key) => (
+                <SettingField
+                  key={key}
+                  label={key === "TITLE_SPREADSHEET_ID" ? "Title spreadsheet ID or URL" : "Thumbnail spreadsheet ID or URL"}
+                  name={key}
+                  type="input"
+                  source={config?.sources?.[key]}
+                  value={form[key] || ""}
+                  onChange={(value) => setForm((current) => ({ ...current, [key]: value }))}
+                />
+              ))}
+            </fieldset>
+            <details className="settings-fieldset optional-settings">
+              <summary>
+                <span>
+                  <strong>Google private access fallback</strong>
+                  <em>Only needed if public read access is blocked</em>
+                </span>
+              </summary>
+              <div className="optional-settings-grid">
+                {["GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_OAUTH_ACCESS_TOKEN"].map((key) => (
+                  <SettingField
+                    key={key}
+                    label={key === "GOOGLE_SERVICE_ACCOUNT_JSON" ? "Service account JSON" : "OAuth fallback token"}
+                    name={key}
+                    type={key === "GOOGLE_SERVICE_ACCOUNT_JSON" ? "textarea" : "input"}
+                    secret
+                    source={config?.sources?.[key]}
+                    value={form[key] || ""}
+                    onChange={(value) => setForm((current) => ({ ...current, [key]: value }))}
+                  />
+                ))}
+              </div>
+            </details>
+            <SectionReadiness keys={["titleSpreadsheet", "thumbnailSpreadsheet"]} config={config} />
+          </section>
 
-        <section className="settings-panel full-width watcher-manager-panel">
-          <p className="eyebrow">Watcher Channels</p>
-          <h2>Channels the extension can open</h2>
-          <p className="muted">
-            Add the channels you want watched. Use a YouTube channel ID starting with <code>UC</code> or a direct
-            Studio channel URL. Save, then use the extension popup to open one channel or all channels.
-          </p>
-          <WatcherTabManager
-            value={connectorWatcherTabs}
-            connectorStatus={connectorStatus}
-            onChange={(value) => setForm((current) => ({ ...current, CONNECTOR_WATCHER_TABS: value }))}
-          />
-          <button className="primary-button save-inline-button" type="button" disabled={!databaseReady} onClick={save}>
-            <Save size={17} />
-            Save Watcher Channels
-          </button>
-        </section>
-
-        <section className="settings-panel config-panel">
-          <p className="eyebrow">Configuration</p>
-          <h2>Core app settings</h2>
-          {databaseReady ? (
+          <section className="settings-panel guided-settings-section full-width">
+            <p className="eyebrow">2. YouTube / Extension</p>
+            <h2>Connect YouTube and keep Studio watched</h2>
             <p className="muted">
-              These values are saved in the app database. Existing env vars remain a fallback.
-              For configured secrets, leave <code>********</code> unchanged unless replacing them;
-              clear the field to remove a saved secret.
+              YouTube API enriches cards. The Chrome extension is the real finish signal when Studio tabs are open.
             </p>
-          ) : (
-            <p className="setup-warning">
-              Configure <code>DATABASE_URL</code> first. Until then, the app can diagnose missing
-              settings but cannot save changes here.
-            </p>
-          )}
-          <form onSubmit={save} className="form-stack">
-            {SETTING_GROUPS.filter((group) => !group.advanced).map((group) => (
-              <fieldset className="settings-fieldset" disabled={!databaseReady} key={group.title}>
-                <legend>{group.title}</legend>
-                <p>{group.note}</p>
-                {group.fields.map(([key, label, type, secret]) => (
+            <div className="settings-two-column">
+              <fieldset className="settings-fieldset" disabled={!databaseReady}>
+                <legend>YouTube and extension</legend>
+                {[
+                  ["YOUTUBE_API_KEY", "YouTube API key", "input", true],
+                  ["CONNECTOR_TOKEN", "Extension token", "input", true],
+                  ["CONNECTOR_CHANNELS", "Watched channels", "textarea", false]
+                ].map(([key, label, type, secret]) => (
                   <SettingField
                     key={key}
                     label={label}
@@ -270,161 +253,184 @@ export default function SettingsPage({ session }) {
                   />
                 ))}
               </fieldset>
-            ))}
-            <details className="settings-fieldset optional-settings">
-              <summary>
-                <span>
-                  <strong>Optional integrations</strong>
-                  <em>Google private access and Blob storage</em>
-                </span>
-              </summary>
-              <div className="optional-settings-grid">
-                {SETTING_GROUPS.filter((group) => group.advanced).map((group) => (
-                  <fieldset className="settings-fieldset nested" disabled={!databaseReady} key={group.title}>
-                    <legend>{group.title}</legend>
-                    <p>{group.note}</p>
-                    {group.fields.map(([key, label, type, secret]) => (
-                      <SettingField
-                        key={key}
-                        label={label}
-                        name={key}
-                        type={type}
-                        secret={Boolean(secret)}
-                        source={config?.sources?.[key]}
-                        value={form[key] || ""}
-                        onChange={(value) => setForm((current) => ({ ...current, [key]: value }))}
-                      />
-                    ))}
-                  </fieldset>
-                ))}
-              </div>
-            </details>
-            {error ? <p className="form-error">{error}</p> : null}
-            {message ? <p className="form-success">{message}</p> : null}
-            <button className="primary-button" disabled={!databaseReady}>
-              <Save size={17} />
-              Save App Settings
-            </button>
-          </form>
-        </section>
-
-        <section className="settings-panel readiness-panel">
-          <p className="eyebrow">Health</p>
-          <h2>What still needs fixing</h2>
-          <div className="readiness-list">
-            {READINESS_ITEMS.filter((item) => item.required).map((item) => (
-              <SetupRow
-                key={item.key}
-                item={item}
-                ready={Boolean(config?.configured?.[item.key])}
-                location="Settings form"
+              <ExtensionCoverageSummary connectorStatus={connectorStatus} />
+            </div>
+            <InstallExtensionPanel
+              connectorToken={connectorToken}
+              connectorChannels={connectorChannels}
+              connectorWatcherTabs={connectorWatcherTabs}
+              onGenerateToken={() =>
+                setForm((current) => ({ ...current, CONNECTOR_TOKEN: generateConnectorToken() }))
+              }
+            />
+            <section className="watcher-manager-panel">
+              <h3>Studio watchers</h3>
+              <p className="muted">Add one Studio watcher per channel, save, then open those channels from the extension.</p>
+              <WatcherTabManager
+                value={connectorWatcherTabs}
+                connectorStatus={connectorStatus}
+                onChange={(value) => setForm((current) => ({ ...current, CONNECTOR_WATCHER_TABS: value }))}
               />
-            ))}
-            <details className="readiness-optional">
-              <summary>Optional checks</summary>
-              {READINESS_ITEMS.filter((item) => !item.required).map((item) => (
+            </section>
+            <SectionReadiness keys={["youtubeApi", "connectorToken", "connectorChannels", "connectorWatcherTabs"]} config={config} />
+          </section>
+
+          <section className="settings-panel guided-settings-section">
+            <p className="eyebrow">3. Notifications</p>
+            <h2>Team notification profiles</h2>
+            <p className="muted">
+              Email, browser, and future Slack rules live in the Notifications tab so each person can have their own filters.
+            </p>
+            <div className="notification-guidance">
+              <span>{config?.configured?.smtp ? "Email sender configured" : "Email sender setup needed for email digests"}</span>
+              <span>{config?.configured?.digestEmail ? "Fallback digest recipients configured" : "Profiles can still use their own recipients"}</span>
+            </div>
+            <a className="primary-button save-inline-button" href="/notifications">
+              <ExternalLink size={16} />
+              Open Notifications
+            </a>
+          </section>
+
+          <details className="settings-panel guided-settings-section advanced-settings">
+            <summary>
+              <span>
+                <strong>4. Advanced / Admin</strong>
+                <em>Database, Vercel env, Blob storage, and debug details</em>
+              </span>
+            </summary>
+            <fieldset className="settings-fieldset" disabled={!databaseReady}>
+              <legend>Thumbnail storage</legend>
+              <SettingField
+                label="Vercel Blob token"
+                name="BLOB_READ_WRITE_TOKEN"
+                type="input"
+                secret
+                source={config?.sources?.BLOB_READ_WRITE_TOKEN}
+                value={form.BLOB_READ_WRITE_TOKEN || ""}
+                onChange={(value) => setForm((current) => ({ ...current, BLOB_READ_WRITE_TOKEN: value }))}
+              />
+            </fieldset>
+            <div className="readiness-list">
+              {BOOTSTRAP_ITEMS.map((item) => (
                 <SetupRow
                   key={item.key}
                   item={item}
                   ready={Boolean(config?.configured?.[item.key])}
-                  location="Settings form"
+                  location="Vercel env / .env.local"
                 />
               ))}
+            </div>
+            <details className="readiness-optional">
+              <summary>Raw extension checks</summary>
+              <ExtensionDebugList connectorStatus={connectorStatus} />
             </details>
-          </div>
-        </section>
+            <pre className="env-template">{ENV_TEMPLATE}</pre>
+            <div className="setup-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(ENV_TEMPLATE)}
+              >
+                <Clipboard size={16} />
+                Copy Bootstrap Env Names
+              </button>
+              <a
+                className="secondary-button"
+                href="https://vercel.com/docs/environment-variables"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ExternalLink size={16} />
+                Vercel Env Docs
+              </a>
+            </div>
+          </details>
 
-        <section className="settings-panel readiness-panel">
-          <p className="eyebrow">Connector Coverage</p>
-          <h2>Last extension heartbeat</h2>
-          <div className="readiness-list">
-            {config?.connectorStatus?.length ? (
-              config.connectorStatus.slice(0, 5).map((item) => (
-                <div className="readiness-row detailed" key={item.connectorId}>
-                  <div>
-                    <span className="readiness-title">
-                      <ShieldCheck size={16} />
-                      {item.actorName || "Chrome extension"}
-                      <em>{connectorCoverageState(item)}</em>
-                    </span>
-                    <p>{(item.channels || []).join(", ") || "No channels reported"}</p>
-                    <p className={connectorOpenStudioTabs(item) > 0 ? "coverage-ok" : "coverage-warning"}>
-                      {connectorOpenStudioTabs(item) > 0
-                        ? `${connectorOpenStudioTabs(item)} YouTube Studio tab${connectorOpenStudioTabs(item) === 1 ? "" : "s"} open at last heartbeat.`
-                        : "Heartbeat is active, but no YouTube Studio tab was open. It cannot see finish notifications until Studio is open."}
-                    </p>
-                    <code>{item.connectorId}</code>
-                  </div>
-                  <div className="readiness-meta">
-                    <strong className={item.active && connectorOpenStudioTabs(item) > 0 ? "ok" : "missing"}>
-                      {item.active && connectorOpenStudioTabs(item) > 0 ? "Watching Studio" : item.active ? "Heartbeat only" : "No recent heartbeat"}
-                    </strong>
-                    <span>{item.lastSeenAt ? formatDateTime(item.lastSeenAt) : "Never"}</span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="readiness-row detailed">
-                <div>
-                  <span className="readiness-title">
-                    <ShieldCheck size={16} />
-                    No extension heartbeat yet
-                    <em>Setup</em>
-                  </span>
-                  <p>Install the Chrome extension, paste the connector token, then send a heartbeat.</p>
-                  <code>extension/options.html</code>
-                </div>
-                <div className="readiness-meta">
-                  <strong className="missing">Missing</strong>
-                  <span>Settings</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <details className="settings-panel full-width advanced-settings">
-          <summary>
-            <span>
-              <strong>Advanced cloud setup</strong>
-              <em>Database, Vercel env, and password gate</em>
-            </span>
-          </summary>
-          <p className="muted">
-            These are infrastructure settings. Most reviewers do not need this section after the app is online.
-          </p>
-          <div className="readiness-list">
-            {BOOTSTRAP_ITEMS.map((item) => (
-              <SetupRow
-                key={item.key}
-                item={item}
-                ready={Boolean(config?.configured?.[item.key])}
-                location="Vercel env / .env.local"
-              />
-            ))}
-          </div>
-          <pre className="env-template">{ENV_TEMPLATE}</pre>
-          <div className="setup-actions">
-            <button
-              className="secondary-button"
-              onClick={() => navigator.clipboard?.writeText(ENV_TEMPLATE)}
-            >
-              <Clipboard size={16} />
-              Copy Bootstrap Env Names
-            </button>
-            <a
-              className="secondary-button"
-              href="https://vercel.com/docs/environment-variables"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink size={16} />
-              Vercel Env Docs
-            </a>
-          </div>
-        </details>
+          {error ? <p className="form-error">{error}</p> : null}
+          {message ? <p className="form-success">{message}</p> : null}
+          <button className="primary-button save-inline-button" disabled={!databaseReady}>
+            <Save size={17} />
+            Save Settings
+          </button>
+        </form>
       </main>
     </AppShell>
+  );
+}
+
+function SectionReadiness({ keys, config }) {
+  const items = READINESS_ITEMS.filter((item) => keys.includes(item.key));
+  return (
+    <div className="section-readiness">
+      {items.map((item) => (
+        <span className={config?.configured?.[item.key] ? "ok" : "missing"} key={item.key}>
+          {config?.configured?.[item.key] ? "Ready" : "Setup needed"} · {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ExtensionCoverageSummary({ connectorStatus }) {
+  const active = connectorStatus.filter((item) => item.active);
+  const watching = active.filter((item) => connectorOpenStudioTabs(item) > 0);
+  return (
+    <aside className="extension-summary-card">
+      <h3>Extension status</h3>
+      {active.length ? (
+        <>
+          <strong className={watching.length ? "ok" : "missing"}>
+            {watching.length ? "Extension connected" : "Open Studio tab needed"}
+          </strong>
+          <p>
+            {watching.length
+              ? `${watchingStudioCount(watching)} Studio watcher${watchingStudioCount(watching) === 1 ? "" : "s"} open.`
+              : "The extension checked in, but no Studio watcher was open."}
+          </p>
+          <span>Last checked {formatDateTime(active[0].lastSeenAt)}</span>
+        </>
+      ) : (
+        <>
+          <strong className="missing">Extension not connected</strong>
+          <p>Install the extension, save the token, then open Studio watchers.</p>
+          <span>Last checked never</span>
+        </>
+      )}
+    </aside>
+  );
+}
+
+function ExtensionDebugList({ connectorStatus }) {
+  if (!connectorStatus.length) {
+    return <p className="muted">No extension checks have been received yet.</p>;
+  }
+  return (
+    <div className="readiness-list">
+      {connectorStatus.slice(0, 5).map((item) => (
+        <div className="readiness-row detailed" key={item.connectorId}>
+          <div>
+            <span className="readiness-title">
+              <ShieldCheck size={16} />
+              {item.actorName || "Chrome extension"}
+              <em>{extensionCoverageState(item)}</em>
+            </span>
+            <p>{(item.channels || []).join(", ") || "No channels reported"}</p>
+            <p className={connectorOpenStudioTabs(item) > 0 ? "coverage-ok" : "coverage-warning"}>
+              {connectorOpenStudioTabs(item) > 0
+                ? `${connectorOpenStudioTabs(item)} Studio watcher${connectorOpenStudioTabs(item) === 1 ? "" : "s"} open when last checked.`
+                : "Extension checked in, but no Studio watcher was open."}
+            </p>
+            <code>{item.connectorId}</code>
+          </div>
+          <div className="readiness-meta">
+            <strong className={item.active && connectorOpenStudioTabs(item) > 0 ? "ok" : "missing"}>
+              {item.active && connectorOpenStudioTabs(item) > 0 ? "Watching" : item.active ? "Open tab needed" : "Stale"}
+            </strong>
+            <span>{item.lastSeenAt ? formatDateTime(item.lastSeenAt) : "Never"}</span>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -446,9 +452,9 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
   const visibleToken = connectorToken && connectorToken !== "********" ? connectorToken : "";
   const copyText = [
     `App URL: ${appUrl}`,
-    `Connector token: ${visibleToken || "generate-or-enter-token-first"}`,
+    `Extension token: ${visibleToken || "generate-or-enter-token-first"}`,
     `Channels: ${connectorChannels}`,
-    `Watcher tabs:\n${connectorWatcherTabs || "Add Studio URLs or channel IDs in Settings"}`
+    `Studio watchers:\n${connectorWatcherTabs || "Add Studio URLs or channel IDs in Settings"}`
   ].join("\n");
 
   return (
@@ -461,8 +467,7 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
         click manual scan, and reports matching finish events back to this app.
       </p>
       <p className="setup-warning">
-        Heartbeat only means the extension is alive. Detection only works when this page shows
-        <strong> Watching Studio </strong> for at least one open Studio tab.
+        Detection only works when this page shows <strong> Watching </strong> for at least one open Studio watcher.
       </p>
 
       <div className="install-actions">
@@ -475,7 +480,7 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
           Download Extension Zip
         </a>
         <button type="button" className="secondary-button" onClick={onGenerateToken}>
-          Generate Connector Token
+          Generate Extension Token
         </button>
         <button
           type="button"
@@ -517,7 +522,7 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
               <dd>{appUrl}</dd>
             </div>
             <div>
-              <dt>Connector token</dt>
+              <dt>Extension token</dt>
               <dd>{visibleToken || "Generate or enter one below, then save."}</dd>
             </div>
             <div>
@@ -531,18 +536,18 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
           </p>
         </div>
         <div className="install-card">
-          <h3>4. Open watcher tabs</h3>
+          <h3>4. Open Studio watchers</h3>
           <ol>
-            <li>In Studio Connector settings below, add watcher tabs.</li>
+            <li>In Studio watcher settings below, add channel URLs or IDs.</li>
             <li>Use one line per channel: <code>Jotform | UC...</code></li>
             <li>Open the extension popup.</li>
-            <li>Click <strong>Open watcher tabs</strong>.</li>
+            <li>Click <strong>Open watcher tabs</strong> in the extension.</li>
           </ol>
-          <p>The extension checks open Studio tabs hourly. Heartbeat alone is not detection.</p>
+          <p>The extension checks open Studio watchers hourly. An extension check without Studio open is not detection.</p>
         </div>
         <div className="install-card">
           <h3>Watcher tab examples</h3>
-          <p>Paste channel IDs or direct Studio URLs into the Watcher tabs field below.</p>
+          <p>Paste channel IDs or direct Studio URLs into the Studio watchers field below.</p>
           <code>Jotform | UCxxxxxxxxxxxxxxxxxxxxxx</code>
           <code>AI Agents Podcast | https://studio.youtube.com/channel/UC...</code>
         </div>
@@ -550,9 +555,9 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
           <h3>5. Confirm coverage</h3>
           <ol>
             <li>Open the extension popup.</li>
-            <li>Click <strong>Send heartbeat</strong>.</li>
+            <li>Click the extension check-in button.</li>
             <li>Refresh this Settings page.</li>
-            <li>Look for <strong>Watching Studio</strong>, not just heartbeat.</li>
+            <li>Look for <strong>Watching</strong>, not just connected.</li>
           </ol>
         </div>
       </div>
@@ -583,7 +588,7 @@ function WatcherTabManager({ value, connectorStatus = [], onChange }) {
     <div className="watcher-manager">
       <div className="watcher-header">
         <span>Channel</span>
-        <span>Studio URL or channel ID</span>
+        <span>Studio watcher URL or channel ID</span>
         <span>Status</span>
       </div>
       {rows.map((row, index) => (
@@ -599,7 +604,7 @@ function WatcherTabManager({ value, connectorStatus = [], onChange }) {
             onChange={(event) => updateRow(index, { target: event.target.value })}
           />
           <span className={`watcher-status ${isWatcherOpen(row, openUrls) ? "open" : "closed"}`}>
-            {isWatcherOpen(row, openUrls) ? "Open" : "Not open"}
+            {isWatcherOpen(row, openUrls) ? "Watching" : "Open tab needed"}
           </span>
           <button type="button" className="mini-remove-button" onClick={() => removeRow(index)}>
             Remove
@@ -607,7 +612,7 @@ function WatcherTabManager({ value, connectorStatus = [], onChange }) {
         </div>
       ))}
       <button type="button" className="secondary-button add-watcher-button" onClick={addRow}>
-        Add Channel
+        Add Studio Watcher
       </button>
     </div>
   );
@@ -690,9 +695,9 @@ function connectorOpenStudioTabs(item) {
   return Number(item?.payload?.openStudioTabs || 0);
 }
 
-function connectorCoverageState(item) {
+function extensionCoverageState(item) {
   if (!item.active) return "Stale";
-  return connectorOpenStudioTabs(item) > 0 ? "Active" : "Blind";
+  return connectorOpenStudioTabs(item) > 0 ? "Watching" : "Open tab needed";
 }
 
 function watchingStudioCount(statuses) {

@@ -1,5 +1,5 @@
 import { databaseConfigured } from "@/lib/db.js";
-import { getConnectorStatus, lastScanRun } from "@/lib/repository.js";
+import { getConnectorStatus, lastScanRun, lastSuccessfulScanRun } from "@/lib/repository.js";
 import { getAppConfig } from "@/lib/config.js";
 import { readSession } from "@/lib/auth.js";
 import { json } from "@/lib/http.js";
@@ -10,6 +10,7 @@ const LATEST_EXTENSION_VERSION = "0.1.4";
 export async function GET() {
   const session = await readSession();
   let lastScan = null;
+  let lastSuccessfulScan = null;
   let connectorStatus = [];
   let connector = {
     configured: false,
@@ -21,12 +22,14 @@ export async function GET() {
   let databaseError = "";
   if (databaseConfigured()) {
     try {
-      const [scan, status, config] = await Promise.all([
+      const [scan, successfulScan, status, config] = await Promise.all([
         lastScanRun(),
+        lastSuccessfulScanRun(),
         getConnectorStatus(),
         getAppConfig()
       ]);
       lastScan = scan;
+      lastSuccessfulScan = successfulScan;
       connectorStatus = status;
       connectorConfigured = Boolean(config.connectorToken);
       connector = {
@@ -54,6 +57,7 @@ export async function GET() {
     },
     databaseError,
     lastScan,
+    lastSuccessfulScan,
     connector,
     connectorStatus
   });

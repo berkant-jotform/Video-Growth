@@ -30,7 +30,7 @@ const SECTION_ORDER = [
 const SECTION_LABELS = {
   confirmed_finished: "Confirmed Finished",
   applied_change_observed: "Applied Change Observed",
-  past_due_check: "Past 14 Days - Check Studio",
+  past_due_check: "Needs Manual Check",
   uncovered: "Needs Signal",
   watching: "Watching",
   needs_review: "Explicit Sheet Finish",
@@ -72,6 +72,7 @@ export default function DetectorPage({ session }) {
   const [connectorConfig, setConnectorConfig] = useState({ configured: false, channels: [], watcherTabs: [] });
   const [summary, setSummary] = useState(null);
   const [lastScan, setLastScan] = useState(null);
+  const [lastSuccessfulScan, setLastSuccessfulScan] = useState(null);
   const [scanProgress, setScanProgress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -80,8 +81,10 @@ export default function DetectorPage({ session }) {
   const [modalRun, setModalRun] = useState(null);
   const [modalInitialAction, setModalInitialAction] = useState("");
   const [quickSaving, setQuickSaving] = useState("");
-  const [channel, setChannel] = useState("all");
-  const [type, setType] = useState("all");
+  const [scanChannel, setScanChannel] = useState("all");
+  const [scanType, setScanType] = useState("all");
+  const [viewChannel, setViewChannel] = useState("all");
+  const [viewType, setViewType] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
   const [finishWindow, setFinishWindow] = useState("all");
   const [retestFilter, setRetestFilter] = useState("all");
@@ -138,6 +141,7 @@ export default function DetectorPage({ session }) {
       setConnectorConfig(statusPayload.connector || { configured: false, channels: [], watcherTabs: [] });
       setSummary(queuePayload.summary || null);
       setLastScan(statusPayload.lastScan || null);
+      setLastSuccessfulScan(statusPayload.lastSuccessfulScan || null);
       setScanProgress(statusPayload.lastScan?.progress || null);
     } catch (err) {
       setError(err.message);
@@ -152,6 +156,7 @@ export default function DetectorPage({ session }) {
       const payload = await response.json();
       if (!response.ok || !payload.ok) return;
       setLastScan(payload.lastScan || null);
+      setLastSuccessfulScan(payload.lastSuccessfulScan || null);
       setScanProgress(payload.lastScan?.progress || null);
       setConnectorStatus(payload.connectorStatus || []);
       setConnectorConfig(payload.connector || { configured: false, channels: [], watcherTabs: [] });
@@ -162,8 +167,8 @@ export default function DetectorPage({ session }) {
 
   async function scanNow() {
     const scoped = {
-      channel: channel !== "all" ? channel : "all",
-      testType: type !== "all" ? type : "all"
+      channel: scanChannel !== "all" ? scanChannel : "all",
+      testType: scanType !== "all" ? scanType : "all"
     };
     const scopedText = [
       scoped.channel !== "all" ? scoped.channel : "",
@@ -262,8 +267,8 @@ export default function DetectorPage({ session }) {
     const query = search.trim().toLowerCase();
     return runs.filter((run) => {
       const runChannel = displayChannel(run);
-      if (channel !== "all" && runChannel !== channel) return false;
-      if (type !== "all" && run.testType !== type) return false;
+      if (viewChannel !== "all" && runChannel !== viewChannel) return false;
+      if (viewType !== "all" && run.testType !== viewType) return false;
       if (resultFilter !== "all" && !matchesResultFilter(run, resultFilter)) return false;
       if (finishWindow !== "all" && !matchesFinishWindow(run, finishWindow)) return false;
       if (retestFilter === "only" && !run.possibleRetest) return false;
@@ -275,11 +280,11 @@ export default function DetectorPage({ session }) {
       }
       return true;
     });
-  }, [runs, channel, type, resultFilter, finishWindow, retestFilter, advancedStatus, search]);
+  }, [runs, viewChannel, viewType, resultFilter, finishWindow, retestFilter, advancedStatus, search]);
 
   const grouped = useMemo(
-    () => groupRuns(filtered, { groupOtherChannels: channel === "all" }),
-    [filtered, channel]
+    () => groupRuns(filtered, { groupOtherChannels: viewChannel === "all" }),
+    [filtered, viewChannel]
   );
 
   return (
@@ -290,15 +295,15 @@ export default function DetectorPage({ session }) {
             <p className="eyebrow">Shared team queue</p>
             <h2>Real finish tracker</h2>
             <p className="muted">
-              Last sheet scan: {lastScan?.completedAt ? formatDateTime(lastScan.completedAt) : "No scan yet"}.
-              Connector: {connectorSummary(connectorStatus)}
+              Last successful scan: {lastSuccessfulScan?.completedAt ? formatDateTime(lastSuccessfulScan.completedAt) : "No successful scan yet"}.
+              Extension: {connectorSummary(connectorStatus)}
             </p>
           </div>
           <div className="scan-scope-panel">
             <div className="scan-scope-fields">
               <label>
                 Scan channel
-                <select value={channel} onChange={(event) => setChannel(event.target.value)}>
+                <select value={scanChannel} onChange={(event) => setScanChannel(event.target.value)}>
                   {channels.map((item) => (
                     <option key={item} value={item}>
                       {item === "all" ? "All channels" : item}
@@ -312,8 +317,8 @@ export default function DetectorPage({ session }) {
                   {["all", "title", "thumbnail"].map((item) => (
                     <button
                       key={item}
-                      className={type === item ? "active" : ""}
-                      onClick={() => setType(item)}
+                      className={scanType === item ? "active" : ""}
+                      onClick={() => setScanType(item)}
                       type="button"
                     >
                       {item === "all" ? "All" : titleCase(item)}
@@ -324,7 +329,7 @@ export default function DetectorPage({ session }) {
             </div>
             <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
               <RefreshCw size={18} className={scanning ? "spin" : ""} />
-              {scanning ? "Scanning" : scanButtonLabel(channel, type)}
+              {scanning ? "Scanning" : scanButtonLabel(scanChannel, scanType)}
             </button>
           </div>
         </section>
@@ -333,17 +338,22 @@ export default function DetectorPage({ session }) {
           connectorConfig={connectorConfig}
           connectorStatus={connectorStatus}
           runs={runs}
-          selectedChannel={channel}
+          selectedChannel={viewChannel}
         />
 
-        <ScanProgress scan={lastScan} progress={scanProgress} scanning={scanning} />
+        <ScanProgress
+          scan={lastScan}
+          lastSuccessfulScan={lastSuccessfulScan}
+          progress={scanProgress}
+          scanning={scanning}
+        />
 
         <Summary summary={summary} />
 
         <section className="filters">
           <label>
-            Channel
-            <select value={channel} onChange={(event) => setChannel(event.target.value)}>
+            View channel
+            <select value={viewChannel} onChange={(event) => setViewChannel(event.target.value)}>
               {channels.map((item) => (
                 <option key={item} value={item}>
                   {item === "all" ? "All channels" : item}
@@ -352,13 +362,14 @@ export default function DetectorPage({ session }) {
             </select>
           </label>
           <div className="filter-control test-type-control">
-            <span className="filter-label">Test type</span>
-            <div className="segmented" aria-label="Test type">
+            <span className="filter-label">View type</span>
+            <div className="segmented" aria-label="View type">
               {["all", "title", "thumbnail"].map((item) => (
                 <button
                   key={item}
-                  className={type === item ? "active" : ""}
-                  onClick={() => setType(item)}
+                  className={viewType === item ? "active" : ""}
+                  onClick={() => setViewType(item)}
+                  type="button"
                 >
                   {item === "all" ? "All" : titleCase(item)}
                 </button>
@@ -371,7 +382,7 @@ export default function DetectorPage({ session }) {
               <option value="all">All results</option>
               <option value="confirmed">Confirmed finished</option>
               <option value="observed">Applied change observed</option>
-              <option value="past_due_check">Past 14 days</option>
+              <option value="past_due_check">Needs manual check</option>
               <option value="watching">Watching</option>
               <option value="uncovered">Needs signal</option>
               <option value="not_determined">Not determined</option>
@@ -501,7 +512,7 @@ function Summary({ summary }) {
   const items = [
     ["Confirmed", summary?.confirmedFinished || summary?.newlyFinished || 0],
     ["Observed", summary?.appliedChangeObserved || 0],
-    ["Past 14d", summary?.pastDueCheck || 0],
+    ["Manual Check", summary?.pastDueCheck || 0],
     ["Needs Signal", summary?.uncovered || 0],
     ["Watching", summary?.watching || 0],
     ["Missing", summary?.missingData || 0],
@@ -519,8 +530,10 @@ function Summary({ summary }) {
   );
 }
 
-function ScanProgress({ scan, progress, scanning }) {
-  if (!scanning && scan?.status !== "running") return null;
+function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
+  const stale = isStaleRunningScan(scan);
+  const active = scanning || (scan?.status === "running" && !stale);
+  if (!active && !stale && !lastSuccessfulScan) return null;
   const percent = clampPercent(progress?.percent ?? 0);
   const counts = progress?.counts || {};
   const steps = progress?.steps || [];
@@ -538,19 +551,27 @@ function ScanProgress({ scan, progress, scanning }) {
     .slice(0, 5);
 
   return (
-    <section className="scan-progress-panel">
+    <section className={`scan-progress-panel ${stale ? "stale" : ""}`}>
       <div className="scan-progress-header">
         <div>
-          <span className="eyebrow">Scan progress</span>
-          <h3>{progress?.label || "Scanning"}</h3>
-          <p>{progress?.detail || "Working through sheets, thumbnails, YouTube data, and finish signals."}</p>
+          <span className="eyebrow">{active ? "Current scan" : stale ? "Stale scan" : "Last successful scan"}</span>
+          <h3>{active ? progress?.label || "Scanning" : stale ? "Previous scan did not finish cleanly" : "Queue is ready"}</h3>
+          <p>
+            {active
+              ? stillWorkingText(scan, progress)
+              : stale
+                ? `Last update was ${progress?.updatedAt ? formatDateTime(progress.updatedAt) : "not recorded"}. Start a new scan if counts look old.`
+                : `Completed ${formatDateTime(lastSuccessfulScan.completedAt)}.`}
+          </p>
         </div>
-        <strong>{percent}%</strong>
+        <strong>{active ? `${percent}%` : "OK"}</strong>
       </div>
-      <div className="scan-progress-track" aria-label="Scan progress">
-        <span style={{ width: `${percent}%` }} />
-      </div>
-      {steps.length ? (
+      {active || stale ? (
+        <div className="scan-progress-track" aria-label="Scan progress">
+          <span style={{ width: `${percent}%` }} />
+        </div>
+      ) : null}
+      {(active || stale) && steps.length ? (
         <div className="scan-step-list">
           {steps.map((step) => (
             <span className={`scan-step ${step.state}`} key={step.stage}>
@@ -559,7 +580,7 @@ function ScanProgress({ scan, progress, scanning }) {
           ))}
         </div>
       ) : null}
-      {countItems.length ? (
+      {(active || stale) && countItems.length ? (
         <div className="scan-count-list">
           {countItems.map(([label, value]) => (
             <span key={label}>
@@ -568,13 +589,18 @@ function ScanProgress({ scan, progress, scanning }) {
           ))}
         </div>
       ) : null}
-      {timingItems.length ? (
+      {(active || stale) && timingItems.length ? (
         <div className="scan-timing-list">
           {timingItems.map(([key, value]) => (
             <span key={key}>
               {timingLabel(key)}: <strong>{formatDuration(value)}</strong>
             </span>
           ))}
+        </div>
+      ) : null}
+      {lastSuccessfulScan?.completedAt ? (
+        <div className="last-successful-scan">
+          Last successful scan: <strong>{formatDateTime(lastSuccessfulScan.completedAt)}</strong>
         </div>
       ) : null}
     </section>
@@ -606,32 +632,43 @@ function ConnectorCoveragePanel({ connectorConfig, connectorStatus, runs, select
 }
 
 function UnmatchedEvents({ events }) {
+  const [open, setOpen] = useState(() => hasUsefulDebugSignals(events));
+
+  useEffect(() => {
+    if (hasUsefulDebugSignals(events)) setOpen(true);
+  }, [events]);
+
   return (
-    <section className="unmatched-events">
-      <div className="section-title">
-        <span>Unmatched Studio Events</span>
-        <span>{events.length}</span>
-      </div>
-      <div className="unmatched-list">
-        {events.slice(0, 6).map((event) => (
-          <article className="unmatched-event" key={event.eventId}>
-            <div>
-              <strong>{event.channel || event.videoId || "Unknown source"}</strong>
-              <span className="event-source-line">
-                Source: {eventSourceLabel(event.source)} · Not matched to an active sheet row
-                {event.videoId ? ` · Video ${event.videoId}` : ""}
-              </span>
-              <p>{event.rawText || "Studio notification captured without text."}</p>
-              {event.notificationUrl ? (
-                <a href={event.notificationUrl} target="_blank" rel="noreferrer">
-                  Open Studio page
-                </a>
-              ) : null}
-            </div>
-            <span>{event.observedAt ? formatDateTime(event.observedAt) : "No time"}</span>
-          </article>
-        ))}
-      </div>
+    <section className={`unmatched-events debug-signals ${open ? "open" : ""}`}>
+      <button className="debug-signals-toggle" type="button" onClick={() => setOpen((value) => !value)}>
+        <span>
+          <strong>Debug signals</strong>
+          <em>{events.length} unmatched Studio event{events.length === 1 ? "" : "s"}</em>
+        </span>
+        <ChevronDown size={18} />
+      </button>
+      {open ? (
+        <div className="unmatched-list">
+          {events.slice(0, 6).map((event) => (
+            <article className="unmatched-event" key={event.eventId}>
+              <div>
+                <strong>{event.channel || event.videoId || "Unknown source"}</strong>
+                <span className="event-source-line">
+                  Source: {eventSourceLabel(event.source)} · Not matched to an active sheet row
+                  {event.videoId ? ` · Video ${event.videoId}` : ""}
+                </span>
+                <p>{event.rawText || "Studio notification captured without text."}</p>
+                {event.notificationUrl ? (
+                  <a href={event.notificationUrl} target="_blank" rel="noreferrer">
+                    Open Studio page
+                  </a>
+                ) : null}
+              </div>
+              <span>{event.observedAt ? formatDateTime(event.observedAt) : "No time"}</span>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -752,25 +789,11 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving, opened, 
       </div>
       <CardVisual run={run} result={result} />
       <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
-      <div className="card-meta-grid">
-        <div className="channel-meta">
-          <span>Channel</span>
-          <strong>{channel || "Unknown"}</strong>
-        </div>
-        <div>
-          <span>Source</span>
-          <strong>{result.value}</strong>
-        </div>
-        <div>
-          <span>Duration</span>
-          <strong>{testDurationLabel(run)}</strong>
-        </div>
-      </div>
-      <p className="outcome">{outcomeLabel(run)}</p>
+      <p className="outcome compact">{outcomeLabel(run)}</p>
       {run.possibleRetest ? <span className="badge warning">Possible Retest</span> : null}
       <div className="card-actions">
         <a
-          className={`studio-button${opened ? " opened" : ""}`}
+          className={`studio-button primary-studio-action${opened ? " opened" : ""}`}
           href={run.studioUrl || "#"}
           target="_blank"
           rel="noreferrer"
@@ -885,7 +908,7 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen }) {
         <Info label="Source row" value={`${run.sheetName} row ${run.rowNumber}`} />
         <Info label="Signal" value={signalSourceLabel(run)} />
         <Info label="Test lasted" value={testDurationLabel(run)} />
-        <Info label="Coverage" value={run.connectorCovered ? `Covered by ${run.connectorActorName || "connector"}` : "No active connector"} />
+        <Info label="Extension" value={run.connectorCovered ? `Watching${run.connectorActorName ? ` by ${run.connectorActorName}` : ""}` : "Not watching"} />
         <Info label="Start" value={run.startDate || "Missing"} />
         <Info label="Sheet finish" value={run.effectiveFinishDate || "Blank"} />
       </div>
@@ -1053,9 +1076,32 @@ function groupRuns(runs, { groupOtherChannels = false } = {}) {
     group.sections[key] ||= [];
     group.sections[key].push(run);
   }
+  for (const group of map.values()) {
+    for (const runs of Object.values(group.sections)) {
+      runs.sort(compareRunsWithinSection);
+    }
+  }
   return Array.from(map.values())
     .map((group) => ({ ...group, channelCount: group.originalChannels.size }))
     .sort(compareGroups);
+}
+
+function compareRunsWithinSection(a, b) {
+  const typeRank = testTypeRank(a.testType) - testTypeRank(b.testType);
+  if (typeRank !== 0) return typeRank;
+  return runSortTime(b) - runSortTime(a);
+}
+
+function testTypeRank(type) {
+  if (type === "thumbnail") return 0;
+  if (type === "title") return 1;
+  return 2;
+}
+
+function runSortTime(run) {
+  const value = run.finishEventAt || run.effectiveFinishDate || run.startDate || run.updatedAt || "";
+  const time = new Date(value).valueOf();
+  return Number.isFinite(time) ? time : 0;
 }
 
 function displayChannel(runOrChannel) {
@@ -1095,8 +1141,8 @@ function outcomeLabel(run) {
     return "Explicit sheet finish/result signal";
   }
   if (run.queueStatus === "applied_change_observed") return "Visible YouTube metadata changed to a B/C option";
-  if (run.queueStatus === "past_due_check") return "Past 14 days with no real finish signal; open Studio to verify";
-  if (run.queueStatus === "uncovered") return "No active Studio connector is watching this channel";
+  if (run.queueStatus === "past_due_check") return "No real finish signal yet; open Studio only if you want a manual check";
+  if (run.queueStatus === "uncovered") return "No active extension is watching this channel";
   if (run.queueStatus === "watching") return "Active test; no real finish signal yet";
   if (run.status === "result_logged") return "Result already entered in sheet";
   if (run.status === "sheet_marked_done") return "Marked done in sheet";
@@ -1127,10 +1173,10 @@ function cardResult(run) {
     };
   }
   if (run.queueStatus === "past_due_check") {
-    return { key: "past_due_check", label: "Check Studio", value: "Past 14 days", tone: "warning" };
+    return { key: "past_due_check", label: "Manual check", value: "Backup check", tone: "manual" };
   }
   if (run.queueStatus === "uncovered") {
-    return { key: "uncovered", label: "Needs signal", value: "No connector", tone: "warning" };
+    return { key: "uncovered", label: "Needs signal", value: "Extension needed", tone: "warning" };
   }
   if (run.queueStatus === "watching") {
     return { key: "watching", label: "Watching", value: "No finish signal", tone: "neutral" };
@@ -1181,9 +1227,42 @@ function matchesFinishWindow(run, windowValue) {
   return days >= 0 && days <= Number(windowValue);
 }
 
+function isStaleRunningScan(scan) {
+  if (scan?.status !== "running" || !scan.startedAt) return false;
+  return Date.now() - new Date(scan.startedAt).valueOf() > 10 * 60 * 1000;
+}
+
+function stillWorkingText(scan, progress) {
+  const started = scan?.startedAt ? new Date(scan.startedAt).valueOf() : 0;
+  const elapsedSeconds = started ? Math.max(0, Math.round((Date.now() - started) / 1000)) : 0;
+  if (elapsedSeconds > 30) {
+    return `Still working for ${formatElapsed(elapsedSeconds)}. ${progress?.detail || "Updating queue data."}`;
+  }
+  return progress?.detail || "Working through sheets, thumbnails, YouTube data, and finish signals.";
+}
+
+function formatElapsed(seconds) {
+  if (seconds < 60) return `${seconds} seconds`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+}
+
+function hasUsefulDebugSignals(events = []) {
+  return events.some((event) => {
+    const text = String(event.rawText || "").toLowerCase();
+    return Boolean(
+      event.videoId ||
+        text.includes("a/b test") ||
+        text.includes("test completed") ||
+        text.includes("finished")
+    );
+  });
+}
+
 function signalDateLabel(run) {
   if (run.finishEventAt) return formatDateTime(run.finishEventAt);
-  if (run.queueStatus === "past_due_check") return "Past 14 days";
+  if (run.queueStatus === "past_due_check") return "Manual check";
   if (run.effectiveFinishDate) return `Sheet ${run.effectiveFinishDate}`;
   return "No signal yet";
 }
@@ -1192,7 +1271,7 @@ function signalSourceLabel(run) {
   if (run.finishEventSource === "studio_bell") return "Studio extension";
   if (run.finishEventSource === "studio_page_status") return "Studio page status";
   if (run.finishEventSource === "metadata") return "Metadata observed";
-  if (run.queueStatus === "past_due_check") return "Date fallback";
+  if (run.queueStatus === "past_due_check") return "Manual backup";
   if (run.queueStatus === "confirmed_finished" && run.effectiveFinishDate) return "Sheet finish date";
   if (run.queueStatus === "watching") return "Watching";
   if (run.queueStatus === "uncovered") return "Uncovered";
@@ -1224,9 +1303,9 @@ function dateOnlyText(value) {
 
 function connectorSummary(items = []) {
   const active = items.filter((item) => item.active);
-  if (!active.length) return "no active extension heartbeat";
+  if (!active.length) return "not connected";
   const channels = new Set(active.flatMap((item) => item.channels || []));
-  return `${active.length} active extension${active.length === 1 ? "" : "s"} watching ${channels.size} channel${channels.size === 1 ? "" : "s"}`;
+  return `${channels.size} channel${channels.size === 1 ? "" : "s"} checked recently`;
 }
 
 function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, selectedChannel }) {
@@ -1264,9 +1343,9 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
       return { channel, state: "watching", label: "Watching" };
     }
     if (hasHeartbeat) {
-      return { channel, state: "heartbeat", label: "Heartbeat only" };
+      return { channel, state: "heartbeat", label: "Open Studio tab needed" };
     }
-    return { channel, state: "missing", label: "Not connected" };
+    return { channel, state: "missing", label: "Extension not connected" };
   });
 
   const watching = statuses.filter((item) => item.state === "watching").length;
@@ -1276,7 +1355,7 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
   if (!connectorConfig?.configured) {
     return {
       tone: "danger",
-      title: "Extension connector is not configured",
+      title: "Extension setup needed",
       message: "Scan can still read Sheets and YouTube, but Studio finish notifications will not be captured.",
       channels: statuses
     };
@@ -1285,18 +1364,18 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
     return {
       tone: "danger",
       title: "Extension is not connected",
-      message: "Scan can still run, but every channel is blind to real Studio finish notifications until the extension sends heartbeat.",
+      message: "Scan can still run, but real Studio finish notifications will not be captured until the extension checks in.",
       channels: statuses
     };
   }
   if (missing || heartbeatOnly) {
     return {
       tone: "warn",
-      title: wrongStudioTabOpen ? "Studio tab is open, but not a watcher channel" : "Some channels are not actively watched",
+      title: wrongStudioTabOpen ? "Studio tab is open, but not a watched channel" : "Some channels need an open Studio tab",
       message:
         wrongStudioTabOpen
-          ? "Open the configured watcher tabs from the extension so real finish notifications are captured for the right channels."
-          : "Scan will still update sheet and YouTube data, but channels marked heartbeat only or not connected may miss real finish notifications.",
+          ? "Open the watched channels from the extension so real finish notifications are captured for the right channels."
+          : "Scan will still update sheet and YouTube data, but channels without an open Studio tab may miss real finish notifications.",
       versionWarning: outdated.length
         ? `Extension update available. Active version ${outdated[0]}, latest ${latestVersion}.`
         : "",
@@ -1306,7 +1385,7 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
   return {
     tone: "ok",
     title: "Extension is watching selected channels",
-    message: `${watching} channel${watching === 1 ? " is" : "s are"} connected with an open Studio watcher tab.`,
+    message: `${watching} channel${watching === 1 ? " is" : "s are"} connected with an open Studio watcher.`,
     versionWarning: outdated.length
       ? `Extension update available. Active version ${outdated[0]}, latest ${latestVersion}.`
       : "",
