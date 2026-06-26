@@ -452,14 +452,16 @@ a {
 }
 
 .scan-step-list,
-.scan-count-list {
+.scan-count-list,
+.scan-timing-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
 .scan-step,
-.scan-count-list span {
+.scan-count-list span,
+.scan-timing-list span {
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--muted);
@@ -486,12 +488,18 @@ a {
   color: var(--red);
 }
 
-.scan-count-list {
+.scan-count-list,
+.scan-timing-list {
   color: var(--muted);
 }
 
-.scan-count-list strong {
+.scan-count-list strong,
+.scan-timing-list strong {
   color: var(--text);
+}
+
+.scan-timing-list span {
+  background: color-mix(in srgb, var(--blue) 7%, var(--surface));
 }
 
 .filters {

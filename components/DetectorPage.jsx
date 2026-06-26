@@ -139,16 +139,29 @@ export default function DetectorPage({ session }) {
   }
 
   async function scanNow() {
+    const scoped = {
+      channel: channel !== "all" ? channel : "all",
+      testType: type !== "all" ? type : "all"
+    };
+    const scopedText = [
+      scoped.channel !== "all" ? scoped.channel : "",
+      scoped.testType !== "all" ? `${titleCase(scoped.testType)} tests` : ""
+    ].filter(Boolean).join(" · ");
     setScanning(true);
     setError("");
     setScanProgress({
       stage: "starting",
       label: "Starting scan",
-      detail: "Preparing sheet and YouTube checks.",
-      percent: 2
+      detail: scopedText ? `Scanning only ${scopedText}.` : "Preparing sheet and YouTube checks.",
+      percent: 2,
+      counts: {}
     });
     try {
-      const response = await fetch("/api/scan", { method: "POST" });
+      const response = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(scoped)
+      });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Scan failed.");
       notifyBrowser("YouTube A/B Tests", `${payload.summary.total} items need attention.`);
@@ -230,7 +243,7 @@ export default function DetectorPage({ session }) {
           </div>
           <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
             <RefreshCw size={18} className={scanning ? "spin" : ""} />
-            {scanning ? "Scanning" : "Scan Now"}
+            {scanning ? "Scanning" : scanButtonLabel(channel, type)}
           </button>
         </section>
 
@@ -421,10 +434,15 @@ function ScanProgress({ scan, progress, scanning }) {
   const countItems = [
     ["Title rows", counts.titleRows],
     ["Thumbnail rows", counts.thumbnailRows],
+    ["Skipped by filter", counts.filteredRows],
     ["Previews", counts.thumbnailPreviews],
     ["YouTube rows", counts.enrichedRows],
     ["Signals", counts.appliedSignals]
   ].filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0);
+  const timingItems = Object.entries(counts.timings || {})
+    .filter(([key, value]) => key !== "total" && Number(value) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 5);
 
   return (
     <section className="scan-progress-panel">
@@ -453,6 +471,15 @@ function ScanProgress({ scan, progress, scanning }) {
           {countItems.map(([label, value]) => (
             <span key={label}>
               {label}: <strong>{value}</strong>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {timingItems.length ? (
+        <div className="scan-timing-list">
+          {timingItems.map(([key, value]) => (
+            <span key={key}>
+              {timingLabel(key)}: <strong>{formatDuration(value)}</strong>
             </span>
           ))}
         </div>
@@ -1240,6 +1267,37 @@ function titleCase(value) {
   return String(value || "")
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function scanButtonLabel(channel, type) {
+  const parts = [
+    channel !== "all" ? channel : "",
+    type !== "all" ? titleCase(type) : ""
+  ].filter(Boolean);
+  return parts.length ? `Scan ${parts.join(" · ")}` : "Scan Now";
+}
+
+function timingLabel(key) {
+  const labels = {
+    prepare: "Prepare",
+    read_title: "Read titles",
+    read_thumbnail: "Read thumbnails",
+    thumbnail_export: "Thumbnail export",
+    thumbnail_import: "Thumbnail import",
+    thumbnail_map: "Thumbnail map",
+    youtube_metadata: "YouTube data",
+    save_runs: "Save results",
+    finish_signals: "Finish signals",
+    flag_missing: "Missing rows",
+    refresh_queue: "Refresh queue"
+  };
+  return labels[key] || titleCase(key);
+}
+
+function formatDuration(value) {
+  const ms = Number(value) || 0;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
 }
 
 function formatDateTime(value) {

@@ -4,10 +4,15 @@ import { errorJson, json } from "@/lib/http.js";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+export async function POST(request) {
   try {
     const session = await requireSession();
-    const result = await runScan({ actorName: session.actorName });
+    const body = await request.json().catch(() => ({}));
+    const result = await runScan({
+      actorName: session.actorName,
+      channel: body.channel || "all",
+      testType: body.testType || "all"
+    });
     return json(result);
   } catch (error) {
     return errorJson(error);
