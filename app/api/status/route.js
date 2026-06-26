@@ -5,7 +5,7 @@ import { readSession } from "@/lib/auth.js";
 import { json } from "@/lib/http.js";
 
 export const runtime = "nodejs";
-const LATEST_EXTENSION_VERSION = "0.1.3";
+const LATEST_EXTENSION_VERSION = "0.1.4";
 
 export async function GET() {
   const session = await readSession();

@@ -3,7 +3,7 @@ import { json, errorJson } from "@/lib/http.js";
 import { listConnectorActiveRuns, getConnectorStatus } from "@/lib/repository.js";
 
 export const runtime = "nodejs";
-const LATEST_EXTENSION_VERSION = "0.1.3";
+const LATEST_EXTENSION_VERSION = "0.1.4";
 
 export async function GET(request) {
   try {
