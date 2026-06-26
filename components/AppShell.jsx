@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Bell, History, Moon, Settings, Sun, Upload, Youtube } from "lucide-react";
 
@@ -34,9 +35,19 @@ export default function AppShell({ session, active, children }) {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">YouTube A/B Tests</p>
-          <h1>Test Finish Detector</h1>
+        <div className="brand-lockup">
+          <Image
+            className="brand-logo"
+            src="/icon-192.png"
+            alt="YouTube A/B Tests"
+            width={58}
+            height={58}
+            priority
+          />
+          <div>
+            <p className="eyebrow">YouTube A/B Tests</p>
+            <h1>Test Finish Detector</h1>
+          </div>
         </div>
         <div className="topbar-actions">
           <button

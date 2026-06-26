@@ -131,6 +131,21 @@ a {
   gap: 16px;
 }
 
+.brand-lockup {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  min-width: 0;
+}
+
+.brand-logo {
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+  flex: 0 0 auto;
+  height: 58px;
+  width: 58px;
+}
+
 .topbar h1,
 .hero-row h2,
 .login-panel h1,
@@ -1480,14 +1495,11 @@ select {
   padding: 32px;
 }
 
-.login-icon {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
+.login-logo {
+  border-radius: 18px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+  height: 72px;
+  width: 72px;
 }
 
 .settings-grid {
@@ -2277,6 +2289,10 @@ textarea {
   .history-item {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .brand-lockup {
+    align-items: center;
   }
 
   .summary-grid,

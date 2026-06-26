@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LockKeyhole } from "lucide-react";
+import Image from "next/image";
 
 export default function LoginForm() {
   const [actorName, setActorName] = useState("");
@@ -42,9 +42,14 @@ export default function LoginForm() {
   return (
     <main className="login-page">
       <form className="login-panel" onSubmit={submit}>
-        <div className="login-icon">
-          <LockKeyhole size={22} />
-        </div>
+        <Image
+          className="login-logo"
+          src="/icon-192.png"
+          alt="YouTube A/B Tests"
+          width={72}
+          height={72}
+          priority
+        />
         <p className="eyebrow">YouTube A/B Tests</p>
         <h1>Open the detector</h1>
         <label>
