@@ -7,6 +7,7 @@ const DEFAULTS = {
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
+  document.getElementById("versionBadge").textContent = `v${chrome.runtime.getManifest().version}`;
   const settings = { ...DEFAULTS, ...(await chrome.storage.sync.get(FIELDS)) };
   for (const field of FIELDS) {
     document.getElementById(field).value = settings[field] || "";

@@ -10,6 +10,7 @@ const NOTIFICATION_SELECTORS = [
   "[aria-live]"
 ];
 const seen = new Set();
+let currentUrl = location.href;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "scrape-studio-notifications") return false;
@@ -17,6 +18,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   sendEvents(events).then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });
+
+schedulePageStatusScans();
+window.setInterval(() => {
+  if (location.href === currentUrl) return;
+  currentUrl = location.href;
+  schedulePageStatusScans();
+}, 2000);
 
 function collectNotificationEvents({ includeSeen = false } = {}) {
   const channel = detectChannelName();
@@ -36,13 +44,24 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
       channel,
       observedAt: new Date().toISOString()
     };
-    const key = `${event.videoId}|${event.rawText}|${event.url}`;
-    if (!includeSeen && seen.has(key)) continue;
-    seen.add(key);
+    if (!rememberEvent(event, includeSeen)) continue;
     events.push(event);
     if (events.length >= 20) break;
   }
   return compactEvents(events);
+}
+
+function schedulePageStatusScans() {
+  window.setTimeout(autoSendStudioPageStatus, 2500);
+  window.setTimeout(autoSendStudioPageStatus, 8000);
+}
+
+async function autoSendStudioPageStatus() {
+  const events = collectStudioPageStatusEvents(detectChannelName()).filter((event) =>
+    rememberEvent(event, false)
+  );
+  if (!events.length) return;
+  await sendEvents(compactEvents(events)).catch(() => {});
 }
 
 function collectStudioPageStatusEvents(channel) {
@@ -74,6 +93,13 @@ function compactEvents(events) {
     if (!map.has(key)) map.set(key, event);
   }
   return Array.from(map.values());
+}
+
+function rememberEvent(event, includeSeen) {
+  const key = `${event.videoId}|${event.rawText}|${event.url}`;
+  if (!includeSeen && seen.has(key)) return false;
+  seen.add(key);
+  return true;
 }
 
 function isRelevant(text) {

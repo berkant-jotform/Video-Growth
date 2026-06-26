@@ -1,4 +1,5 @@
 document.addEventListener("DOMContentLoaded", async () => {
+  document.getElementById("versionBadge").textContent = `v${chrome.runtime.getManifest().version}`;
   await render();
   document.getElementById("openWatchers").addEventListener("click", async () => {
     await openWatcherTargets([], "Opening all configured Studio watcher tabs...");
