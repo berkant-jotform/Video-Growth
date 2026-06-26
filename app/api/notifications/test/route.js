@@ -1,13 +1,17 @@
 import { requireSession } from "@/lib/auth.js";
 import { buildDigest } from "@/lib/notifications.js";
+import { listNotificationProfiles } from "@/lib/notification-profiles.js";
 import { errorJson, json } from "@/lib/http.js";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+export async function POST(request) {
   try {
     await requireSession();
-    const digest = await buildDigest("browser");
+    const body = await request.json().catch(() => ({}));
+    const profiles = body.profileId ? await listNotificationProfiles() : [];
+    const profile = profiles.find((item) => item.profileId === body.profileId) || null;
+    const digest = profile ? await buildDigest("browser", profile.rules, profile) : await buildDigest("browser");
     return json({
       ok: true,
       browserNotification: {

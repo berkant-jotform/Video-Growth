@@ -1,42 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Mail, Save, Send, Slack } from "lucide-react";
+import { Bell, Mail, Plus, Save, Send, Slack, Trash2 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
-
-const METHODS = [
-  {
-    key: "slack",
-    title: "Slack Digest",
-    icon: Slack,
-    description: "Send filtered queue digests to one shared Slack webhook.",
-    fields: [["SLACK_WEBHOOK_URL", "Slack webhook URL", "input", true]],
-    prefix: "NOTIFICATION_SLACK"
-  },
-  {
-    key: "email",
-    title: "Email Digest",
-    icon: Mail,
-    description: "Send filtered queue digests to the shared recipient list.",
-    fields: [
-      ["SMTP_HOST", "SMTP host", "input"],
-      ["SMTP_PORT", "SMTP port", "input"],
-      ["SMTP_USERNAME", "SMTP username", "input"],
-      ["SMTP_PASSWORD", "SMTP password", "input", true],
-      ["SMTP_FROM", "From email", "input"],
-      ["DIGEST_EMAIL_RECIPIENTS", "Digest recipients", "input"]
-    ],
-    prefix: "NOTIFICATION_EMAIL"
-  },
-  {
-    key: "browser",
-    title: "Browser Notification Preview",
-    icon: Bell,
-    description: "Control what the in-browser notification preview counts.",
-    fields: [],
-    prefix: "NOTIFICATION_BROWSER"
-  }
-];
 
 const STATUS_OPTIONS = [
   ["confirmed_finished", "Confirmed finished"],
@@ -58,6 +24,7 @@ const DEFAULT_CHANNELS = ["Jotform", "AI Agents Podcast", "AI Agents", "Jotform 
 export default function NotificationsPage({ session }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({});
+  const [profiles, setProfiles] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState("");
@@ -67,33 +34,55 @@ export default function NotificationsPage({ session }) {
   }, []);
 
   async function load() {
-    const response = await fetch("/api/config");
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Could not load notification settings.");
+    const [configResponse, profilesResponse] = await Promise.all([
+      fetch("/api/config"),
+      fetch("/api/notification-profiles")
+    ]);
+    const configPayload = await configResponse.json();
+    const profilesPayload = await profilesResponse.json();
+    if (!configResponse.ok || !configPayload.ok) {
+      setError(configPayload.error || "Could not load notification settings.");
       return;
     }
-    setConfig(payload.config);
-    setForm(payload.config.values || {});
+    if (!profilesResponse.ok || !profilesPayload.ok) {
+      setError(profilesPayload.error || "Could not load notification profiles.");
+      return;
+    }
+    setConfig(configPayload.config);
+    setForm(configPayload.config.values || {});
+    setProfiles(profilesPayload.profiles || []);
   }
 
   async function save(event) {
     event?.preventDefault?.();
     setMessage("");
     setError("");
-    const response = await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form)
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Could not save notification settings.");
+    const [configResponse, profilesResponse] = await Promise.all([
+      fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      }),
+      fetch("/api/notification-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profiles })
+      })
+    ]);
+    const configPayload = await configResponse.json();
+    const profilesPayload = await profilesResponse.json();
+    if (!configResponse.ok || !configPayload.ok) {
+      setError(configPayload.error || "Could not save notification settings.");
       return;
     }
-    setConfig(payload.config);
-    setForm(payload.config.values || {});
-    setMessage("Notification settings saved.");
+    if (!profilesResponse.ok || !profilesPayload.ok) {
+      setError(profilesPayload.error || "Could not save notification profiles.");
+      return;
+    }
+    setConfig(configPayload.config);
+    setForm(configPayload.config.values || {});
+    setProfiles(profilesPayload.profiles || []);
+    setMessage("Notification profiles saved.");
   }
 
   async function sendDigest() {
@@ -107,16 +96,20 @@ export default function NotificationsPage({ session }) {
       setError(payload.error || "Could not send digest.");
       return;
     }
-    const slack = payload.slack?.skipped ? "Slack skipped" : `Slack ${payload.slack?.ok ? "sent" : "failed"}`;
-    const email = payload.smtp?.skipped ? "Email skipped" : `Email ${payload.smtp?.ok ? "sent" : "failed"}`;
-    setMessage(`${slack}. ${email}.`);
+    const slackCount = payload.slack?.profileCount ?? payload.slack?.results?.length ?? 0;
+    const emailCount = payload.smtp?.profileCount ?? payload.smtp?.results?.length ?? 0;
+    setMessage(`Digest processed. Slack profiles: ${slackCount}. Email profiles: ${emailCount}.`);
   }
 
-  async function testBrowserNotification() {
-    setSending("browser");
+  async function testBrowserNotification(profile) {
+    setSending(`browser-${profile.profileId}`);
     setMessage("");
     setError("");
-    const response = await fetch("/api/notifications/test", { method: "POST" });
+    const response = await fetch("/api/notifications/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.profileId })
+    });
     const payload = await response.json();
     setSending("");
     if (!response.ok || !payload.ok) {
@@ -129,7 +122,48 @@ export default function NotificationsPage({ session }) {
         new Notification(payload.browserNotification.title, { body: payload.browserNotification.body });
       }
     }
-    setMessage(`Browser preview ready: ${payload.digest.summary.total} matching item${payload.digest.summary.total === 1 ? "" : "s"}.`);
+    setMessage(`${profile.displayName || "Profile"} preview: ${payload.digest.summary.total} matching item${payload.digest.summary.total === 1 ? "" : "s"}.`);
+  }
+
+  function addProfile() {
+    const name = session?.actorName && !profiles.some((profile) => profile.displayName === session.actorName)
+      ? session.actorName
+      : `Reviewer ${profiles.length + 1}`;
+    setProfiles((current) => [
+      ...current,
+      {
+        profileId: crypto.randomUUID(),
+        displayName: name,
+        enabled: true,
+        emailRecipients: "",
+        slackWebhookUrl: "",
+        rules: {
+          channels: [],
+          testTypes: [],
+          statuses: ["confirmed_finished", "applied_change_observed", "past_due_check"]
+        }
+      }
+    ]);
+  }
+
+  function updateProfile(profileId, patch) {
+    setProfiles((current) =>
+      current.map((profile) => (profile.profileId === profileId ? { ...profile, ...patch } : profile))
+    );
+  }
+
+  function updateRules(profileId, key, value) {
+    setProfiles((current) =>
+      current.map((profile) =>
+        profile.profileId === profileId
+          ? { ...profile, rules: { ...(profile.rules || {}), [key]: value } }
+          : profile
+      )
+    );
+  }
+
+  function removeProfile(profileId) {
+    setProfiles((current) => current.filter((profile) => profile.profileId !== profileId));
   }
 
   const channels = useMemo(() => {
@@ -143,56 +177,79 @@ export default function NotificationsPage({ session }) {
         <section className="settings-panel full-width notification-hero">
           <div>
             <p className="eyebrow">Notifications</p>
-            <h2>Shared team digest rules</h2>
+            <h2>Team notification profiles</h2>
             <p className="muted">
-              These settings are app-wide. If you add your email or Slack webhook, the whole team uses that same
-              routing until we add real per-user accounts.
+              The detector queue is shared. Profiles decide who receives which channel, test type, and status.
+              SMTP sender settings are shared; Slack webhooks and email recipients can be profile-specific.
             </p>
           </div>
           <div className="notification-actions">
-            <button className="secondary-button" type="button" onClick={testBrowserNotification} disabled={sending === "browser"}>
-              <Bell size={17} />
-              {sending === "browser" ? "Testing..." : "Test Browser Preview"}
+            <button className="secondary-button" type="button" onClick={addProfile}>
+              <Plus size={17} />
+              Add Profile
             </button>
             <button className="primary-button" type="button" onClick={sendDigest} disabled={sending === "digest"}>
               <Send size={17} />
-              {sending === "digest" ? "Sending..." : "Send Slack + Email Digest"}
+              {sending === "digest" ? "Sending..." : "Send Digest Now"}
             </button>
           </div>
         </section>
 
         <form onSubmit={save} className="notifications-grid">
           <section className="settings-panel notification-schedule">
-            <p className="eyebrow">Schedule</p>
-            <h2>Digest timing</h2>
-            <SettingField
-              label="Daily digest time"
-              name="DAILY_DIGEST_TIME_LOCAL"
-              value={form.DAILY_DIGEST_TIME_LOCAL || "09:00"}
-              onChange={(value) => setForm((current) => ({ ...current, DAILY_DIGEST_TIME_LOCAL: value }))}
-            />
-            <p className="field-hint">
-              Scheduled delivery depends on Vercel Cron. Manual send works from this page.
+            <p className="eyebrow">Shared Sender</p>
+            <h2>Email delivery</h2>
+            <p className="muted">
+              These SMTP values send email for every profile. Each profile controls its own recipients and filters.
             </p>
+            <SettingField label="Daily digest time" name="DAILY_DIGEST_TIME_LOCAL" value={form.DAILY_DIGEST_TIME_LOCAL || "09:00"} onChange={(value) => setForm((current) => ({ ...current, DAILY_DIGEST_TIME_LOCAL: value }))} />
+            <SettingField label="SMTP host" name="SMTP_HOST" value={form.SMTP_HOST || ""} source={config?.sources?.SMTP_HOST} onChange={(value) => setForm((current) => ({ ...current, SMTP_HOST: value }))} />
+            <SettingField label="SMTP port" name="SMTP_PORT" value={form.SMTP_PORT || "587"} source={config?.sources?.SMTP_PORT} onChange={(value) => setForm((current) => ({ ...current, SMTP_PORT: value }))} />
+            <SettingField label="SMTP username" name="SMTP_USERNAME" value={form.SMTP_USERNAME || ""} source={config?.sources?.SMTP_USERNAME} onChange={(value) => setForm((current) => ({ ...current, SMTP_USERNAME: value }))} />
+            <SettingField label="SMTP password" name="SMTP_PASSWORD" secret value={form.SMTP_PASSWORD || ""} source={config?.sources?.SMTP_PASSWORD} onChange={(value) => setForm((current) => ({ ...current, SMTP_PASSWORD: value }))} />
+            <SettingField label="From email" name="SMTP_FROM" value={form.SMTP_FROM || ""} source={config?.sources?.SMTP_FROM} onChange={(value) => setForm((current) => ({ ...current, SMTP_FROM: value }))} />
           </section>
 
-          {METHODS.map((method) => (
-            <MethodCard
-              key={method.key}
-              method={method}
-              channels={channels}
-              form={form}
-              config={config}
-              onChange={(key, value) => setForm((current) => ({ ...current, [key]: value }))}
-            />
-          ))}
+          <section className="settings-panel notification-schedule">
+            <p className="eyebrow">Profile Defaults</p>
+            <h2>Recommended routing</h2>
+            <div className="notification-guidance">
+              <span><Bell size={16} /> Start with confirmed finished, applied change observed, and past due check.</span>
+              <span><Mail size={16} /> Use email recipients for people, Slack webhooks for channels or DMs.</span>
+              <span><Slack size={16} /> Leave a filter empty when that profile should receive all values.</span>
+            </div>
+          </section>
+
+          {profiles.length ? (
+            profiles.map((profile) => (
+              <ProfileCard
+                key={profile.profileId}
+                profile={profile}
+                channels={channels}
+                sending={sending}
+                onChange={(patch) => updateProfile(profile.profileId, patch)}
+                onRuleChange={(key, value) => updateRules(profile.profileId, key, value)}
+                onRemove={() => removeProfile(profile.profileId)}
+                onPreview={() => testBrowserNotification(profile)}
+              />
+            ))
+          ) : (
+            <section className="settings-panel notification-empty full-width">
+              <h2>No notification profiles yet</h2>
+              <p className="muted">Add one profile per teammate or workflow. Nothing profile-specific will send until a profile exists.</p>
+              <button className="primary-button" type="button" onClick={addProfile}>
+                <Plus size={17} />
+                Add First Profile
+              </button>
+            </section>
+          )}
 
           <section className="settings-panel full-width notification-save-panel">
             {error ? <p className="form-error">{error}</p> : null}
             {message ? <p className="form-success">{message}</p> : null}
             <button className="primary-button">
               <Save size={17} />
-              Save Notification Settings
+              Save Notification Profiles
             </button>
           </section>
         </form>
@@ -201,73 +258,51 @@ export default function NotificationsPage({ session }) {
   );
 }
 
-function MethodCard({ method, channels, form, config, onChange }) {
-  const Icon = method.icon;
-  const channelKey = `${method.prefix}_CHANNELS`;
-  const typeKey = `${method.prefix}_TEST_TYPES`;
-  const statusKey = `${method.prefix}_STATUSES`;
+function ProfileCard({ profile, channels, sending, onChange, onRuleChange, onRemove, onPreview }) {
   return (
-    <section className="settings-panel notification-method-card">
-      <div className="notification-method-title">
-        <span className={`notification-method-icon ${method.key}`}>
-          <Icon size={18} />
-        </span>
+    <section className={`settings-panel notification-profile-card ${profile.enabled ? "" : "disabled"}`}>
+      <div className="profile-card-header">
         <div>
-          <p className="eyebrow">{method.title}</p>
-          <h2>{method.key === "slack" ? connectionLabel(config?.configured?.slack) : method.key === "email" ? connectionLabel(config?.configured?.smtp && config?.configured?.digestEmail) : "Local browser"}</h2>
+          <p className="eyebrow">Notification Profile</p>
+          <h2>{profile.displayName || "Reviewer"}</h2>
         </div>
+        <label className="profile-toggle">
+          <input type="checkbox" checked={profile.enabled !== false} onChange={(event) => onChange({ enabled: event.target.checked })} />
+          Enabled
+        </label>
       </div>
-      <p className="muted">{method.description}</p>
 
-      {method.fields.length ? (
-        <div className="notification-fields">
-          {method.fields.map(([key, label, type, secret]) => (
-            <SettingField
-              key={key}
-              label={label}
-              name={key}
-              type={type}
-              secret={Boolean(secret)}
-              source={config?.sources?.[key]}
-              value={form[key] || ""}
-              onChange={(value) => onChange(key, value)}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div className="profile-fields">
+        <SettingField label="Name or initials" name={`name-${profile.profileId}`} value={profile.displayName || ""} onChange={(value) => onChange({ displayName: value })} />
+        <SettingField label="Email recipients" name={`email-${profile.profileId}`} value={profile.emailRecipients || ""} onChange={(value) => onChange({ emailRecipients: value })} />
+        <SettingField label="Slack webhook URL" name={`slack-${profile.profileId}`} secret value={profile.slackWebhookUrl || ""} onChange={(value) => onChange({ slackWebhookUrl: value })} />
+      </div>
 
-      <RulePicker
-        title="Channels"
-        hint="Leave empty to include all channels."
-        options={channels.map((channel) => [channel, channel])}
-        value={form[channelKey] || ""}
-        onChange={(value) => onChange(channelKey, value)}
-      />
-      <RulePicker
-        title="Test type"
-        hint="Leave empty to include title and thumbnail tests."
-        options={TEST_TYPE_OPTIONS}
-        value={form[typeKey] || ""}
-        onChange={(value) => onChange(typeKey, value)}
-      />
-      <RulePicker
-        title="Statuses"
-        hint="Recommended: confirmed finished, applied change observed, and past due check."
-        options={STATUS_OPTIONS}
-        value={form[statusKey] || ""}
-        onChange={(value) => onChange(statusKey, value)}
-      />
+      <RulePicker title="Channels" hint="Empty means every channel." options={channels.map((channel) => [channel, channel])} value={profile.rules?.channels || []} onChange={(value) => onRuleChange("channels", value)} />
+      <RulePicker title="Test type" hint="Empty means title and thumbnail." options={TEST_TYPE_OPTIONS} value={profile.rules?.testTypes || []} onChange={(value) => onRuleChange("testTypes", value)} />
+      <RulePicker title="Statuses" hint="Choose what should notify this profile." options={STATUS_OPTIONS} value={profile.rules?.statuses || []} onChange={(value) => onRuleChange("statuses", value)} />
+
+      <div className="profile-actions">
+        <button className="secondary-button" type="button" onClick={onPreview} disabled={sending === `browser-${profile.profileId}`}>
+          <Bell size={16} />
+          {sending === `browser-${profile.profileId}` ? "Testing..." : "Preview Browser Count"}
+        </button>
+        <button className="secondary-button danger-button" type="button" onClick={onRemove}>
+          <Trash2 size={16} />
+          Remove
+        </button>
+      </div>
     </section>
   );
 }
 
 function RulePicker({ title, hint, options, value, onChange }) {
-  const selected = new Set(parseList(value));
+  const selected = new Set(Array.isArray(value) ? value : parseList(value));
   function toggle(option) {
     const next = new Set(selected);
     if (next.has(option)) next.delete(option);
     else next.add(option);
-    onChange(Array.from(next).join(", "));
+    onChange(Array.from(next));
   }
   return (
     <div className="rule-picker">
@@ -325,10 +360,6 @@ function SettingField({ label, name, type = "input", value, source, secret, onCh
       ) : null}
     </label>
   );
-}
-
-function connectionLabel(ready) {
-  return ready ? "Configured" : "Not configured";
 }
 
 function parseList(value) {

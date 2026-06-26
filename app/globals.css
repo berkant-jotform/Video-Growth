@@ -2007,6 +2007,82 @@ select {
   align-items: start;
 }
 
+.notification-guidance {
+  display: grid;
+  gap: 10px;
+}
+
+.notification-guidance span {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  display: flex;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.notification-profile-card.disabled {
+  opacity: 0.72;
+}
+
+.profile-card-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.profile-card-header h2 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.profile-toggle {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.profile-toggle input {
+  margin: 0;
+  width: auto;
+}
+
+.profile-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.danger-button {
+  color: var(--red);
+}
+
+.notification-empty {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+}
+
 textarea {
   border: 1px solid var(--border);
   border-radius: 8px;
