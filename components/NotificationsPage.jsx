@@ -140,7 +140,7 @@ export default function NotificationsPage({ session }) {
         rules: {
           channels: [],
           testTypes: [],
-          statuses: ["confirmed_finished", "applied_change_observed", "past_due_check"]
+          statuses: ["confirmed_finished", "applied_change_observed"]
         }
       }
     ]);
@@ -214,7 +214,7 @@ export default function NotificationsPage({ session }) {
             <p className="eyebrow">Profile Defaults</p>
             <h2>Recommended routing</h2>
             <div className="notification-guidance">
-              <span><Bell size={16} /> Start with confirmed finished, applied change observed, and needs manual check.</span>
+              <span><Bell size={16} /> Start with confirmed finished and applied change observed. Add manual checks only when you really want them.</span>
               <span><Mail size={16} /> Use email recipients for people, Slack webhooks for channels or DMs.</span>
               <span><Slack size={16} /> Leave a filter empty when that profile should receive all values.</span>
             </div>

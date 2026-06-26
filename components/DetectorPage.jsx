@@ -18,6 +18,7 @@ import AppShell from "@/components/AppShell.jsx";
 import { CHANNEL_PRIORITY, canonicalChannelName, compareChannels } from "@/lib/channels.mjs";
 
 const SECTION_ORDER = [
+  "action_conflict",
   "confirmed_finished",
   "applied_change_observed",
   "past_due_check",
@@ -28,6 +29,7 @@ const SECTION_ORDER = [
 ];
 
 const SECTION_LABELS = {
+  action_conflict: "Action Conflict",
   confirmed_finished: "Confirmed Finished",
   applied_change_observed: "Applied Change Observed",
   past_due_check: "Needs Manual Check",
@@ -64,6 +66,7 @@ const CHANNEL_ACCENTS = new Map([
 const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5f7464"];
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
+const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -83,6 +86,8 @@ export default function DetectorPage({ session }) {
   const [quickSaving, setQuickSaving] = useState("");
   const [scanChannel, setScanChannel] = useState("all");
   const [scanType, setScanType] = useState("all");
+  const [refreshThumbnails, setRefreshThumbnails] = useState(false);
+  const [detectorView, setDetectorView] = useState("classic");
   const [viewChannel, setViewChannel] = useState("all");
   const [viewType, setViewType] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
@@ -96,6 +101,15 @@ export default function DetectorPage({ session }) {
 
   useEffect(() => {
     refresh();
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(DETECTOR_VIEW_STORAGE_KEY);
+      if (stored === "classic" || stored === "board") setDetectorView(stored);
+    } catch {
+      setDetectorView("classic");
+    }
   }, []);
 
   useEffect(() => {
@@ -165,10 +179,47 @@ export default function DetectorPage({ session }) {
     }
   }
 
+  function setViewMode(value) {
+    setDetectorView(value);
+    try {
+      window.localStorage.setItem(DETECTOR_VIEW_STORAGE_KEY, value);
+    } catch {
+      // View mode is personal presentation state only.
+    }
+  }
+
   async function scanNow() {
+    return runScanRequest({
+      channel: scanChannel,
+      testType: scanType,
+      refreshThumbnails: false,
+      label: "selected scope"
+    });
+  }
+
+  async function fullRefresh() {
+    return runScanRequest({
+      channel: "all",
+      testType: "all",
+      refreshThumbnails,
+      label: "full refresh"
+    });
+  }
+
+  async function scanChannelNow(channel) {
+    return runScanRequest({
+      channel: channel && channel !== OTHER_CHANNELS_LABEL ? channel : "all",
+      testType: "all",
+      refreshThumbnails: false,
+      label: channel && channel !== OTHER_CHANNELS_LABEL ? channel : "all channels"
+    });
+  }
+
+  async function runScanRequest({ channel = "all", testType = "all", refreshThumbnails = false, label = "" } = {}) {
     const scoped = {
-      channel: scanChannel !== "all" ? scanChannel : "all",
-      testType: scanType !== "all" ? scanType : "all"
+      channel: channel !== "all" ? channel : "all",
+      testType: testType !== "all" ? testType : "all",
+      refreshThumbnails
     };
     const scopedText = [
       scoped.channel !== "all" ? scoped.channel : "",
@@ -179,7 +230,11 @@ export default function DetectorPage({ session }) {
     setScanProgress({
       stage: "starting",
       label: "Starting scan",
-      detail: scopedText ? `Scanning only ${scopedText}.` : "Preparing sheet and YouTube checks.",
+      detail: scopedText
+        ? `Scanning only ${scopedText}.`
+        : refreshThumbnails
+          ? "Running a full refresh and rebuilding thumbnail previews."
+          : `Running ${label || "scan"} without rebuilding thumbnail previews.`,
       percent: 2,
       counts: {}
     });
@@ -197,6 +252,53 @@ export default function DetectorPage({ session }) {
       setError(err.message);
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function ignoreRun(run) {
+    if (!run?.testRunId) return;
+    setQuickSaving(`${run.testRunId}:IGNORE`);
+    setError("");
+    try {
+      const response = await fetch("/api/resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetType: "test_run",
+          targetId: run.testRunId,
+          action: "ignore",
+          metadata: { queueStatus: run.queueStatus, videoId: run.videoId }
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not ignore item.");
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setQuickSaving("");
+    }
+  }
+
+  async function ignoreEvent(event) {
+    if (!event?.eventId) return;
+    setError("");
+    try {
+      const response = await fetch("/api/resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetType: "finish_event",
+          targetId: event.eventId,
+          action: "ignore",
+          metadata: { videoId: event.videoId, source: event.source }
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not ignore signal.");
+      await refresh();
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -298,6 +400,22 @@ export default function DetectorPage({ session }) {
               Last successful scan: {lastSuccessfulScan?.completedAt ? formatDateTime(lastSuccessfulScan.completedAt) : "No successful scan yet"}.
               Extension: {connectorSummary(connectorStatus)}
             </p>
+            <div className="detector-view-toggle segmented" aria-label="Detector view">
+              <button
+                className={detectorView === "classic" ? "active" : ""}
+                onClick={() => setViewMode("classic")}
+                type="button"
+              >
+                Classic
+              </button>
+              <button
+                className={detectorView === "board" ? "active" : ""}
+                onClick={() => setViewMode("board")}
+                type="button"
+              >
+                Channel Board
+              </button>
+            </div>
           </div>
           <div className="scan-scope-panel">
             <div className="scan-scope-fields">
@@ -329,7 +447,19 @@ export default function DetectorPage({ session }) {
             </div>
             <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
               <RefreshCw size={18} className={scanning ? "spin" : ""} />
-              {scanning ? "Scanning" : scanButtonLabel(scanChannel, scanType)}
+              {scanning ? "Scanning" : scanButtonLabel(scanChannel, scanType, "Scan selected")}
+            </button>
+            <label className="refresh-thumb-toggle">
+              <input
+                type="checkbox"
+                checked={refreshThumbnails}
+                onChange={(event) => setRefreshThumbnails(event.target.checked)}
+              />
+              Refresh thumbnail images on full refresh
+            </label>
+            <button className="secondary-button full-refresh-button" onClick={fullRefresh} disabled={scanning}>
+              <RefreshCw size={17} />
+              Full refresh
             </button>
           </div>
         </section>
@@ -380,6 +510,7 @@ export default function DetectorPage({ session }) {
             Result
             <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value)}>
               <option value="all">All results</option>
+              <option value="action_conflict">Action conflict</option>
               <option value="confirmed">Confirmed finished</option>
               <option value="observed">Applied change observed</option>
               <option value="past_due_check">Needs manual check</option>
@@ -461,28 +592,51 @@ export default function DetectorPage({ session }) {
         ) : null}
 
         {!loading && unmatchedEvents.length ? (
-          <UnmatchedEvents events={unmatchedEvents} />
+          <UnmatchedEvents events={unmatchedEvents} onIgnore={ignoreEvent} />
         ) : null}
 
-        <section className="channel-list">
-          {grouped.map((group) => (
-            <ChannelGroup
-              key={group.channel}
-              group={group}
-              onDetails={setSelected}
-              onDone={(run) => {
-                setModalInitialAction("");
-                setModalRun(run);
-              }}
-              onQuickAction={quickComplete}
-              quickSaving={quickSaving}
-              openedStudioRuns={openedStudioRuns}
-              onStudioOpen={markStudioOpened}
-              collapsed={collapsedChannels.has(group.channel)}
-              onToggleCollapsed={toggleChannelCollapsed}
-            />
-          ))}
-        </section>
+        {detectorView === "board" ? (
+          <ChannelBoard
+            runs={filtered}
+            connectorConfig={connectorConfig}
+            connectorStatus={connectorStatus}
+            onDetails={setSelected}
+            onDone={(run) => {
+              setModalInitialAction("");
+              setModalRun(run);
+            }}
+            onQuickAction={quickComplete}
+            onIgnore={ignoreRun}
+            onScanChannel={scanChannelNow}
+            quickSaving={quickSaving}
+            scanning={scanning}
+            openedStudioRuns={openedStudioRuns}
+            onStudioOpen={markStudioOpened}
+            collapsedChannels={collapsedChannels}
+            onToggleCollapsed={toggleChannelCollapsed}
+          />
+        ) : (
+          <section className="channel-list">
+            {grouped.map((group) => (
+              <ChannelGroup
+                key={group.channel}
+                group={group}
+                onDetails={setSelected}
+                onDone={(run) => {
+                  setModalInitialAction("");
+                  setModalRun(run);
+                }}
+                onQuickAction={quickComplete}
+                onIgnore={ignoreRun}
+                quickSaving={quickSaving}
+                openedStudioRuns={openedStudioRuns}
+                onStudioOpen={markStudioOpened}
+                collapsed={collapsedChannels.has(group.channel)}
+                onToggleCollapsed={toggleChannelCollapsed}
+              />
+            ))}
+          </section>
+        )}
       </main>
       {selected ? (
         <DetailDrawer
@@ -510,6 +664,7 @@ export default function DetectorPage({ session }) {
 
 function Summary({ summary }) {
   const items = [
+    ["Conflicts", summary?.actionConflict || 0],
     ["Confirmed", summary?.confirmedFinished || summary?.newlyFinished || 0],
     ["Observed", summary?.appliedChangeObserved || 0],
     ["Manual Check", summary?.pastDueCheck || 0],
@@ -631,7 +786,7 @@ function ConnectorCoveragePanel({ connectorConfig, connectorStatus, runs, select
   );
 }
 
-function UnmatchedEvents({ events }) {
+function UnmatchedEvents({ events, onIgnore }) {
   const [open, setOpen] = useState(() => hasUsefulDebugSignals(events));
 
   useEffect(() => {
@@ -663,6 +818,9 @@ function UnmatchedEvents({ events }) {
                     Open Studio page
                   </a>
                 ) : null}
+                <button className="text-button" type="button" onClick={() => onIgnore(event)}>
+                  Ignore signal
+                </button>
               </div>
               <span>{event.observedAt ? formatDateTime(event.observedAt) : "No time"}</span>
             </article>
@@ -681,11 +839,190 @@ function eventSourceLabel(source) {
   return titleCase(source || "unknown source");
 }
 
+function ChannelBoard({
+  runs,
+  connectorConfig,
+  connectorStatus,
+  onDetails,
+  onDone,
+  onQuickAction,
+  onIgnore,
+  onScanChannel,
+  quickSaving,
+  scanning,
+  openedStudioRuns,
+  onStudioOpen,
+  collapsedChannels,
+  onToggleCollapsed
+}) {
+  const lanes = buildBoardLanes(runs);
+  if (!lanes.length) {
+    return <div className="empty-state">No board items match the current filters.</div>;
+  }
+
+  return (
+    <section className="channel-board">
+      {lanes.map((lane) => (
+        <BoardLane
+          key={lane.channel}
+          lane={lane}
+          connectorConfig={connectorConfig}
+          connectorStatus={connectorStatus}
+          onDetails={onDetails}
+          onDone={onDone}
+          onQuickAction={onQuickAction}
+          onIgnore={onIgnore}
+          onScanChannel={onScanChannel}
+          quickSaving={quickSaving}
+          scanning={scanning}
+          openedStudioRuns={openedStudioRuns}
+          onStudioOpen={onStudioOpen}
+          collapsed={collapsedChannels.has(lane.channel)}
+          onToggleCollapsed={onToggleCollapsed}
+        />
+      ))}
+    </section>
+  );
+}
+
+function BoardLane({
+  lane,
+  connectorConfig,
+  connectorStatus,
+  onDetails,
+  onDone,
+  onQuickAction,
+  onIgnore,
+  onScanChannel,
+  quickSaving,
+  scanning,
+  openedStudioRuns,
+  onStudioOpen,
+  collapsed,
+  onToggleCollapsed
+}) {
+  const coverage = boardCoverageForLane({ lane, connectorConfig, connectorStatus });
+  const readyCount = lane.runs.filter((run) =>
+    ["action_conflict", "confirmed_finished", "applied_change_observed"].includes(run.queueStatus)
+  ).length;
+  const manualCount = lane.runs.filter((run) => run.queueStatus === "past_due_check").length;
+  return (
+    <section
+      className={`board-lane${collapsed ? " collapsed" : ""}`}
+      style={{ "--channel-hue": channelHue(lane.channel), "--channel-accent": channelAccent(lane.channel) }}
+    >
+      <div className="board-lane-header">
+        <button className="board-lane-title" type="button" onClick={() => onToggleCollapsed(lane.channel)}>
+          <ChannelAvatar channel={lane.channel} logoUrl={lane.logoUrl} size="large" />
+          <span>
+            <strong>{lane.channel}</strong>
+            <em>{coverage.label} · {lane.runs.length} active</em>
+          </span>
+          <ChevronDown size={18} />
+        </button>
+        <div className="board-lane-metrics">
+          <span><strong>{readyCount}</strong> ready</span>
+          <span><strong>{manualCount}</strong> manual</span>
+        </div>
+        <div className="board-lane-actions">
+          <button className="secondary-button" type="button" onClick={() => onScanChannel(lane.channel)} disabled={scanning}>
+            <RefreshCw size={16} />
+            Scan channel
+          </button>
+          <span className="board-lane-hint">Deep scan lives in the Chrome extension.</span>
+        </div>
+      </div>
+      {collapsed ? null : (
+        <div className="board-card-list">
+          {lane.runs.map((run) => (
+            <BoardCard
+              run={run}
+              key={run.testRunId}
+              onDetails={onDetails}
+              onDone={onDone}
+              onQuickAction={onQuickAction}
+              onIgnore={onIgnore}
+              quickSaving={quickSaving}
+              opened={openedStudioRuns.has(run.testRunId)}
+              onStudioOpen={onStudioOpen}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving, opened, onStudioOpen }) {
+  const result = cardResult(run);
+  const quickActions = quickActionOptions(run);
+  const TypeIcon = run.testType === "thumbnail" ? Image : Type;
+  return (
+    <article
+      className={`board-card ${statusKey(run)} ${run.testType}-test result-${result.key}${opened ? " studio-opened" : ""}`}
+      style={{ "--channel-hue": channelHue(displayChannel(run)), "--channel-accent": channelAccent(displayChannel(run)) }}
+    >
+      <div className="board-card-main">
+        <CardVisual run={run} result={result} />
+        <div className="board-card-copy">
+          <div className="card-badges">
+            <span className={`type-pill ${run.testType}-type`}>
+              <TypeIcon size={14} />
+              {titleCase(run.testType)}
+            </span>
+            <span className={`result-pill ${result.tone}`}>{result.label}</span>
+          </div>
+          <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
+          <p>{outcomeLabel(run)}</p>
+        </div>
+      </div>
+      <div className="board-card-actions">
+        <a
+          className={`studio-button primary-studio-action${opened ? " opened" : ""}`}
+          href={run.studioUrl || "#"}
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => onStudioOpen(run)}
+        >
+          {opened ? <Check size={17} /> : <ExternalLink size={17} />}
+          {opened ? "Opened Studio" : "Open Studio"}
+        </a>
+        <div className="quick-actions" aria-label="Quick outcome actions">
+          {quickActions.map((action) => (
+            <button
+              className={`quick-action ${action.toLowerCase()}`}
+              key={action}
+              title={`Mark ${action} done`}
+              disabled={Boolean(quickSaving)}
+              onClick={() => onQuickAction(run, action)}
+            >
+              {quickSaving === `${run.testRunId}:${action}` ? "..." : action}
+            </button>
+          ))}
+        </div>
+        <button className="mini-icon-button" title="Details" aria-label="Open details" onClick={() => onDetails(run)}>
+          <InfoIcon size={14} />
+        </button>
+        <button
+          className="mini-icon-button danger-mini-button"
+          title="Ignore"
+          aria-label="Ignore"
+          disabled={quickSaving === `${run.testRunId}:IGNORE`}
+          onClick={() => onIgnore(run)}
+        >
+          <X size={14} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function ChannelGroup({
   group,
   onDetails,
   onDone,
   onQuickAction,
+  onIgnore,
   quickSaving,
   openedStudioRuns,
   onStudioOpen,
@@ -732,6 +1069,7 @@ function ChannelGroup({
                   onDetails={onDetails}
                   onDone={onDone}
                   onQuickAction={onQuickAction}
+                  onIgnore={onIgnore}
                   quickSaving={quickSaving}
                   opened={openedStudioRuns.has(run.testRunId)}
                   onStudioOpen={onStudioOpen}
@@ -745,7 +1083,7 @@ function ChannelGroup({
   );
 }
 
-function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving, opened, onStudioOpen }) {
+function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving, opened, onStudioOpen }) {
   const result = cardResult(run);
   const channel = displayChannel(run);
   const quickActions = quickActionOptions(run);
@@ -818,6 +1156,14 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving, opened, 
         <button className="done-button" onClick={() => onDone(run)}>
           <Check size={17} />
           Done
+        </button>
+        <button
+          className="ignore-button"
+          onClick={() => onIgnore(run)}
+          disabled={quickSaving === `${run.testRunId}:IGNORE`}
+        >
+          <X size={15} />
+          {quickSaving === `${run.testRunId}:IGNORE` ? "Ignoring" : "Ignore"}
         </button>
       </div>
     </article>
@@ -1091,6 +1437,63 @@ function groupRuns(runs, { groupOtherChannels = false } = {}) {
     .sort(compareGroups);
 }
 
+function buildBoardLanes(runs) {
+  const laneNames = [...CHANNEL_PRIORITY, OTHER_CHANNELS_LABEL];
+  const map = new Map(laneNames.map((channel) => [channel, {
+    channel,
+    runs: [],
+    logoUrl: ""
+  }]));
+  for (const run of runs) {
+    const channel = displayChannel(run) || "Unknown channel";
+    const laneKey = isPriorityChannel(channel) ? channel : OTHER_CHANNELS_LABEL;
+    const lane = map.get(laneKey) || map.get(OTHER_CHANNELS_LABEL);
+    lane.runs.push(run);
+    if (!lane.logoUrl && laneKey !== OTHER_CHANNELS_LABEL && run.youtubeChannelThumbnailUrl) {
+      lane.logoUrl = run.youtubeChannelThumbnailUrl;
+    }
+  }
+  return Array.from(map.values())
+    .filter((lane) => lane.runs.length)
+    .map((lane) => ({
+      ...lane,
+      runs: lane.runs.sort(compareBoardRuns)
+    }));
+}
+
+function compareBoardRuns(a, b) {
+  const statusRank = boardStatusRank(statusKey(a)) - boardStatusRank(statusKey(b));
+  if (statusRank !== 0) return statusRank;
+  return compareRunsWithinSection(a, b);
+}
+
+function boardStatusRank(status) {
+  const order = [
+    "action_conflict",
+    "confirmed_finished",
+    "applied_change_observed",
+    "past_due_check",
+    "uncovered",
+    "watching",
+    "sheet_changed_after_done",
+    "missing_data"
+  ];
+  const index = order.indexOf(status);
+  return index >= 0 ? index : order.length;
+}
+
+function boardCoverageForLane({ lane, connectorConfig, connectorStatus }) {
+  if (lane.channel === OTHER_CHANNELS_LABEL) return { state: "neutral", label: "Mixed coverage" };
+  const coverage = buildConnectorCoverage({
+    connectorConfig,
+    connectorStatus,
+    runs: lane.runs,
+    selectedChannel: lane.channel
+  });
+  const item = coverage.channels.find((candidate) => sameChannel(candidate.channel, lane.channel));
+  return item || { state: "missing", label: "Extension not connected" };
+}
+
 function compareRunsWithinSection(a, b) {
   const typeRank = testTypeRank(a.testType) - testTypeRank(b.testType);
   if (typeRank !== 0) return typeRank;
@@ -1130,6 +1533,7 @@ function statusKey(run) {
 }
 
 function matchesResultFilter(run, filter) {
+  if (filter === "action_conflict") return run.queueStatus === "action_conflict";
   if (filter === "confirmed") return run.queueStatus === "confirmed_finished";
   if (filter === "observed") return run.queueStatus === "applied_change_observed";
   if (filter === "past_due_check") return run.queueStatus === "past_due_check";
@@ -1139,6 +1543,7 @@ function matchesResultFilter(run, filter) {
 }
 
 function outcomeLabel(run) {
+  if (run.queueStatus === "action_conflict") return `Tool says ${run.latestAction}; sheet now says ${sheetResultText(run)}. Resolve before closing.`;
   if (run.queueStatus === "sheet_changed_after_done") return "Sheet changed after the tool action; review only if this was unexpected";
   if (run.queueStatus === "confirmed_finished") {
     if (run.finishEventSource === "studio_bell") return "Studio notification confirmed this test finished";
@@ -1156,6 +1561,9 @@ function outcomeLabel(run) {
 }
 
 function cardResult(run) {
+  if (run.queueStatus === "action_conflict") {
+    return { key: "action_conflict", label: "Conflict", value: "Tool vs sheet", tone: "danger" };
+  }
   if (run.queueStatus === "sheet_changed_after_done") {
     return { key: "sheet_changed", label: "Sheet updated", value: "After action", tone: "manual" };
   }
@@ -1202,6 +1610,14 @@ function cardResult(run) {
     return { key: "logged", label: "Done", value: "Marked in sheet", tone: "neutral" };
   }
   return { key: "not_determined", label: "Not determined", value: "Review in Studio", tone: "neutral" };
+}
+
+function sheetResultText(run) {
+  const outcome = String(run.detectedOutcome || "");
+  const winner = outcome.match(/^winner_([abc])$/i)?.[1];
+  if (winner) return winner.toUpperCase();
+  if (outcome === "no_clear" || run.suggestedWinner === "No clear winner") return "No Clear";
+  return run.suggestedWinner || "a different result";
 }
 
 function detectedOutcomeLabel(outcome) {
@@ -1496,12 +1912,12 @@ function titleCase(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function scanButtonLabel(channel, type) {
+function scanButtonLabel(channel, type, fallback = "Scan Now") {
   const parts = [
     channel !== "all" ? channel : "",
     type !== "all" ? titleCase(type) : ""
   ].filter(Boolean);
-  return parts.length ? `Scan ${parts.join(" · ")}` : "Scan Now";
+  return parts.length ? `Scan ${parts.join(" · ")}` : fallback;
 }
 
 function timingLabel(key) {
