@@ -275,6 +275,32 @@ a {
   min-width: 148px;
 }
 
+.scan-scope-panel {
+  align-items: flex-end;
+  display: flex;
+  gap: 14px;
+  justify-content: flex-end;
+  max-width: 760px;
+}
+
+.scan-scope-fields {
+  align-items: flex-end;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+
+.scan-scope-fields label {
+  min-width: 210px;
+}
+
+.scan-type-control {
+  min-width: 244px;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
@@ -2381,6 +2407,22 @@ textarea {
 
   .card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .scan-scope-panel,
+  .scan-scope-fields {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .scan-scope-panel {
+    max-width: none;
+  }
+
+  .scan-scope-fields label,
+  .scan-type-control,
+  .scan-button {
+    width: 100%;
   }
 
   .filters {

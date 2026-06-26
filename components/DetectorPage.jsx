@@ -266,10 +266,39 @@ export default function DetectorPage({ session }) {
               Connector: {connectorSummary(connectorStatus)}
             </p>
           </div>
-          <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
-            <RefreshCw size={18} className={scanning ? "spin" : ""} />
-            {scanning ? "Scanning" : scanButtonLabel(channel, type)}
-          </button>
+          <div className="scan-scope-panel">
+            <div className="scan-scope-fields">
+              <label>
+                Scan channel
+                <select value={channel} onChange={(event) => setChannel(event.target.value)}>
+                  {channels.map((item) => (
+                    <option key={item} value={item}>
+                      {item === "all" ? "All channels" : item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="filter-control scan-type-control">
+                <span className="filter-label">Scan type</span>
+                <div className="segmented" aria-label="Scan type">
+                  {["all", "title", "thumbnail"].map((item) => (
+                    <button
+                      key={item}
+                      className={type === item ? "active" : ""}
+                      onClick={() => setType(item)}
+                      type="button"
+                    >
+                      {item === "all" ? "All" : titleCase(item)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
+              <RefreshCw size={18} className={scanning ? "spin" : ""} />
+              {scanning ? "Scanning" : scanButtonLabel(channel, type)}
+            </button>
+          </div>
         </section>
 
         <ConnectorCoveragePanel
