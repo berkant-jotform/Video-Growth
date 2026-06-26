@@ -11,7 +11,7 @@ const STATUS_OPTIONS = [
   ["uncovered", "Needs signal"],
   ["watching", "Watching"],
   ["missing_data", "Missing data"],
-  ["sheet_changed_after_done", "Sheet changed after done"]
+  ["sheet_changed_after_done", "Sheet updated after action"]
 ];
 
 const TEST_TYPE_OPTIONS = [

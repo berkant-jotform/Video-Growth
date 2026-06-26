@@ -34,7 +34,7 @@ const SECTION_LABELS = {
   uncovered: "Needs Signal",
   watching: "Watching",
   needs_review: "Explicit Sheet Finish",
-  sheet_changed_after_done: "Sheet Changed After Done",
+  sheet_changed_after_done: "Sheet Updated After Action",
   missing_data: "Missing Data",
   result_logged: "Already Logged in Sheet",
   sheet_marked_done: "Marked Done in Sheet",
@@ -201,7 +201,7 @@ export default function DetectorPage({ session }) {
   }
 
   async function quickComplete(run, action) {
-    if (run.possibleRetest) {
+    if (requiresRetestConfirmation(run)) {
       setModalInitialAction(action);
       setModalRun(run);
       return;
@@ -790,7 +790,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, quickSaving, opened, 
       <CardVisual run={run} result={result} />
       <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
       <p className="outcome compact">{outcomeLabel(run)}</p>
-      {run.possibleRetest ? <span className="badge warning">Possible Retest</span> : null}
+      {requiresRetestConfirmation(run) ? <span className="badge warning">Possible Retest</span> : null}
       <div className="card-actions">
         <a
           className={`studio-button primary-studio-action${opened ? " opened" : ""}`}
@@ -968,7 +968,8 @@ function DoneModal({ run, initialAction = "", onClose, onDone }) {
   const [action, setAction] = useState(
     initialAction || (run.suggestedWinner?.match(/^[ABC]$/) ? run.suggestedWinner : "")
   );
-  const [retestConfirmed, setRetestConfirmed] = useState(!run.possibleRetest);
+  const needsRetestConfirmation = requiresRetestConfirmation(run);
+  const [retestConfirmed, setRetestConfirmed] = useState(!needsRetestConfirmation);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -978,7 +979,7 @@ function DoneModal({ run, initialAction = "", onClose, onDone }) {
       setError("Choose the outcome.");
       return;
     }
-    if (run.possibleRetest && !retestConfirmed) {
+    if (needsRetestConfirmation && !retestConfirmed) {
       setError("Confirm this is a separate retest run.");
       return;
     }
@@ -986,7 +987,7 @@ function DoneModal({ run, initialAction = "", onClose, onDone }) {
     const response = await fetch("/api/actions/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ testRunId: run.testRunId, action, retestConfirmed })
+      body: JSON.stringify({ testRunId: run.testRunId, action, retestConfirmed: needsRetestConfirmation ? retestConfirmed : true })
     });
     const payload = await response.json();
     setBusy(false);
@@ -1016,7 +1017,7 @@ function DoneModal({ run, initialAction = "", onClose, onDone }) {
             </button>
           ))}
         </div>
-        {run.possibleRetest ? (
+        {needsRetestConfirmation ? (
           <label className="check-row">
             <input
               type="checkbox"
@@ -1042,6 +1043,10 @@ function Info({ label, value }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function requiresRetestConfirmation(run) {
+  return Boolean(run.possibleRetest && !run.latestAction && run.queueStatus !== "sheet_changed_after_done");
 }
 
 function ChannelAvatar({ channel, logoUrl, size = "small" }) {
@@ -1134,7 +1139,7 @@ function matchesResultFilter(run, filter) {
 }
 
 function outcomeLabel(run) {
-  if (run.queueStatus === "sheet_changed_after_done") return "Sheet changed after this was done";
+  if (run.queueStatus === "sheet_changed_after_done") return "Sheet changed after the tool action; review only if this was unexpected";
   if (run.queueStatus === "confirmed_finished") {
     if (run.finishEventSource === "studio_bell") return "Studio notification confirmed this test finished";
     if (run.finishEventSource === "studio_page_status") return "Studio edit page says this test finished";
@@ -1152,7 +1157,7 @@ function outcomeLabel(run) {
 
 function cardResult(run) {
   if (run.queueStatus === "sheet_changed_after_done") {
-    return { key: "sheet_changed", label: "Recheck", value: "Sheet changed", tone: "warning" };
+    return { key: "sheet_changed", label: "Sheet updated", value: "After action", tone: "manual" };
   }
   if (run.queueStatus === "confirmed_finished") {
     const detected = detectedOutcomeLabel(run.finishEventOutcome || run.detectedOutcome);
