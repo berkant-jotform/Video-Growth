@@ -1064,9 +1064,14 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
   const activeStatuses = connectorStatus.filter((item) => item.active);
   const openUrls = activeStatuses.flatMap((item) => item.payload?.studioTabUrls || []).filter(Boolean);
   const latestVersion = connectorConfig?.latestExtensionVersion || "";
-  const outdated = activeStatuses
-    .map((item) => item.version || "")
-    .filter((version) => latestVersion && isOlderVersion(version, latestVersion));
+  const hasCurrentVersion = Boolean(
+    latestVersion && activeStatuses.some((item) => !isOlderVersion(item.version || "", latestVersion))
+  );
+  const outdated = hasCurrentVersion
+    ? []
+    : activeStatuses
+        .map((item) => item.version || "")
+        .filter((version) => latestVersion && isOlderVersion(version, latestVersion));
   const wrongStudioTabOpen = Boolean(
     openUrls.length &&
       connectorConfig?.watcherTabs?.length &&
