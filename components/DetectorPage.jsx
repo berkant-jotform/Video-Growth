@@ -471,6 +471,8 @@ export default function DetectorPage({ session }) {
           selectedChannel={viewChannel}
         />
 
+        <ExtensionScanReceipt connectorStatus={connectorStatus} />
+
         <ScanProgress
           scan={lastScan}
           lastSuccessfulScan={lastSuccessfulScan}
@@ -782,6 +784,77 @@ function ConnectorCoveragePanel({ connectorConfig, connectorStatus, runs, select
           </span>
         ))}
       </div>
+    </section>
+  );
+}
+
+function ExtensionScanReceipt({ connectorStatus }) {
+  const receipt = latestExtensionScanReceipt(connectorStatus);
+  if (!receipt) return null;
+  const totals = receipt.scan.totals || {};
+  const tabs = Array.isArray(receipt.scan.tabs) ? receipt.scan.tabs : [];
+  const found = Number(totals.candidates || 0);
+  const matched = Number(totals.matched || 0);
+  const unmatched = Number(totals.unmatched || 0);
+  const failed = Number(totals.failed || 0);
+  const tone = failed ? "warn" : found ? "ok" : "neutral";
+  return (
+    <section className={`extension-scan-receipt ${tone}`}>
+      <div className="extension-scan-copy">
+        <span className="eyebrow">Latest extension scan</span>
+        <h3>
+          {found
+            ? `${found} A/B candidate${found === 1 ? "" : "s"} found`
+            : "No A/B finish candidates found"}
+        </h3>
+        <p>
+          Checked {Number(totals.tabs || tabs.length)} Studio tab{Number(totals.tabs || tabs.length) === 1 ? "" : "s"}
+          {receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Sent {Number(totals.received || 0)} signal
+          {Number(totals.received || 0) === 1 ? "" : "s"}: {matched} matched, {unmatched} needs matching.
+        </p>
+      </div>
+      <div className="extension-scan-stats">
+        <span>
+          Candidates <strong>{found}</strong>
+        </span>
+        <span>
+          Matched <strong>{matched}</strong>
+        </span>
+        <span>
+          Needs matching <strong>{unmatched}</strong>
+        </span>
+        {failed ? (
+          <span>
+            Failed tabs <strong>{failed}</strong>
+          </span>
+        ) : null}
+      </div>
+      {tabs.length ? (
+        <details className="extension-scan-tabs">
+          <summary>Checked tabs</summary>
+          <div>
+            {tabs.slice(0, 5).map((tab, index) => (
+              <article key={`${tab.tabUrl || tab.tabTitle || "tab"}-${index}`}>
+                <strong>{tab.channel || tab.tabTitle || "Studio tab"}</strong>
+                <span>
+                  {tab.menuOpened ? "Notification menu opened" : "Menu not opened"} · {Number(tab.candidates || 0)} candidate
+                  {Number(tab.candidates || 0) === 1 ? "" : "s"} · {Number(tab.matched || 0)} matched
+                </span>
+                {tab.error ? <em>{tab.error}</em> : null}
+                {Array.isArray(tab.previews) && tab.previews.length ? (
+                  <ul>
+                    {tab.previews.slice(0, 3).map((preview, previewIndex) => (
+                      <li key={`${preview.title || preview.videoId || previewIndex}`}>
+                        {preview.title || preview.videoId || preview.text || "A/B notification"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }
@@ -1727,6 +1800,17 @@ function connectorSummary(items = []) {
   if (!active.length) return "not connected";
   const channels = new Set(active.flatMap((item) => item.channels || []));
   return `${channels.size} channel${channels.size === 1 ? "" : "s"} checked recently`;
+}
+
+function latestExtensionScanReceipt(items = []) {
+  const receipts = items
+    .map((item) => ({
+      connector: item,
+      scan: item.payload?.lastStudioScan || null
+    }))
+    .filter((item) => item.scan?.checkedAt);
+  if (!receipts.length) return null;
+  return receipts.sort((a, b) => new Date(b.scan.checkedAt).valueOf() - new Date(a.scan.checkedAt).valueOf())[0];
 }
 
 function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, selectedChannel }) {

@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.10";
+const EXTENSION_VERSION = "0.1.11";
 const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
@@ -95,6 +95,7 @@ async function requestStudioScrape() {
       totals: summarizeScanResults(results)
     }
   });
+  await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
   return { ok: true, tabs: results };
 }
 
@@ -269,10 +270,22 @@ async function deepScanActiveVideos() {
   };
 }
 
-async function sendHeartbeat() {
+async function sendHeartbeat(extraPayload = {}) {
   const settings = await getSettings();
   requireConfigured(settings);
   const studioTabs = await chrome.tabs.query({ url: "https://studio.youtube.com/*" });
+  const lastStudioScan = extraPayload.lastStudioScan === undefined
+    ? await buildLastStudioScanPayload()
+    : extraPayload.lastStudioScan;
+  const heartbeatPayload = {
+    location: "chrome-extension",
+    openStudioTabs: studioTabs.length,
+    studioTabUrls: studioTabs.map((tab) => tab.url || "").filter(Boolean).slice(0, 10),
+    userAgent: navigator.userAgent,
+    observedAt: new Date().toISOString(),
+    ...extraPayload,
+    lastStudioScan
+  };
   const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/heartbeat`, {
     method: "POST",
     headers: {
@@ -285,21 +298,42 @@ async function sendHeartbeat() {
       version: EXTENSION_VERSION,
       channels: splitChannels(settings.channels),
       status: "online",
-      location: "chrome-extension",
-      openStudioTabs: studioTabs.length,
-      studioTabUrls: studioTabs.map((tab) => tab.url || "").filter(Boolean).slice(0, 10),
-      userAgent: navigator.userAgent,
-      observedAt: new Date().toISOString()
+      ...heartbeatPayload
     })
   });
-  const payload = await response.json().catch(() => ({}));
+  const responsePayload = await response.json().catch(() => ({}));
   await chrome.storage.local.set({
     lastHeartbeatAt: new Date().toISOString(),
     lastHeartbeatOk: response.ok,
-    lastHeartbeatResult: payload
+    lastHeartbeatResult: responsePayload
   });
-  if (!response.ok) throw new Error(payload.error || `Heartbeat failed: ${response.status}`);
-  return payload;
+  if (!response.ok) throw new Error(responsePayload.error || `Heartbeat failed: ${response.status}`);
+  return responsePayload;
+}
+
+async function buildLastStudioScanPayload() {
+  const local = await chrome.storage.local.get(["lastStudioScanAt", "lastStudioScanResult"]);
+  if (!local.lastStudioScanAt) return null;
+  const result = local.lastStudioScanResult || {};
+  return {
+    checkedAt: local.lastStudioScanAt,
+    totals: result.totals || {},
+    tabs: Array.isArray(result.tabs)
+      ? result.tabs.slice(0, 8).map((tab) => ({
+          tabTitle: tab.tabTitle || "",
+          tabUrl: tab.tabUrl || "",
+          ok: tab.ok !== false,
+          error: tab.error || "",
+          received: Number(tab.received || 0),
+          matched: Number(tab.matched || 0),
+          unmatched: Number(tab.unmatched || 0),
+          candidates: Number(tab.candidates || 0),
+          menuOpened: Boolean(tab.diagnostics?.menuOpened),
+          channel: tab.diagnostics?.channel || "",
+          previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 3) : []
+        }))
+      : []
+  };
 }
 
 async function getSettings() {

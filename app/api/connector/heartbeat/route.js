@@ -22,11 +22,50 @@ export async function POST(request) {
           ? body.studioTabUrls.map(String).filter(Boolean).slice(0, 20)
           : [],
         userAgent: body.userAgent || "",
-        observedAt: body.observedAt || new Date().toISOString()
+        observedAt: body.observedAt || new Date().toISOString(),
+        lastStudioScan: sanitizeLastStudioScan(body.lastStudioScan)
       }
     });
     return json({ ok: true, connectorStatus: status });
   } catch (error) {
     return errorJson(error);
   }
+}
+
+function sanitizeLastStudioScan(value) {
+  if (!value || typeof value !== "object") return null;
+  const totals = value.totals && typeof value.totals === "object" ? value.totals : {};
+  return {
+    checkedAt: value.checkedAt || new Date().toISOString(),
+    totals: {
+      tabs: Number(totals.tabs || 0),
+      failed: Number(totals.failed || 0),
+      received: Number(totals.received || 0),
+      matched: Number(totals.matched || 0),
+      unmatched: Number(totals.unmatched || 0),
+      ignored: Number(totals.ignored || 0),
+      candidates: Number(totals.candidates || 0)
+    },
+    tabs: Array.isArray(value.tabs)
+      ? value.tabs.slice(0, 8).map((tab) => ({
+          tabTitle: String(tab.tabTitle || "").slice(0, 160),
+          tabUrl: String(tab.tabUrl || "").slice(0, 300),
+          ok: tab.ok !== false,
+          error: String(tab.error || "").slice(0, 240),
+          received: Number(tab.received || 0),
+          matched: Number(tab.matched || 0),
+          unmatched: Number(tab.unmatched || 0),
+          candidates: Number(tab.candidates || 0),
+          menuOpened: Boolean(tab.menuOpened),
+          channel: String(tab.channel || "").slice(0, 120),
+          previews: Array.isArray(tab.previews)
+            ? tab.previews.slice(0, 3).map((preview) => ({
+                title: String(preview.title || "").slice(0, 180),
+                videoId: String(preview.videoId || "").slice(0, 32),
+                text: String(preview.text || "").slice(0, 240)
+              }))
+            : []
+        }))
+      : []
+  };
 }

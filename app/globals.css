@@ -456,6 +456,109 @@ a {
   color: var(--red);
 }
 
+.extension-scan-receipt {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+  margin: -12px 0 24px;
+  padding: 16px 18px;
+}
+
+.extension-scan-receipt.ok {
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+}
+
+.extension-scan-receipt.warn {
+  border-color: color-mix(in srgb, var(--amber) 36%, var(--border));
+}
+
+.extension-scan-copy h3 {
+  font-size: 17px;
+  line-height: 1.25;
+  margin: 4px 0;
+}
+
+.extension-scan-copy p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.extension-scan-stats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+.extension-scan-stats span {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  font-weight: 850;
+  gap: 4px;
+  padding: 10px;
+  text-transform: uppercase;
+}
+
+.extension-scan-stats strong {
+  color: var(--text);
+  font-size: 20px;
+}
+
+.extension-scan-tabs {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.extension-scan-tabs summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.extension-scan-tabs > div {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.extension-scan-tabs article {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.extension-scan-tabs article strong {
+  font-size: 13px;
+}
+
+.extension-scan-tabs article span,
+.extension-scan-tabs article em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.extension-scan-tabs ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+
+.extension-scan-tabs li {
+  font-size: 12px;
+  font-weight: 760;
+}
+
 .scan-progress-panel {
   background: var(--surface);
   border: 1px solid var(--border);

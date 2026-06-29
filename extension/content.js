@@ -1,7 +1,7 @@
 const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.10";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.11";
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
   "tp-yt-paper-toast",
