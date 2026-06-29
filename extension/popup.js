@@ -5,7 +5,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await openWatcherTargets([], "Opening all configured Studio watcher tabs...");
   });
   document.getElementById("scan").addEventListener("click", async () => {
-    setSummary("Scanning every open YouTube Studio tab in this Chrome profile...");
+    setSummary("Scanning every open YouTube Studio tab and checking the notification menu...");
     const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
     setSummary(scanResultText(response));
     await render();

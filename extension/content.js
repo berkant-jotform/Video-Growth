@@ -14,8 +14,10 @@ let currentUrl = location.href;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "scrape-studio-notifications") return false;
-  const events = collectNotificationEvents({ includeSeen: true });
-  sendEvents(events).then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
+  scrapeStudioNotifications({ includeSeen: true })
+    .then(sendEvents)
+    .then(sendResponse)
+    .catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });
 
@@ -49,6 +51,15 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
     if (events.length >= 20) break;
   }
   return compactEvents(events);
+}
+
+async function scrapeStudioNotifications({ includeSeen = false } = {}) {
+  const before = collectNotificationEvents({ includeSeen });
+  const opened = await openNotificationMenu();
+  if (!opened) return before;
+  await delay(1200);
+  const after = collectNotificationEvents({ includeSeen });
+  return compactEvents([...before, ...after]);
 }
 
 function schedulePageStatusScans() {
@@ -194,6 +205,59 @@ function findStudioVideoUrl(element) {
   const html = element.outerHTML || "";
   const match = html.match(/https:\/\/studio\.youtube\.com\/video\/[A-Za-z0-9_-]{6,}\/edit[^"'<\s]*/);
   return match ? match[0] : "";
+}
+
+async function openNotificationMenu() {
+  const button = findNotificationButton();
+  if (!button) return false;
+  const expandedBefore = button.getAttribute("aria-expanded") === "true";
+  if (!expandedBefore) {
+    button.click();
+  }
+  await delay(250);
+  return true;
+}
+
+function findNotificationButton() {
+  const selectors = [
+    "#notification-button",
+    "ytcp-notification-button",
+    "button[aria-label*='Notifications' i]",
+    "tp-yt-paper-icon-button[aria-label*='Notifications' i]",
+    "ytcp-icon-button[aria-label*='Notifications' i]",
+    "[tooltip-label*='Notifications' i]",
+    "[aria-label*='Bildirim' i]"
+  ];
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    const clickable = findClickable(element);
+    if (clickable && isVisible(clickable)) return clickable;
+  }
+  const candidates = [...document.querySelectorAll("button, ytcp-icon-button, tp-yt-paper-icon-button")];
+  return (
+    candidates.find((element) =>
+      /notifications|bildirim/i.test(
+        [
+          element.getAttribute("aria-label"),
+          element.getAttribute("title"),
+          element.getAttribute("tooltip-label"),
+          element.textContent
+        ]
+          .filter(Boolean)
+          .join(" ")
+      )
+    ) || null
+  );
+}
+
+function findClickable(element) {
+  if (!element) return null;
+  if (typeof element.click === "function") return element;
+  return element.querySelector?.("button, ytcp-icon-button, tp-yt-paper-icon-button") || null;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function extractVideoId(value) {
