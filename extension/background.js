@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.8";
+const EXTENSION_VERSION = "0.1.9";
 const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
@@ -81,6 +81,7 @@ async function requestStudioScrape() {
   const results = [];
   for (const tab of tabs) {
     try {
+      await ensureContentScript(tab.id);
       const response = await chrome.tabs.sendMessage(tab.id, { type: "scrape-studio-notifications" });
       results.push({ tabId: tab.id, ...response });
     } catch (error) {
@@ -88,6 +89,22 @@ async function requestStudioScrape() {
     }
   }
   return { ok: true, tabs: results };
+}
+
+async function ensureContentScript(tabId) {
+  const loaded = await chrome.scripting
+    .executeScript({
+      target: { tabId },
+      func: () => Boolean(globalThis.__youtubeAbTestsConnectorLoaded)
+    })
+    .then((results) => Boolean(results?.[0]?.result))
+    .catch(() => false);
+  if (loaded) return;
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["content.js"]
+  });
+  await delay(100);
 }
 
 async function postEvents(events, tabUrl) {
@@ -180,6 +197,7 @@ async function deepScanActiveVideos() {
 
   for (const item of opened) {
     try {
+      await ensureContentScript(item.tabId);
       const response = await chrome.tabs.sendMessage(item.tabId, { type: "scrape-studio-notifications" });
       results.push({ ...item, ...response });
     } catch (error) {
