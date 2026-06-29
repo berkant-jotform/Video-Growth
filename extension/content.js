@@ -1,7 +1,7 @@
 const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.9";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.10";
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
   "tp-yt-paper-toast",
@@ -17,8 +17,19 @@ let currentUrl = location.href;
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "scrape-studio-notifications") return false;
   scrapeStudioNotifications({ includeSeen: true })
-    .then(sendEvents)
-    .then(sendResponse)
+    .then(async ({ events, diagnostics }) => {
+      const response = await sendEvents(events);
+      sendResponse({
+        ...response,
+        diagnostics,
+        candidates: events.length,
+        previews: events.slice(0, 5).map((event) => ({
+          title: event.videoTitle || "",
+          videoId: event.videoId || "",
+          text: event.rawText || ""
+        }))
+      });
+    })
     .catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });
@@ -78,10 +89,42 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
 async function scrapeStudioNotifications({ includeSeen = false } = {}) {
   const before = collectNotificationEvents({ includeSeen });
   const opened = await openNotificationMenu();
-  if (!opened) return before;
+  if (!opened) {
+    const events = compactEvents(before);
+    return {
+      events,
+      diagnostics: scanDiagnostics({
+        menuOpened: false,
+        before,
+        after: [],
+        events
+      })
+    };
+  }
   await delay(1200);
   const after = collectNotificationEvents({ includeSeen });
-  return compactEvents([...before, ...after]);
+  const events = compactEvents([...before, ...after]);
+  return {
+    events,
+    diagnostics: scanDiagnostics({
+      menuOpened: true,
+      before,
+      after,
+      events
+    })
+  };
+}
+
+function scanDiagnostics({ menuOpened, before, after, events }) {
+  return {
+    url: location.href,
+    channel: detectChannelName(),
+    menuOpened,
+    beforeCount: before.length,
+    afterCount: after.length,
+    eventCount: events.length,
+    checkedAt: new Date().toISOString()
+  };
 }
 
 function schedulePageStatusScans() {

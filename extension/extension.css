@@ -256,6 +256,89 @@ button + button,
   padding: 9px;
 }
 
+.scan-log {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.scan-log summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  list-style: none;
+  padding: 10px;
+}
+
+.scan-log summary::-webkit-details-marker {
+  display: none;
+}
+
+.scan-log summary span {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.scan-log summary em,
+.muted {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.scan-log-body {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.scan-log-time {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.scan-log-tab {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+}
+
+.scan-log-tab.failed {
+  background: #fff7e8;
+  border-color: #ead5ad;
+}
+
+.scan-log-tab strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.scan-log-tab span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.scan-log-tab ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+.scan-log-tab li {
+  font-size: 11px;
+  font-weight: 760;
+}
+
 dl {
   display: grid;
   gap: 8px;

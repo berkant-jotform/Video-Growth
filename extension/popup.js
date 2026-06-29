@@ -38,7 +38,9 @@ async function render() {
     "lastEventPostOk",
     "lastEventPostResult",
     "lastDeepScanAt",
-    "lastDeepScanResult"
+    "lastDeepScanResult",
+    "lastStudioScanAt",
+    "lastStudioScanResult"
   ]);
   const connectorConfig = await chrome.runtime
     .sendMessage({ type: "get-connector-config" })
@@ -47,6 +49,7 @@ async function render() {
   const openStudioTabs = Number(latestHeartbeat?.payload?.openStudioTabs || 0);
   const openStudioUrls = latestHeartbeat?.payload?.studioTabUrls || [];
   renderWatcherButtons(connectorConfig?.watcherTabs || [], openStudioUrls, connectorConfig);
+  renderScanLog(local.lastStudioScanAt, local.lastStudioScanResult);
   renderHealthPanel({ sync, local, connectorConfig, openStudioTabs, openStudioUrls });
   if (!sync.appUrl) {
     setSummary("Open Settings to connect this watcher to the dashboard.");
@@ -63,6 +66,40 @@ async function render() {
   document.getElementById("lastEvent").textContent = local.lastEventPostAt
     ? `${formatTime(local.lastEventPostAt)} (${local.lastEventPostOk ? "ok" : "failed"})`
     : "Never";
+}
+
+function renderScanLog(scanAt, result) {
+  const summaryEl = document.getElementById("scanLogSummary");
+  const bodyEl = document.getElementById("scanLogBody");
+  if (!summaryEl || !bodyEl) return;
+  const totals = result?.totals || {};
+  const tabs = Array.isArray(result?.tabs) ? result.tabs : [];
+  if (!scanAt || !tabs.length) {
+    summaryEl.textContent = "No scan yet";
+    bodyEl.innerHTML = `<p class="muted">Click Scan open Studio tabs to create a diagnostic log.</p>`;
+    return;
+  }
+  summaryEl.textContent = `${totals.tabs || tabs.length} tab${(totals.tabs || tabs.length) === 1 ? "" : "s"}, ${totals.candidates || 0} candidate${Number(totals.candidates || 0) === 1 ? "" : "s"}`;
+  bodyEl.innerHTML = [
+    `<p class="scan-log-time">Checked ${escapeHtml(formatTime(scanAt))}. Sent ${Number(totals.received || 0)} signal${Number(totals.received || 0) === 1 ? "" : "s"}: ${Number(totals.matched || 0)} matched, ${Number(totals.unmatched || 0)} unmatched.</p>`,
+    ...tabs.slice(0, 6).map(renderScanLogTab)
+  ].join("");
+}
+
+function renderScanLogTab(tab) {
+  const diagnostics = tab.diagnostics || {};
+  const status = tab.ok ? "ok" : "failed";
+  const title = tab.tabTitle || diagnostics.channel || tab.tabUrl || `Tab ${tab.tabId}`;
+  const preview = Array.isArray(tab.previews) && tab.previews.length
+    ? `<ul>${tab.previews.map((item) => `<li>${escapeHtml(item.title || item.videoId || item.text || "A/B notification")}</li>`).join("")}</ul>`
+    : `<p class="muted">No A/B finish notification candidates found.</p>`;
+  return `
+    <section class="scan-log-tab ${status}">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${diagnostics.menuOpened ? "Notification menu opened" : "Menu not found/opened"} · ${Number(tab.candidates || 0)} candidate${Number(tab.candidates || 0) === 1 ? "" : "s"} · ${Number(tab.matched || 0)} matched</span>
+      ${tab.error ? `<p class="mini-warning">${escapeHtml(tab.error)}</p>` : preview}
+    </section>
+  `;
 }
 
 function renderHealthPanel({ sync, local, connectorConfig, openStudioTabs, openStudioUrls }) {

@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.9";
+const EXTENSION_VERSION = "0.1.10";
 const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
@@ -83,12 +83,52 @@ async function requestStudioScrape() {
     try {
       await ensureContentScript(tab.id);
       const response = await chrome.tabs.sendMessage(tab.id, { type: "scrape-studio-notifications" });
-      results.push({ tabId: tab.id, ...response });
+      results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ...response });
     } catch (error) {
-      results.push({ tabId: tab.id, ok: false, error: error.message });
+      results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ok: false, error: error.message });
     }
   }
+  await chrome.storage.local.set({
+    lastStudioScanAt: new Date().toISOString(),
+    lastStudioScanResult: {
+      tabs: results.map(summarizeTabScanResult),
+      totals: summarizeScanResults(results)
+    }
+  });
   return { ok: true, tabs: results };
+}
+
+function summarizeTabScanResult(tab) {
+  return {
+    tabId: tab.tabId,
+    tabTitle: tab.tabTitle || "",
+    tabUrl: tab.tabUrl || "",
+    ok: tab.ok !== false,
+    error: tab.error || "",
+    received: Number(tab.received || 0),
+    matched: Number(tab.matched || 0),
+    unmatched: Number(tab.unmatched || 0),
+    ignored: Number(tab.ignored || 0),
+    candidates: Number(tab.candidates || 0),
+    diagnostics: tab.diagnostics || {},
+    previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 5) : []
+  };
+}
+
+function summarizeScanResults(results) {
+  return results.reduce(
+    (total, item) => {
+      total.tabs += 1;
+      if (item.ok === false) total.failed += 1;
+      total.received += Number(item.received || 0);
+      total.matched += Number(item.matched || 0);
+      total.unmatched += Number(item.unmatched || 0);
+      total.ignored += Number(item.ignored || 0);
+      total.candidates += Number(item.candidates || 0);
+      return total;
+    },
+    { tabs: 0, failed: 0, received: 0, matched: 0, unmatched: 0, ignored: 0, candidates: 0 }
+  );
 }
 
 async function ensureContentScript(tabId) {
