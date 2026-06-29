@@ -8,7 +8,7 @@
   <body class="popup">
     <main class="panel compact">
       <div class="title-row">
-        <h1>Studio Connector</h1>
+        <h1>Studio Watcher</h1>
         <span id="versionBadge" class="version-badge">v...</span>
       </div>
       <section id="healthPanel" class="health-panel neutral">
@@ -18,26 +18,26 @@
       <p id="summary" class="status">Checking status...</p>
       <section class="watcher-menu">
         <div class="menu-title">
-          <strong>Watcher Studio channels</strong>
+          <strong>Watched Studio channels</strong>
           <span id="watcherCount">Loading...</span>
         </div>
         <div id="watcherButtons" class="watcher-buttons"></div>
       </section>
       <div class="actions stacked">
-        <button id="openWatchers">Open all watcher tabs</button>
-        <button id="scan">Scan Studio tab</button>
-        <button id="deepScan">Deep scan active videos</button>
-        <button id="heartbeat">Send heartbeat</button>
+        <button id="scan">Scan open Studio tabs</button>
+        <button id="deepScan">Check active tests now</button>
+        <button id="heartbeat">Check connection</button>
+        <button id="openWatchers">Open watcher tabs</button>
         <button id="options">Settings</button>
       </div>
-      <p class="hint">Passive checks run around the start of each hour. Keep watcher tabs open.</p>
+      <p class="hint">Scan checks all open YouTube Studio tabs in this Chrome profile. It reads visible Studio text only and does not change YouTube.</p>
       <dl>
         <div>
-          <dt>Last heartbeat</dt>
+          <dt>Last connection check</dt>
           <dd id="lastHeartbeat">Never</dd>
         </div>
         <div>
-          <dt>Last event post</dt>
+          <dt>Last finish signal sent</dt>
           <dd id="lastEvent">Never</dd>
         </div>
       </dl>

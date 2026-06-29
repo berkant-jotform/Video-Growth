@@ -21,7 +21,7 @@ body {
 }
 
 .popup {
-  min-width: 320px;
+  min-width: 360px;
 }
 
 .panel {
@@ -33,7 +33,7 @@ body {
 }
 
 .compact {
-  max-width: 340px;
+  max-width: 380px;
   padding: 16px;
 }
 
@@ -134,6 +134,23 @@ textarea {
   display: grid;
 }
 
+.actions.stacked button:first-child {
+  min-height: 42px;
+}
+
+.actions.stacked button:last-child {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  min-height: 30px;
+}
+
+.actions.stacked button:last-child:hover {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
 .watcher-menu {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -229,7 +246,14 @@ button + button,
 }
 
 .status {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 760;
   min-height: 20px;
+  padding: 9px;
 }
 
 dl {

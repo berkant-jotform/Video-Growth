@@ -5,25 +5,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     await openWatcherTargets([], "Opening all configured Studio watcher tabs...");
   });
   document.getElementById("scan").addEventListener("click", async () => {
-    setSummary("Scanning open Studio tabs...");
+    setSummary("Scanning every open YouTube Studio tab in this Chrome profile...");
     const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
-    setSummary(response?.ok ? "Scan request sent." : response?.error || "Scan failed.");
+    setSummary(scanResultText(response));
     await render();
+    setSummary(scanResultText(response));
   });
   document.getElementById("deepScan").addEventListener("click", async () => {
-    setSummary("Opening active video edit pages in the background...");
+    setSummary("Checking up to 8 active test pages. Read-only; no YouTube changes.");
     const response = await chrome.runtime.sendMessage({ type: "deep-scan-active-videos" });
-    const text = response?.ok
-      ? `Deep scan checked ${response.scanned || 0} active video page${response.scanned === 1 ? "" : "s"}.`
-      : response?.error || "Deep scan failed.";
-    setSummary(text);
+    setSummary(deepScanResultText(response));
     await render();
+    setSummary(deepScanResultText(response));
   });
   document.getElementById("heartbeat").addEventListener("click", async () => {
-    setSummary("Sending heartbeat...");
+    setSummary("Checking dashboard connection...");
     const response = await chrome.runtime.sendMessage({ type: "send-heartbeat" });
-    setSummary(response?.ok ? "Heartbeat sent." : response?.error || "Heartbeat failed.");
+    setSummary(connectionResultText(response));
     await render();
+    setSummary(connectionResultText(response));
   });
   document.getElementById("options").addEventListener("click", () => chrome.runtime.openOptionsPage());
 });
@@ -49,13 +49,13 @@ async function render() {
   renderWatcherButtons(connectorConfig?.watcherTabs || [], openStudioUrls, connectorConfig);
   renderHealthPanel({ sync, local, connectorConfig, openStudioTabs, openStudioUrls });
   if (!sync.appUrl) {
-    setSummary("Open Settings to connect.");
+    setSummary("Open Settings to connect this watcher to the dashboard.");
   } else if (local.lastHeartbeatOk && openStudioTabs === 0) {
-    setSummary("Connected, but no YouTube Studio tab is open. Open Studio before expecting detection.");
+    setSummary("Connected, but not watching. Open watcher tabs before expecting live detection.");
   } else if (connectorConfig && connectorConfig.ok === false) {
-    setSummary(connectorConfig.error || "Connector config could not be loaded.");
+    setSummary(connectorConfig.error || "Dashboard settings could not be loaded.");
   } else {
-    setSummary(`Connected to ${sync.appUrl}. Passive checks run hourly.`);
+    setSummary(`Connected to ${sync.appUrl}. Watching works when Studio tabs stay open.`);
   }
   document.getElementById("lastHeartbeat").textContent = local.lastHeartbeatAt
     ? `${formatTime(local.lastHeartbeatAt)} (${local.lastHeartbeatOk ? "ok" : "failed"}${local.lastHeartbeatOk ? `, ${openStudioTabs} Studio tab${openStudioTabs === 1 ? "" : "s"}` : ""})`
@@ -76,15 +76,15 @@ function renderHealthPanel({ sync, local, connectorConfig, openStudioTabs, openS
   let state = {
     tone: "neutral",
     title: "Watching status unknown",
-    text: "Send a heartbeat after opening YouTube Studio."
+    text: "Open watcher tabs, then check the connection."
   };
 
   if (!sync.appUrl) {
-    state = { tone: "warn", title: "Connect extension", text: "Open Settings and add the app URL plus connector token." };
+    state = { tone: "warn", title: "Setup needed", text: "Open Settings and add the app URL plus extension token." };
   } else if (connectorConfig?.ok === false) {
-    state = { tone: "warn", title: "Cannot reach app", text: connectorConfig.error || "Check the connector token." };
+    state = { tone: "warn", title: "Cannot reach dashboard", text: connectorConfig.error || "Check the extension token." };
   } else if (!local.lastHeartbeatAt) {
-    state = { tone: "warn", title: "No heartbeat yet", text: "Open watcher tabs, then send a heartbeat." };
+    state = { tone: "warn", title: "Not checked yet", text: "Open watcher tabs, then click Check connection." };
   } else if (openStudioTabs === 0) {
     state = { tone: "warn", title: "No Studio tab open", text: "Open at least one watcher tab before relying on live detection." };
   } else if (watcherTabs.length && !anyConfiguredWatcherOpen) {
@@ -117,8 +117,8 @@ async function openWatcherTargets(targets, loadingText) {
     return;
   }
   const count = response.opened?.length || 0;
-  const heartbeatText = response.heartbeat?.ok === false ? " Heartbeat failed." : " Heartbeat sent.";
-  const scanText = response.scan?.ok === false ? " Scan could not run yet." : " Scan requested.";
+  const heartbeatText = response.heartbeat?.ok === false ? " Connection check failed." : " Connection checked.";
+  const scanText = response.scan?.ok === false ? " Scan could not run yet." : ` ${shortScanResultText(response.scan)}`;
   const doneText = `Opened ${count} watcher tab${count === 1 ? "" : "s"}.${heartbeatText}${scanText}`;
   await render();
   setSummary(doneText);
@@ -155,15 +155,80 @@ function setSummary(text) {
   document.getElementById("summary").textContent = text;
 }
 
+function scanResultText(response) {
+  if (!response?.ok) return response?.error || "Scan failed.";
+  const summary = summarizeScrapeTabs(response.tabs || []);
+  if (!summary.checked) {
+    return "No YouTube Studio tabs are open. Open watcher tabs first, then scan again.";
+  }
+  if (!summary.received) {
+    const failedText = summary.failed ? ` ${summary.failed} tab${summary.failed === 1 ? "" : "s"} could not be read.` : "";
+    return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}. No finish notifications found.${failedText}`;
+  }
+  const ignoredText = summary.ignored ? `, ${summary.ignored} ignored` : "";
+  const failedText = summary.failed ? `. ${summary.failed} tab${summary.failed === 1 ? "" : "s"} could not be read` : "";
+  return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}. Sent ${summary.received} finish signal${summary.received === 1 ? "" : "s"}: ${summary.matched} matched, ${summary.unmatched} unmatched${ignoredText}${failedText}.`;
+}
+
+function shortScanResultText(response) {
+  const summary = summarizeScrapeTabs(response?.tabs || []);
+  if (!summary.checked) return "No Studio tabs were found.";
+  if (!summary.received) return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}; no finish notifications found.`;
+  return `Sent ${summary.received} finish signal${summary.received === 1 ? "" : "s"}.`;
+}
+
+function deepScanResultText(response) {
+  if (!response?.ok) return response?.error || "Check active tests failed.";
+  const scanned = Number(response.scanned || 0);
+  const opened = Number(response.opened || 0);
+  const received = Number(response.received || 0);
+  const candidates = Number(response.candidates || 0);
+  if (!candidates) return "No active tests were available from the dashboard.";
+  if (!opened) return "Could not open active test pages. Check Chrome tab permissions.";
+  if (!received) {
+    return `Checked ${scanned} active test page${scanned === 1 ? "" : "s"}. No finish notifications found.`;
+  }
+  return `Checked ${scanned} active test page${scanned === 1 ? "" : "s"}. Sent ${received} finish signal${received === 1 ? "" : "s"}.`;
+}
+
+function connectionResultText(response) {
+  if (!response?.ok) return response?.error || "Connection check failed.";
+  const status = normalizeConnectorStatuses(response.connectorStatus)[0];
+  const openTabs = Number(status?.payload?.openStudioTabs || 0);
+  if (!openTabs) return "Connection checked. Dashboard is reachable, but no Studio tabs are open.";
+  return `Connection checked. Dashboard is reachable and ${openTabs} Studio tab${openTabs === 1 ? " is" : "s are"} open.`;
+}
+
+function summarizeScrapeTabs(tabs) {
+  return tabs.reduce(
+    (summary, tab) => {
+      summary.checked += 1;
+      if (tab?.ok === false) summary.failed += 1;
+      summary.received += Number(tab?.received || 0);
+      summary.matched += Number(tab?.matched || 0);
+      summary.unmatched += Number(tab?.unmatched || 0);
+      summary.ignored += Number(tab?.ignored || 0);
+      return summary;
+    },
+    { checked: 0, failed: 0, received: 0, matched: 0, unmatched: 0, ignored: 0 }
+  );
+}
+
 function formatTime(value) {
   return new Date(value).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
 }
 
 function latestOwnHeartbeat(result, actorName) {
-  const statuses = result?.connectorStatus || [];
+  const statuses = normalizeConnectorStatuses(result?.connectorStatus);
   if (!statuses.length) return null;
   if (!actorName) return statuses[0];
   return statuses.find((item) => item.actorName === actorName) || statuses[0];
+}
+
+function normalizeConnectorStatuses(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return [value];
+  return [];
 }
 
 function isWatcherOpen(target, openStudioUrls) {
