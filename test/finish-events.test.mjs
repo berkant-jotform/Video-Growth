@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   detectAppliedChange,
   detectNotificationOutcome,
+  extractFinishNotificationSnippets,
   isLikelyFinishNotification,
   matchFinishEventToRun,
   parseWatcherTabs,
@@ -19,6 +20,22 @@ test("parses Studio notification video IDs and no-clear outcome", () => {
   assert.equal(event.videoId, "abc123XYZ_9");
   assert.equal(event.detectedOutcome, "no_clear");
   assert.equal(event.channel, "Jotform");
+});
+
+test("extracts multiple current Studio A/B notifications from a bell panel", () => {
+  const text = [
+    "Notifications All Earn Analytics Ideas News Today",
+    "A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner 1 hour ago",
+    "This week",
+    "A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance 2 days ago",
+    "A/B test inconclusive How to Share a PowerPoint or Google Slides Presentation in Zoom: The test completed with no winner 2 days ago"
+  ].join(" ");
+  const snippets = extractFinishNotificationSnippets(text);
+  assert.deepEqual(snippets, [
+    "A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner",
+    "A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance",
+    "A/B test inconclusive How to Share a PowerPoint or Google Slides Presentation in Zoom: The test completed with no winner"
+  ]);
 });
 
 test("detects winner option from notification text", () => {
@@ -131,6 +148,25 @@ test("matches finish events by normalized title and channel when video ID is mis
     activeRuns
   );
   assert.equal(match.run.testRunId, "run-title");
+  assert.equal(match.matchedConfidence, "title_channel");
+});
+
+test("matches current Studio A/B notification wording by extracted video title", () => {
+  const activeRuns = [
+    {
+      testRunId: "zoom-run",
+      videoId: "zoom123",
+      channel: "Jotform",
+      videoTitle: "How to Configure Zoom Settings & AI Companion"
+    }
+  ];
+  const event = parseStudioNotification({
+    channel: "Jotform",
+    rawText: "A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner"
+  });
+  const match = matchFinishEventToRun(event, activeRuns);
+  assert.equal(event.videoTitle, "How to Configure Zoom Settings & AI Companion");
+  assert.equal(match.run.testRunId, "zoom-run");
   assert.equal(match.matchedConfidence, "title_channel");
 });
 

@@ -36,14 +36,34 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
   for (const element of candidates) {
     if (!isVisible(element)) continue;
     const rawText = collapseText(element.innerText || element.textContent || "");
-    if (!isRelevant(rawText)) continue;
+    const snippets = finishNotificationSnippets(rawText);
+    if (!snippets.length && !isRelevant(rawText)) continue;
     const link = element.closest("a[href]") || element.querySelector?.("a[href]");
     const url = link?.href || findStudioVideoUrl(element) || location.href;
+    const texts = snippets.length ? snippets : [rawText];
+    for (const text of texts) {
+      const event = {
+        rawText: text,
+        url,
+        videoId: extractVideoId(`${url} ${text}`),
+        channel,
+        videoTitle: extractNotificationVideoTitle(text),
+        observedAt: new Date().toISOString()
+      };
+      if (!rememberEvent(event, includeSeen)) continue;
+      events.push(event);
+      if (events.length >= 20) break;
+    }
+    if (events.length >= 20) break;
+  }
+  const bodySnippets = finishNotificationSnippets(document.body?.innerText || "");
+  for (const text of bodySnippets) {
     const event = {
-      rawText,
-      url,
-      videoId: extractVideoId(`${url} ${rawText}`),
+      rawText: text,
+      url: findStudioVideoUrl(document.body) || location.href,
+      videoId: extractVideoId(`${location.href} ${text}`),
       channel,
+      videoTitle: extractNotificationVideoTitle(text),
       observedAt: new Date().toISOString()
     };
     if (!rememberEvent(event, includeSeen)) continue;
@@ -150,11 +170,54 @@ function isRelevant(text) {
   return hasTestContext && hasFinishContext;
 }
 
+function finishNotificationSnippets(rawText) {
+  const text = collapseLongText(rawText);
+  if (!text) return [];
+  const matches = [];
+  const patterns = [
+    /A\/B test won .{8,220}?(?=(?: \d+ (?:minute|hour|day|week|month)s? ago\b)| This week\b| Today\b| Yesterday\b| A\/B test (?:won|performed well for all|inconclusive)\b|$)/gi,
+    /A\/B test performed well for all .{8,220}?(?=(?: \d+ (?:minute|hour|day|week|month)s? ago\b)| This week\b| Today\b| Yesterday\b| A\/B test (?:won|performed well for all|inconclusive)\b|$)/gi,
+    /A\/B test inconclusive .{8,220}?(?=(?: \d+ (?:minute|hour|day|week|month)s? ago\b)| This week\b| Today\b| Yesterday\b| A\/B test (?:won|performed well for all|inconclusive)\b|$)/gi,
+    /(?:Title|Thumbnail|A\/B)?\s*Test finished\.\s*Ran from .{8,220}? to .{8,220}?\./gi,
+    /(?:test and compare|test & compare|thumbnail test|title test).{0,220}(?:finished|completed|ended|results? ready|no winner|similar performance)/gi
+  ];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const snippet = trimNotificationTail(match[0]);
+      if (snippet && isRelevant(snippet)) matches.push(snippet);
+    }
+  }
+  return Array.from(new Set(matches));
+}
+
+function extractNotificationVideoTitle(rawText) {
+  const text = collapseText(rawText);
+  const current = text.match(
+    /\bA\/B test (?:won|performed well for all|inconclusive)\s+(.+?)(?::\s*(?:We updated your video to use the winner|Results with very similar performance|The test completed with no winner)\b|$)/i
+  );
+  if (current?.[1]) return current[1].trim();
+  return "";
+}
+
+function trimNotificationTail(value) {
+  return String(value || "")
+    .replace(/\s+\d+\s+(?:minute|hour|day|week|month)s?\s+ago\b.*$/i, "")
+    .replace(/\s+(?:Today|Yesterday|This week)\b.*$/i, "")
+    .trim();
+}
+
 function collapseText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 1000);
+}
+
+function collapseLongText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 16000);
 }
 
 function findTestFinishedSnippet(value) {

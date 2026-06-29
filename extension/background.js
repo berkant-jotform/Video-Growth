@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.7";
+const EXTENSION_VERSION = "0.1.8";
 const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
