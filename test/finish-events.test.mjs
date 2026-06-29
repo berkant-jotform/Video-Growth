@@ -26,6 +26,33 @@ test("detects winner option from notification text", () => {
   assert.equal(detectNotificationOutcome("Title test finished. Winner: C"), "winner_c");
 });
 
+test("recognizes current YouTube Studio A/B notification wording", () => {
+  assert.equal(
+    isLikelyFinishNotification("A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner"),
+    true
+  );
+  assert.equal(
+    detectNotificationOutcome("A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner"),
+    "finished_unknown"
+  );
+  assert.equal(
+    isLikelyFinishNotification("A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance"),
+    true
+  );
+  assert.equal(
+    detectNotificationOutcome("A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance"),
+    "no_clear"
+  );
+  assert.equal(
+    isLikelyFinishNotification("A/B test inconclusive How to Share a PowerPoint or Google Slides Presentation in Zoom: The test completed with no winner"),
+    true
+  );
+  assert.equal(
+    detectNotificationOutcome("A/B test inconclusive How to Share a PowerPoint or Google Slides Presentation in Zoom: The test completed with no winner"),
+    "no_clear"
+  );
+});
+
 test("filters Studio edit-page noise from finish notifications", () => {
   assert.equal(
     isLikelyFinishNotification("Set a thumbnail that stands out and draws viewers' attention. Learn more"),

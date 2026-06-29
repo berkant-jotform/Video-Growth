@@ -118,6 +118,18 @@ function isRelevant(text) {
   if (/^test finished\.\s*ran from .{8,180}? to .{8,180}?\.$/i.test(text)) {
     return true;
   }
+  if (/\ba\/b\s+test\s+(?:won|performed well for all|inconclusive)\b/i.test(text)) {
+    return true;
+  }
+  if (/\bwe updated your video to use the winner\b/i.test(text)) {
+    return true;
+  }
+  if (/\bresults? with very similar performance\b/i.test(text)) {
+    return true;
+  }
+  if (/\btest completed with no winner\b/i.test(text)) {
+    return true;
+  }
   if (/\brunning\b/i.test(text) && !/\b(finished|complete|completed|ended|result|results|winner|won|selected|ready|not enough|no clear)\b/i.test(text)) {
     return false;
   }
@@ -138,7 +150,7 @@ function findTestFinishedSnippet(value) {
   const text = collapseText(value);
   const exact = text.match(/(?:Title|Thumbnail|A\/B)?\s*Test finished\.\s*Ran from .{8,180}? to .{8,180}?\./i);
   if (exact?.[0]) return collapseText(exact[0]);
-  const fallback = text.match(/(?:test and compare|test & compare|a\/b|thumbnail test|title test).{0,160}(?:finished|completed|ended|results? ready)/i);
+  const fallback = text.match(/(?:test and compare|test & compare|a\/b|thumbnail test|title test).{0,220}(?:finished|completed|ended|results? ready|won|performed well for all|inconclusive|no winner|similar performance)/i);
   return fallback?.[0] ? collapseText(fallback[0]) : "";
 }
 
