@@ -890,8 +890,8 @@ function UnmatchedEvents({ events, runs, onIgnore, onMatch }) {
     if (hasUsefulDebugSignals(events)) setOpen(true);
   }, [events]);
 
-  const activeRuns = useMemo(
-    () => runs.filter((run) => !["result_logged", "sheet_marked_done", "winner_found", "no_clear"].includes(run.status)),
+  const matchableRuns = useMemo(
+    () => runs.filter((run) => run.status !== "missing_data"),
     [runs]
   );
 
@@ -911,7 +911,7 @@ function UnmatchedEvents({ events, runs, onIgnore, onMatch }) {
               <div>
                 <strong>{event.videoTitle || event.channel || event.videoId || "Finished A/B test"}</strong>
                 <span className="event-source-line">
-                  Source: {eventSourceLabel(event.source)} · Needs matching to an active sheet row
+                  Source: {eventSourceLabel(event.source)} · Needs matching to a sheet row
                   {event.videoId ? ` · Video ${event.videoId}` : ""}
                 </span>
                 <p>{event.rawText || "Studio notification captured without text."}</p>
@@ -931,9 +931,9 @@ function UnmatchedEvents({ events, runs, onIgnore, onMatch }) {
                     }
                   >
                     <option value="">Select matching sheet row</option>
-                    {suggestRunsForEvent(event, activeRuns).slice(0, 12).map((run) => (
+                    {suggestRunsForEvent(event, matchableRuns).slice(0, 12).map((run) => (
                       <option key={run.testRunId} value={run.testRunId}>
-                        {displayChannel(run)} · {titleCase(run.testType)} · {run.videoTitle || run.currentYoutubeTitle || run.videoId}
+                        {displayChannel(run)} · {titleCase(run.testType)} · {matchStateLabel(run)} · {run.videoTitle || run.currentYoutubeTitle || run.videoId}
                       </option>
                     ))}
                   </select>
@@ -950,7 +950,7 @@ function UnmatchedEvents({ events, runs, onIgnore, onMatch }) {
                   </button>
                 </div>
               </div>
-              <span>{event.observedAt ? formatDateTime(event.observedAt) : "No time"}</span>
+              <span>{event.observedAt ? formatDateTimeWithExactAge(event.observedAt) : "No time"}</span>
             </article>
           ))}
         </div>
@@ -1391,7 +1391,7 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen }) {
           <h3>Finish Signal</h3>
           <p>{run.finishEventText}</p>
           <p className="muted">
-            {signalSourceLabel(run)} · {run.finishEventAt ? formatDateTime(run.finishEventAt) : "No timestamp"} · {run.matchedConfidence || "matched"}
+            {signalSourceLabel(run)} · {run.finishEventAt ? formatDateTimeWithExactAge(run.finishEventAt) : "No timestamp"} · {run.matchedConfidence || "matched"}
           </p>
         </section>
       ) : null}
@@ -1849,9 +1849,9 @@ function hasUsefulDebugSignals(events = []) {
 }
 
 function signalDateLabel(run) {
-  if (run.finishEventAt) return formatDateTime(run.finishEventAt);
+  if (run.finishEventAt) return formatDateTimeWithExactAge(run.finishEventAt);
   if (run.queueStatus === "past_due_check") return "Manual check";
-  if (run.effectiveFinishDate) return `Sheet ${run.effectiveFinishDate}`;
+  if (run.effectiveFinishDate) return `Sheet ${formatDateWithExactAge(run.effectiveFinishDate)}`;
   return "No signal yet";
 }
 
@@ -1882,6 +1882,15 @@ function signalEndDate(run) {
   if (run.finishEventAt) return run.finishEventAt;
   if (run.effectiveFinishDate) return `${run.effectiveFinishDate}T00:00:00`;
   return "";
+}
+
+function matchStateLabel(run) {
+  if (run.queueStatus === "confirmed_finished") return "Confirmed";
+  if (run.queueStatus === "applied_change_observed") return "Observed";
+  if (run.queueStatus === "past_due_check") return "Manual check";
+  if (run.queueStatus === "watching" || run.queueStatus === "uncovered") return "Open";
+  if (["result_logged", "sheet_marked_done", "winner_found", "no_clear"].includes(run.status)) return "Sheet logged";
+  return titleCase(run.queueStatus || run.status || "row");
 }
 
 function dateOnlyText(value) {
@@ -2136,6 +2145,21 @@ function formatDateTime(value) {
     dateStyle: "medium",
     timeStyle: "short"
   });
+}
+
+function formatDateTimeWithExactAge(value) {
+  return `${formatDateTime(value)} · ${exactDaysAgo(value)}`;
+}
+
+function formatDateWithExactAge(value) {
+  return `${value} · ${exactDaysAgo(`${value}T00:00:00`)}`;
+}
+
+function exactDaysAgo(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "unknown age";
+  const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function clampPercent(value) {
