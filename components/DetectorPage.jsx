@@ -114,7 +114,8 @@ export default function DetectorPage({ session }) {
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(OPENED_STUDIO_STORAGE_KEY);
+      window.localStorage.removeItem(OPENED_STUDIO_STORAGE_KEY);
+      const stored = window.sessionStorage.getItem(OPENED_STUDIO_STORAGE_KEY);
       if (stored) setOpenedStudioRuns(new Set(JSON.parse(stored)));
     } catch {
       setOpenedStudioRuns(new Set());
@@ -355,9 +356,9 @@ export default function DetectorPage({ session }) {
       const next = new Set(current);
       next.add(run.testRunId);
       try {
-        window.localStorage.setItem(OPENED_STUDIO_STORAGE_KEY, JSON.stringify(Array.from(next)));
+        window.sessionStorage.setItem(OPENED_STUDIO_STORAGE_KEY, JSON.stringify(Array.from(next)));
       } catch {
-        // Local visual state is helpful but non-critical.
+        // Session visual state is helpful but non-critical.
       }
       return next;
     });
