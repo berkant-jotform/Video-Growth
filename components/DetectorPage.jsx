@@ -1935,10 +1935,13 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
     }
     const watcher = findWatcherForChannel(channel, connectorConfig?.watcherTabs || []);
     const hasOpenWatcher = watcher?.url ? openUrls.some((url) => sameStudioTarget(url, watcher.url)) : false;
-    const hasHeartbeat = activeStatuses.some((item) =>
+    const channelStatus = activeStatuses.find((item) =>
       (item.channels || []).some((candidate) => sameChannel(candidate, channel))
     );
+    const hasHeartbeat = Boolean(channelStatus);
+    const scanFresh = isFreshExtensionScan(channelStatus?.payload?.lastStudioScan?.checkedAt);
     if (hasOpenWatcher) {
+      if (!scanFresh) return { channel, state: "heartbeat", label: "Scan stale" };
       return { channel, state: "watching", label: "Watching" };
     }
     if (hasHeartbeat) {
@@ -2000,6 +2003,13 @@ function isOlderVersion(current, latest) {
     if ((a[index] || 0) > (b[index] || 0)) return false;
   }
   return false;
+}
+
+function isFreshExtensionScan(value) {
+  if (!value) return false;
+  const time = new Date(value).valueOf();
+  if (!Number.isFinite(time)) return false;
+  return Date.now() - time < 2 * 60 * 60 * 1000;
 }
 
 function coverageChannelNames({ connectorConfig, runs, selectedChannel }) {
