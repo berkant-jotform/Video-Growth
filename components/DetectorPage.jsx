@@ -302,6 +302,29 @@ export default function DetectorPage({ session }) {
     }
   }
 
+  async function matchEvent(event, testRunId) {
+    if (!event?.eventId || !testRunId) return;
+    setError("");
+    try {
+      const response = await fetch("/api/resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetType: "finish_event",
+          targetId: event.eventId,
+          action: "match",
+          testRunId,
+          metadata: { videoId: event.videoId, source: event.source }
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not match signal.");
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function quickComplete(run, action) {
     if (requiresRetestConfirmation(run)) {
       setModalInitialAction(action);
@@ -594,7 +617,7 @@ export default function DetectorPage({ session }) {
         ) : null}
 
         {!loading && unmatchedEvents.length ? (
-          <UnmatchedEvents events={unmatchedEvents} onIgnore={ignoreEvent} />
+          <UnmatchedEvents events={unmatchedEvents} runs={runs} onIgnore={ignoreEvent} onMatch={matchEvent} />
         ) : null}
 
         {detectorView === "board" ? (
@@ -859,12 +882,18 @@ function ExtensionScanReceipt({ connectorStatus }) {
   );
 }
 
-function UnmatchedEvents({ events, onIgnore }) {
+function UnmatchedEvents({ events, runs, onIgnore, onMatch }) {
   const [open, setOpen] = useState(() => hasUsefulDebugSignals(events));
+  const [selection, setSelection] = useState({});
 
   useEffect(() => {
     if (hasUsefulDebugSignals(events)) setOpen(true);
   }, [events]);
+
+  const activeRuns = useMemo(
+    () => runs.filter((run) => !["result_logged", "sheet_marked_done", "winner_found", "no_clear"].includes(run.status)),
+    [runs]
+  );
 
   return (
     <section className={`unmatched-events needs-matching-signals ${open ? "open" : ""}`}>
@@ -891,9 +920,35 @@ function UnmatchedEvents({ events, onIgnore }) {
                     Open Studio page
                   </a>
                 ) : null}
-                <button className="text-button" type="button" onClick={() => onIgnore(event)}>
-                  Ignore signal
-                </button>
+                <div className="match-signal-row">
+                  <select
+                    value={selection[event.eventId] || ""}
+                    onChange={(changeEvent) =>
+                      setSelection((current) => ({
+                        ...current,
+                        [event.eventId]: changeEvent.target.value
+                      }))
+                    }
+                  >
+                    <option value="">Select matching sheet row</option>
+                    {suggestRunsForEvent(event, activeRuns).slice(0, 12).map((run) => (
+                      <option key={run.testRunId} value={run.testRunId}>
+                        {displayChannel(run)} · {titleCase(run.testType)} · {run.videoTitle || run.currentYoutubeTitle || run.videoId}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={!selection[event.eventId]}
+                    onClick={() => onMatch(event, selection[event.eventId])}
+                  >
+                    Match
+                  </button>
+                  <button className="text-button" type="button" onClick={() => onIgnore(event)}>
+                    Ignore
+                  </button>
+                </div>
               </div>
               <span>{event.observedAt ? formatDateTime(event.observedAt) : "No time"}</span>
             </article>
@@ -1613,6 +1668,45 @@ function matchesResultFilter(run, filter) {
   if (filter === "watching") return run.queueStatus === "watching";
   if (filter === "uncovered") return run.queueStatus === "uncovered";
   return cardResult(run).key === filter;
+}
+
+function suggestRunsForEvent(event, runs) {
+  return [...runs]
+    .map((run) => ({
+      run,
+      score: eventRunSuggestionScore(event, run)
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || runSortTime(b.run) - runSortTime(a.run))
+    .map((item) => item.run);
+}
+
+function eventRunSuggestionScore(event, run) {
+  let score = 0;
+  if (event.videoId && run.videoId === event.videoId) score += 100;
+  if (event.channel && sameChannel(event.channel, run.channel)) score += 25;
+  const eventTitle = normalizeText(event.videoTitle || event.rawText || "");
+  const candidates = [run.videoTitle, run.currentYoutubeTitle, ...(Object.values(run.options || {}))]
+    .map(normalizeText)
+    .filter(Boolean);
+  for (const candidate of candidates) {
+    if (eventTitle && candidate && (eventTitle.includes(candidate) || candidate.includes(eventTitle))) {
+      score += 50;
+      break;
+    }
+    const overlap = tokenOverlap(eventTitle, candidate);
+    if (overlap >= 0.6) score += Math.round(overlap * 40);
+  }
+  if (run.queueStatus === "watching" || run.queueStatus === "uncovered") score += 4;
+  return score;
+}
+
+function tokenOverlap(a, b) {
+  const left = new Set(normalizeText(a).split(" ").filter((token) => token.length >= 3));
+  const right = new Set(normalizeText(b).split(" ").filter((token) => token.length >= 3));
+  if (!left.size || !right.size) return 0;
+  const overlap = [...left].filter((token) => right.has(token)).length;
+  return overlap / Math.min(left.size, right.size);
 }
 
 function outcomeLabel(run) {

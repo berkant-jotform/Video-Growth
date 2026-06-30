@@ -1,11 +1,11 @@
 import { requireSession } from "@/lib/auth.js";
 import { badRequest, errorJson, json } from "@/lib/http.js";
-import { resolveReviewItem } from "@/lib/repository.js";
+import { matchFinishEventToTestRun, resolveReviewItem } from "@/lib/repository.js";
 
 export const runtime = "nodejs";
 
 const ALLOWED_TARGET_TYPES = new Set(["test_run", "finish_event"]);
-const ALLOWED_ACTIONS = new Set(["ignore"]);
+const ALLOWED_ACTIONS = new Set(["ignore", "match"]);
 
 export async function POST(request) {
   try {
@@ -17,6 +17,18 @@ export async function POST(request) {
     if (!ALLOWED_TARGET_TYPES.has(targetType)) throw badRequest("Unsupported resolution target.");
     if (!targetId) throw badRequest("Missing targetId.");
     if (!ALLOWED_ACTIONS.has(action)) throw badRequest("Unsupported resolution action.");
+    if (action === "match") {
+      if (targetType !== "finish_event") throw badRequest("Only finish signals can be matched.");
+      const testRunId = String(body.testRunId || body.metadata?.testRunId || "").trim();
+      if (!testRunId) throw badRequest("Missing testRunId.");
+      const match = await matchFinishEventToTestRun({
+        eventId: targetId,
+        testRunId,
+        actorName: session.actorName,
+        note: body.note || ""
+      });
+      return json({ ok: true, match });
+    }
     const resolution = await resolveReviewItem({
       targetType,
       targetId,

@@ -1414,6 +1414,23 @@ select {
   margin-top: 7px;
 }
 
+.match-signal-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  margin-top: 10px;
+}
+
+.match-signal-row select {
+  min-height: 36px;
+}
+
+.match-signal-row .secondary-button {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
 .unmatched-event > span {
   color: var(--muted);
   font-size: 12px;
