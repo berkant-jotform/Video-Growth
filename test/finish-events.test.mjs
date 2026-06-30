@@ -170,6 +170,24 @@ test("matches current Studio A/B notification wording by extracted video title",
   assert.equal(match.matchedConfidence, "title_channel");
 });
 
+test("matches exact notification titles across channel name variants", () => {
+  const activeRuns = [
+    {
+      testRunId: "jotform-apps-run",
+      videoId: "apps123",
+      channel: "Jotform Apps",
+      videoTitle: "Introducing Jotform AI App Builder"
+    }
+  ];
+  const event = parseStudioNotification({
+    channel: "Jotform",
+    rawText: "A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance"
+  });
+  const match = matchFinishEventToRun(event, activeRuns);
+  assert.equal(match.run.testRunId, "jotform-apps-run");
+  assert.equal(match.matchedConfidence, "title_channel_variant");
+});
+
 test("matches close Studio notification titles by token overlap", () => {
   const activeRuns = [
     {
