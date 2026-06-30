@@ -1298,6 +1298,22 @@ select {
   padding: 12px;
 }
 
+.needs-matching-signals {
+  background: color-mix(in srgb, var(--amber) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--amber) 38%, var(--border));
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.needs-matching-signals .debug-signals-toggle strong {
+  font-size: 16px;
+}
+
+.needs-matching-signals .debug-signals-toggle em {
+  color: var(--amber);
+}
+
 .debug-signals-toggle {
   align-items: center;
   background: transparent;
@@ -1345,11 +1361,13 @@ select {
   transition: transform 160ms ease;
 }
 
-.debug-signals.open .debug-signals-toggle svg {
+.debug-signals.open .debug-signals-toggle svg,
+.needs-matching-signals.open .debug-signals-toggle svg {
   transform: rotate(180deg);
 }
 
-.debug-signals .unmatched-list {
+.debug-signals .unmatched-list,
+.needs-matching-signals .unmatched-list {
   margin-top: 12px;
 }
 

@@ -170,6 +170,24 @@ test("matches current Studio A/B notification wording by extracted video title",
   assert.equal(match.matchedConfidence, "title_channel");
 });
 
+test("matches close Studio notification titles by token overlap", () => {
+  const activeRuns = [
+    {
+      testRunId: "workspace-agents",
+      videoId: "agent123",
+      channel: "AI Agents",
+      videoTitle: "ChatGPT Workspace Agents Explained"
+    }
+  ];
+  const event = parseStudioNotification({
+    channel: "AI Agents",
+    rawText: "A/B test performed well for all How ChatGPT Workspace Agents Work: Results with very similar performance"
+  });
+  const match = matchFinishEventToRun(event, activeRuns);
+  assert.equal(match.run.testRunId, "workspace-agents");
+  assert.equal(match.matchedConfidence, "fuzzy_title_channel");
+});
+
 test("blank finish date stays running instead of becoming a guessed finished item", () => {
   const records = parseSheetRecords({
     spreadsheetId: "sheet",

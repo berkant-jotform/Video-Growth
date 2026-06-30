@@ -867,11 +867,11 @@ function UnmatchedEvents({ events, onIgnore }) {
   }, [events]);
 
   return (
-    <section className={`unmatched-events debug-signals ${open ? "open" : ""}`}>
+    <section className={`unmatched-events needs-matching-signals ${open ? "open" : ""}`}>
       <button className="debug-signals-toggle" type="button" onClick={() => setOpen((value) => !value)}>
         <span>
-          <strong>Debug signals</strong>
-          <em>{events.length} unmatched Studio event{events.length === 1 ? "" : "s"}</em>
+          <strong>Needs matching</strong>
+          <em>{events.length} finished Studio signal{events.length === 1 ? "" : "s"} found but not linked to a sheet row</em>
         </span>
         <ChevronDown size={18} />
       </button>
@@ -880,9 +880,9 @@ function UnmatchedEvents({ events, onIgnore }) {
           {events.slice(0, 6).map((event) => (
             <article className="unmatched-event" key={event.eventId}>
               <div>
-                <strong>{event.channel || event.videoId || "Unknown source"}</strong>
+                <strong>{event.videoTitle || event.channel || event.videoId || "Finished A/B test"}</strong>
                 <span className="event-source-line">
-                  Source: {eventSourceLabel(event.source)} · Not matched to an active sheet row
+                  Source: {eventSourceLabel(event.source)} · Needs matching to an active sheet row
                   {event.videoId ? ` · Video ${event.videoId}` : ""}
                 </span>
                 <p>{event.rawText || "Studio notification captured without text."}</p>
