@@ -280,22 +280,20 @@ a {
 }
 
 .scan-scope-panel {
-  align-items: flex-end;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  justify-content: flex-end;
+  display: grid;
+  gap: 12px;
+  justify-items: stretch;
   max-width: 760px;
 }
 
 .scan-scope-fields {
-  align-items: flex-end;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
-  display: flex;
-  gap: 12px;
-  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(220px, auto);
+  gap: 18px;
+  padding: 14px;
 }
 
 .scan-scope-fields label {
@@ -304,19 +302,19 @@ a {
 
 .scan-channel-control {
   display: grid;
-  gap: 7px;
-  min-width: min(430px, 100%);
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
 }
 
 .scan-channel-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  max-width: 520px;
+  gap: 8px;
 }
 
 .scan-channel-chips button {
-  min-height: 32px;
+  min-height: 34px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface-2);
@@ -326,27 +324,68 @@ a {
   padding: 0 11px;
 }
 
+.scan-channel-chips.compact {
+  margin-top: 10px;
+  max-height: 116px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .scan-channel-chips button.active {
   border-color: color-mix(in srgb, var(--red) 50%, var(--border));
   background: color-mix(in srgb, var(--red) 12%, var(--surface));
   color: var(--text);
 }
 
-.scan-channel-control small,
+.scan-channel-meta,
 .scan-scope-help {
   color: var(--muted);
   font-size: 12px;
 }
 
-.scan-scope-help {
+.scan-channel-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 24px;
+}
+
+.more-scan-channels {
+  position: relative;
+}
+
+.more-scan-channels summary {
+  cursor: pointer;
+  font-weight: 800;
+  list-style: none;
+}
+
+.more-scan-channels summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-scan-channels[open] {
   flex-basis: 100%;
-  margin: -2px 0 0 auto;
-  max-width: 760px;
-  text-align: right;
+}
+
+.scan-scope-help {
+  margin: 0;
+  text-align: left;
 }
 
 .scan-type-control {
+  align-self: start;
+  justify-self: end;
   min-width: 244px;
+}
+
+.scan-action-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .refresh-thumb-toggle {
@@ -3039,14 +3078,16 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .scan-scope-panel,
-  .scan-scope-fields {
+  .scan-scope-panel {
     align-items: stretch;
-    flex-direction: column;
   }
 
   .scan-scope-panel {
     max-width: none;
+  }
+
+  .scan-scope-fields {
+    grid-template-columns: 1fr;
   }
 
   .scan-scope-help {
@@ -3060,7 +3101,12 @@ textarea {
   .scan-type-control,
   .scan-button,
   .full-refresh-button {
+    justify-self: stretch;
     width: 100%;
+  }
+
+  .scan-action-row {
+    justify-content: stretch;
   }
 
   .board-lane-header,

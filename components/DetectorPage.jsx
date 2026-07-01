@@ -459,6 +459,8 @@ export default function DetectorPage({ session }) {
     () => groupRuns(filtered, { groupOtherChannels: viewChannel === "all" }),
     [filtered, viewChannel]
   );
+  const primaryScanChannels = channels.filter((item) => item === "all" || isPrimaryScanChannel(item));
+  const extraScanChannels = channels.filter((item) => item !== "all" && !isPrimaryScanChannel(item));
 
   return (
     <AppShell session={session} active="detector">
@@ -493,7 +495,7 @@ export default function DetectorPage({ session }) {
               <div className="scan-channel-control">
                 <span className="filter-label">Scan channels</span>
                 <div className="scan-channel-chips" aria-label="Scan channels">
-                  {channels.map((item) => {
+                  {primaryScanChannels.map((item) => {
                     const active = item === "all" ? scanChannels.length === 0 : scanChannels.includes(item);
                     return (
                       <button
@@ -507,7 +509,29 @@ export default function DetectorPage({ session }) {
                     );
                   })}
                 </div>
-                <small>{scanChannels.length ? `${scanChannels.length} selected` : "All configured channels"}</small>
+                <div className="scan-channel-meta">
+                  <span>{scanChannels.length ? `${scanChannels.length} selected` : "All configured channels"}</span>
+                  {extraScanChannels.length ? (
+                    <details className="more-scan-channels">
+                      <summary>More channels</summary>
+                      <div className="scan-channel-chips compact" aria-label="More scan channels">
+                        {extraScanChannels.map((item) => {
+                          const active = scanChannels.includes(item);
+                          return (
+                            <button
+                              key={item}
+                              type="button"
+                              className={active ? "active" : ""}
+                              onClick={() => toggleScanChannel(item)}
+                            >
+                              {item}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
               </div>
               <div className="filter-control scan-type-control">
                 <span className="filter-label">Scan type</span>
@@ -525,24 +549,26 @@ export default function DetectorPage({ session }) {
                 </div>
               </div>
             </div>
-            <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
-              <RefreshCw size={18} className={scanning ? "spin" : ""} />
-              {scanning ? "Scanning" : scanButtonLabel(scanChannels, scanType, "Scan selected")}
-            </button>
-            <label className="refresh-thumb-toggle">
-              <input
-                type="checkbox"
-                checked={refreshThumbnails}
-                onChange={(event) => setRefreshThumbnails(event.target.checked)}
-              />
-              Rebuild thumbnail previews during full refresh
-            </label>
-            <button className="secondary-button full-refresh-button" onClick={fullRefresh} disabled={scanning}>
-              <RefreshCw size={17} />
-              Full refresh
-            </button>
+            <div className="scan-action-row">
+              <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
+                <RefreshCw size={18} className={scanning ? "spin" : ""} />
+                {scanning ? "Scanning" : scanButtonLabel(scanChannels, scanType, "Scan selected")}
+              </button>
+              <button className="secondary-button full-refresh-button" onClick={fullRefresh} disabled={scanning}>
+                <RefreshCw size={17} />
+                Full refresh
+              </button>
+              <label className="refresh-thumb-toggle">
+                <input
+                  type="checkbox"
+                  checked={refreshThumbnails}
+                  onChange={(event) => setRefreshThumbnails(event.target.checked)}
+                />
+                Rebuild thumbnail previews
+              </label>
+            </div>
             <p className="scan-scope-help">
-              Scan selected updates only the checked scope. Full refresh scans all sheets and reconciles missing rows. Thumbnail preview rebuild exports the thumbnail sheet and refreshes A/B/C image previews.
+              Selected scan is scoped. Full refresh scans all sheets and reconciles missing rows. Thumbnail rebuild is slower and only needed when previews look stale.
             </p>
           </div>
         </section>
@@ -1760,6 +1786,11 @@ function displayChannel(runOrChannel) {
 function isPriorityChannel(channel) {
   const canonical = displayChannel(channel);
   return CHANNEL_PRIORITY.includes(canonical);
+}
+
+function isPrimaryScanChannel(channel) {
+  const canonical = displayChannel(channel);
+  return ["Jotform", "AI Agents Podcast", "AI Agents"].includes(canonical);
 }
 
 function compareGroups(a, b) {
