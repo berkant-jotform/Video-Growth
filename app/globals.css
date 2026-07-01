@@ -570,6 +570,40 @@ a {
   margin: 0;
 }
 
+.extension-scan-diagnosis {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  padding: 10px 12px;
+}
+
+.extension-scan-diagnosis.warn {
+  background: color-mix(in srgb, var(--amber) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--amber) 36%, var(--border));
+}
+
+.extension-scan-diagnosis.info {
+  background: color-mix(in srgb, var(--blue) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--blue) 28%, var(--border));
+}
+
+.extension-scan-diagnosis strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.extension-scan-diagnosis span,
+.extension-scan-diagnosis em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 760;
+}
+
 .extension-scan-stats {
   display: grid;
   gap: 8px;

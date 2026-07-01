@@ -911,7 +911,9 @@ function ExtensionScanReceipt({ connectorStatus }) {
   const matched = Number(totals.matched || 0);
   const unmatched = Number(totals.unmatched || 0);
   const failed = Number(totals.failed || 0);
-  const tone = failed ? "warn" : found ? "ok" : "neutral";
+  const diagnosis = receipt.scan.diagnosis || null;
+  const diagnosisWarn = diagnosis?.severity === "warn" || diagnosis?.severity === "error";
+  const tone = failed || diagnosisWarn ? "warn" : found ? "ok" : "neutral";
   return (
     <section className={`extension-scan-receipt ${tone}`}>
       <div className="extension-scan-copy">
@@ -926,6 +928,13 @@ function ExtensionScanReceipt({ connectorStatus }) {
           {receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Sent {Number(totals.received || 0)} signal
           {Number(totals.received || 0) === 1 ? "" : "s"}: {matched} matched, {unmatched} needs matching.
         </p>
+        {diagnosis && diagnosis.severity !== "ok" ? (
+          <div className={`extension-scan-diagnosis ${diagnosisWarn ? "warn" : "info"}`}>
+            <strong>{diagnosisWarn ? "Scan warning" : "Scan note"}</strong>
+            <span>{diagnosis.message}</span>
+            {diagnosis.action ? <em>{diagnosis.action}</em> : null}
+          </div>
+        ) : null}
       </div>
       <div className="extension-scan-stats">
         <span>

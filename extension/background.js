@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.12";
+const EXTENSION_VERSION = "0.1.13";
 const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
@@ -92,11 +92,12 @@ async function requestStudioScrape() {
     lastStudioScanAt: new Date().toISOString(),
     lastStudioScanResult: {
       tabs: results.map(summarizeTabScanResult),
-      totals: summarizeScanResults(results)
+      totals: summarizeScanResults(results),
+      diagnosis: buildScanDiagnosis(results)
     }
   });
   await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
-  return { ok: true, tabs: results };
+  return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results) };
 }
 
 function summarizeTabScanResult(tab) {
@@ -130,6 +131,86 @@ function summarizeScanResults(results) {
     },
     { tabs: 0, failed: 0, received: 0, matched: 0, unmatched: 0, ignored: 0, candidates: 0 }
   );
+}
+
+function buildScanDiagnosis(results) {
+  const totals = summarizeScanResults(results);
+  const tabs = results.map((item) => ({ ...item, diagnostics: item.diagnostics || {} }));
+  const menuOpened = tabs.filter((item) => item.diagnostics.menuOpened).length;
+  const notificationButtons = tabs.filter((item) => item.diagnostics.notificationButtonFound).length;
+  const visibleContainers = tabs.reduce((sum, item) => sum + Number(item.diagnostics.visibleNotificationContainers || 0), 0);
+  const bodySnippetCount = tabs.reduce((sum, item) => sum + Number(item.diagnostics.bodySnippetCount || 0), 0);
+
+  if (!totals.tabs) {
+    return {
+      severity: "warn",
+      code: "no_studio_tabs",
+      message: "No YouTube Studio tabs were open during the extension scan.",
+      action: "Open a watched Studio channel from the extension, then scan again."
+    };
+  }
+  if (totals.failed >= totals.tabs) {
+    return {
+      severity: "warn",
+      code: "all_tabs_failed",
+      message: "The extension could not read any open Studio tab.",
+      action: "Reload the Studio tabs, confirm Chrome extension permissions, then scan again."
+    };
+  }
+  if (totals.candidates > 0 && totals.received === 0 && totals.ignored === 0) {
+    return {
+      severity: "warn",
+      code: "send_failed",
+      message: "The extension found A/B finish text but the app did not record it.",
+      action: "Check the connector token and app URL in extension settings."
+    };
+  }
+  if (totals.candidates > 0 && totals.unmatched > 0 && totals.matched === 0) {
+    return {
+      severity: "info",
+      code: "needs_matching",
+      message: "Finish signals were captured, but none matched a known sheet row.",
+      action: "The dashboard will show them as unregistered if automatic matching cannot resolve them."
+    };
+  }
+  if (totals.candidates > 0) {
+    return {
+      severity: "ok",
+      code: "signals_found",
+      message: "A/B finish signals were captured and sent to the app.",
+      action: ""
+    };
+  }
+  if (!notificationButtons) {
+    return {
+      severity: "warn",
+      code: "notification_button_missing",
+      message: "No Studio notification button was found in the checked tabs.",
+      action: "Open the normal Studio channel page, not only a video editor or analytics page, then scan again."
+    };
+  }
+  if (!menuOpened && !visibleContainers) {
+    return {
+      severity: "warn",
+      code: "notification_surface_missing",
+      message: "Studio was open, but the extension could not open or see the notification list.",
+      action: "Open the bell notifications panel manually, keep it visible, then scan again."
+    };
+  }
+  if (bodySnippetCount > 0) {
+    return {
+      severity: "warn",
+      code: "parser_missed_visible_text",
+      message: "The page contained A/B-looking text, but no event was sent.",
+      action: "This is likely a parser issue; share the Latest extension scan details."
+    };
+  }
+  return {
+    severity: "info",
+    code: "no_finish_text_seen",
+    message: "The extension scanned Studio successfully, but no A/B finish text was visible.",
+    action: "If YouTube notifications are visible, open the bell panel and run Scan Studio tabs again."
+  };
 }
 
 async function ensureContentScript(tabId) {
@@ -365,7 +446,18 @@ async function buildLastStudioScanPayload() {
           channel: tab.diagnostics?.channel || "",
           previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 3) : []
         }))
-      : []
+      : [],
+    diagnosis: sanitizeDiagnosis(result.diagnosis)
+  };
+}
+
+function sanitizeDiagnosis(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    severity: String(value.severity || "info").slice(0, 20),
+    code: String(value.code || "").slice(0, 80),
+    message: String(value.message || "").slice(0, 240),
+    action: String(value.action || "").slice(0, 240)
   };
 }
 

@@ -81,6 +81,17 @@ function sanitizeLastStudioScan(value) {
               }))
             : []
         }))
-      : []
+      : [],
+    diagnosis: sanitizeScanDiagnosis(value.diagnosis)
+  };
+}
+
+function sanitizeScanDiagnosis(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    severity: String(value.severity || "info").slice(0, 20),
+    code: String(value.code || "").slice(0, 80),
+    message: String(value.message || "").slice(0, 240),
+    action: String(value.action || "").slice(0, 240)
   };
 }

@@ -80,8 +80,13 @@ function renderScanLog(scanAt, result) {
     return;
   }
   summaryEl.textContent = `${totals.tabs || tabs.length} tab${(totals.tabs || tabs.length) === 1 ? "" : "s"}, ${totals.candidates || 0} candidate${Number(totals.candidates || 0) === 1 ? "" : "s"}`;
+  const diagnosis = result?.diagnosis;
+  const diagnosisHtml = diagnosis && diagnosis.severity !== "ok"
+    ? `<p class="mini-warning">${escapeHtml(diagnosis.message)}${diagnosis.action ? ` ${escapeHtml(diagnosis.action)}` : ""}</p>`
+    : "";
   bodyEl.innerHTML = [
     `<p class="scan-log-time">Checked ${escapeHtml(formatTime(scanAt))}. Sent ${Number(totals.received || 0)} signal${Number(totals.received || 0) === 1 ? "" : "s"}: ${Number(totals.matched || 0)} matched, ${Number(totals.unmatched || 0)} unmatched.</p>`,
+    diagnosisHtml,
     ...tabs.slice(0, 6).map(renderScanLogTab)
   ].join("");
 }
@@ -195,12 +200,16 @@ function setSummary(text) {
 function scanResultText(response) {
   if (!response?.ok) return response?.error || "Scan failed.";
   const summary = summarizeScrapeTabs(response.tabs || []);
+  const diagnosis = response.diagnosis || buildPopupDiagnosis(response.tabs || []);
+  const diagnosisSuffix = diagnosis?.severity && diagnosis.severity !== "ok"
+    ? ` ${diagnosis.message}${diagnosis.action ? ` ${diagnosis.action}` : ""}`
+    : "";
   if (!summary.checked) {
     return "No YouTube Studio tabs are open. Open watcher tabs first, then scan again.";
   }
   if (!summary.received) {
     const failedText = summary.failed ? ` ${summary.failed} tab${summary.failed === 1 ? "" : "s"} could not be read.` : "";
-    return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}. No finish notifications found.${failedText}`;
+    return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}. No finish notifications found.${failedText}${diagnosisSuffix}`;
   }
   const ignoredText = summary.ignored ? `, ${summary.ignored} ignored` : "";
   const failedText = summary.failed ? `. ${summary.failed} tab${summary.failed === 1 ? "" : "s"} could not be read` : "";
@@ -210,7 +219,11 @@ function scanResultText(response) {
 function shortScanResultText(response) {
   const summary = summarizeScrapeTabs(response?.tabs || []);
   if (!summary.checked) return "No Studio tabs were found.";
-  if (!summary.received) return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}; no finish notifications found.`;
+  const diagnosis = response?.diagnosis || buildPopupDiagnosis(response?.tabs || []);
+  const diagnosisSuffix = diagnosis?.severity && diagnosis.severity !== "ok"
+    ? ` ${diagnosis.message}`
+    : "";
+  if (!summary.received) return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}; no finish notifications found.${diagnosisSuffix}`;
   return `Sent ${summary.received} finish signal${summary.received === 1 ? "" : "s"}.`;
 }
 
@@ -249,6 +262,32 @@ function summarizeScrapeTabs(tabs) {
     },
     { checked: 0, failed: 0, received: 0, matched: 0, unmatched: 0, ignored: 0 }
   );
+}
+
+function buildPopupDiagnosis(tabs = []) {
+  const summary = summarizeScrapeTabs(tabs);
+  const diagnostics = tabs.map((tab) => tab?.diagnostics || {});
+  const menuOpened = diagnostics.filter((item) => item.menuOpened).length;
+  const notificationButtons = diagnostics.filter((item) => item.notificationButtonFound).length;
+  const visibleContainers = diagnostics.reduce((sum, item) => sum + Number(item.visibleNotificationContainers || 0), 0);
+  const bodySnippetCount = diagnostics.reduce((sum, item) => sum + Number(item.bodySnippetCount || 0), 0);
+  if (!summary.checked) {
+    return { severity: "warn", message: "No Studio tabs were open.", action: "Open watcher tabs first." };
+  }
+  if (summary.failed >= summary.checked) {
+    return { severity: "warn", message: "The extension could not read any Studio tab.", action: "Reload Studio and scan again." };
+  }
+  if (summary.received) return { severity: "ok", message: "Signals sent.", action: "" };
+  if (!notificationButtons) {
+    return { severity: "warn", message: "No Studio notification button was found.", action: "Open the normal Studio channel page." };
+  }
+  if (!menuOpened && !visibleContainers) {
+    return { severity: "warn", message: "The notification list was not visible.", action: "Open the bell panel manually and scan again." };
+  }
+  if (bodySnippetCount > 0) {
+    return { severity: "warn", message: "A/B-looking text was visible but not sent.", action: "This may be a parser issue." };
+  }
+  return { severity: "info", message: "No A/B finish text was visible.", action: "Open the bell panel if you can see notifications." };
 }
 
 function formatTime(value) {
