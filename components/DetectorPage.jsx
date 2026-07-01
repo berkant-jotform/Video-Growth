@@ -84,7 +84,7 @@ export default function DetectorPage({ session }) {
   const [modalRun, setModalRun] = useState(null);
   const [modalInitialAction, setModalInitialAction] = useState("");
   const [quickSaving, setQuickSaving] = useState("");
-  const [scanChannel, setScanChannel] = useState("all");
+  const [scanChannels, setScanChannels] = useState([]);
   const [scanType, setScanType] = useState("all");
   const [refreshThumbnails, setRefreshThumbnails] = useState(false);
   const [detectorView, setDetectorView] = useState("classic");
@@ -191,7 +191,7 @@ export default function DetectorPage({ session }) {
 
   async function scanNow() {
     return runScanRequest({
-      channel: scanChannel,
+      channels: scanChannels,
       testType: scanType,
       refreshThumbnails: false,
       label: "selected scope"
@@ -216,14 +216,16 @@ export default function DetectorPage({ session }) {
     });
   }
 
-  async function runScanRequest({ channel = "all", testType = "all", refreshThumbnails = false, label = "" } = {}) {
+  async function runScanRequest({ channel = "all", channels = [], testType = "all", refreshThumbnails = false, label = "" } = {}) {
+    const selectedChannels = channels.length ? channels : channel !== "all" ? [channel] : [];
     const scoped = {
-      channel: channel !== "all" ? channel : "all",
+      channel: selectedChannels.length === 1 ? selectedChannels[0] : "all",
+      channels: selectedChannels,
       testType: testType !== "all" ? testType : "all",
       refreshThumbnails
     };
     const scopedText = [
-      scoped.channel !== "all" ? scoped.channel : "",
+      selectedChannels.length ? selectedChannels.join(", ") : "",
       scoped.testType !== "all" ? `${titleCase(scoped.testType)} tests` : ""
     ].filter(Boolean).join(" · ");
     setScanning(true);
@@ -254,6 +256,18 @@ export default function DetectorPage({ session }) {
     } finally {
       setScanning(false);
     }
+  }
+
+  function toggleScanChannel(channel) {
+    if (channel === "all") {
+      setScanChannels([]);
+      return;
+    }
+    setScanChannels((current) =>
+      current.includes(channel)
+        ? current.filter((item) => item !== channel)
+        : [...current, channel]
+    );
   }
 
   async function ignoreRun(run) {
@@ -472,16 +486,25 @@ export default function DetectorPage({ session }) {
           </div>
           <div className="scan-scope-panel">
             <div className="scan-scope-fields">
-              <label>
-                Scan channel
-                <select value={scanChannel} onChange={(event) => setScanChannel(event.target.value)}>
-                  {channels.map((item) => (
-                    <option key={item} value={item}>
-                      {item === "all" ? "All channels" : item}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="scan-channel-control">
+                <span className="filter-label">Scan channels</span>
+                <div className="scan-channel-chips" aria-label="Scan channels">
+                  {channels.map((item) => {
+                    const active = item === "all" ? scanChannels.length === 0 : scanChannels.includes(item);
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        className={active ? "active" : ""}
+                        onClick={() => toggleScanChannel(item)}
+                      >
+                        {item === "all" ? "All channels" : item}
+                      </button>
+                    );
+                  })}
+                </div>
+                <small>{scanChannels.length ? `${scanChannels.length} selected` : "All configured channels"}</small>
+              </div>
               <div className="filter-control scan-type-control">
                 <span className="filter-label">Scan type</span>
                 <div className="segmented" aria-label="Scan type">
@@ -500,7 +523,7 @@ export default function DetectorPage({ session }) {
             </div>
             <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
               <RefreshCw size={18} className={scanning ? "spin" : ""} />
-              {scanning ? "Scanning" : scanButtonLabel(scanChannel, scanType, "Scan selected")}
+              {scanning ? "Scanning" : scanButtonLabel(scanChannels, scanType, "Scan selected")}
             </button>
             <label className="refresh-thumb-toggle">
               <input
@@ -508,12 +531,15 @@ export default function DetectorPage({ session }) {
                 checked={refreshThumbnails}
                 onChange={(event) => setRefreshThumbnails(event.target.checked)}
               />
-              Refresh thumbnail images on full refresh
+              Rebuild thumbnail previews during full refresh
             </label>
             <button className="secondary-button full-refresh-button" onClick={fullRefresh} disabled={scanning}>
               <RefreshCw size={17} />
               Full refresh
             </button>
+            <p className="scan-scope-help">
+              Scan selected updates only the checked scope. Full refresh scans all sheets and reconciles missing rows. Thumbnail preview rebuild exports the thumbnail sheet and refreshes A/B/C image previews.
+            </p>
           </div>
         </section>
 
@@ -2209,8 +2235,17 @@ function titleCase(value) {
 }
 
 function scanButtonLabel(channel, type, fallback = "Scan Now") {
+  const channelPart = Array.isArray(channel)
+    ? channel.length === 1
+      ? channel[0]
+      : channel.length > 1
+        ? `${channel.length} channels`
+        : ""
+    : channel !== "all"
+      ? channel
+      : "";
   const parts = [
-    channel !== "all" ? channel : "",
+    channelPart,
     type !== "all" ? titleCase(type) : ""
   ].filter(Boolean);
   return parts.length ? `Scan ${parts.join(" · ")}` : fallback;

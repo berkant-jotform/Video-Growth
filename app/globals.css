@@ -302,6 +302,49 @@ a {
   min-width: 210px;
 }
 
+.scan-channel-control {
+  display: grid;
+  gap: 7px;
+  min-width: min(430px, 100%);
+}
+
+.scan-channel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  max-width: 520px;
+}
+
+.scan-channel-chips button {
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 11px;
+}
+
+.scan-channel-chips button.active {
+  border-color: color-mix(in srgb, var(--red) 50%, var(--border));
+  background: color-mix(in srgb, var(--red) 12%, var(--surface));
+  color: var(--text);
+}
+
+.scan-channel-control small,
+.scan-scope-help {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scan-scope-help {
+  flex-basis: 100%;
+  margin: -2px 0 0 auto;
+  max-width: 760px;
+  text-align: right;
+}
+
 .scan-type-control {
   min-width: 244px;
 }
@@ -3006,7 +3049,14 @@ textarea {
     max-width: none;
   }
 
+  .scan-scope-help {
+    margin-left: 0;
+    max-width: none;
+    text-align: left;
+  }
+
   .scan-scope-fields label,
+  .scan-channel-control,
   .scan-type-control,
   .scan-button,
   .full-refresh-button {

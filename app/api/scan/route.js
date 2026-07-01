@@ -11,6 +11,7 @@ export async function POST(request) {
     const result = await runScan({
       actorName: session.actorName,
       channel: body.channel || "all",
+      channels: Array.isArray(body.channels) ? body.channels : [],
       testType: body.testType || "all",
       refreshThumbnails: Boolean(body.refreshThumbnails)
     });
