@@ -427,9 +427,13 @@ export default function DetectorPage({ session }) {
   const channels = useMemo(
     () => [
       "all",
-      ...Array.from(new Set(runs.map((run) => displayChannel(run)).filter(Boolean))).sort(compareChannels)
+      ...Array.from(new Set([
+        ...(connectorConfig?.channels || []).map(displayChannel),
+        ...(connectorConfig?.watcherTabs || []).map((tab) => displayChannel(tab.label)),
+        ...runs.map((run) => displayChannel(run))
+      ].filter(Boolean))).sort(compareChannels)
     ],
-    [runs]
+    [runs, connectorConfig]
   );
 
   const filtered = useMemo(() => {

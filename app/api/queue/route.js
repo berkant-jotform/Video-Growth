@@ -13,6 +13,7 @@ import { findYouTubeVideoCandidates } from "@/lib/youtube.js";
 import { errorJson, json } from "@/lib/http.js";
 
 export const runtime = "nodejs";
+const YOUTUBE_LOOKUP_LIMIT_PER_QUEUE_LOAD = 12;
 
 export async function GET() {
   try {
@@ -40,8 +41,11 @@ export async function GET() {
 }
 
 async function buildUnregisteredRuns(events, matchCandidates, config) {
+  let lookupCount = 0;
   return Promise.all(events.map(async (event) => {
-    const youtubeCandidates = await findEventYouTubeCandidates(event, config);
+    const shouldLookup = !event.videoId && event.videoTitle && lookupCount < YOUTUBE_LOOKUP_LIMIT_PER_QUEUE_LOAD;
+    if (shouldLookup) lookupCount += 1;
+    const youtubeCandidates = shouldLookup ? await findEventYouTubeCandidates(event, config) : [];
     return finishEventToUnregisteredRun(event, matchCandidates, youtubeCandidates);
   }));
 }
@@ -58,7 +62,7 @@ async function findEventYouTubeCandidates(event, config) {
 
 function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandidates = []) {
   const title = event.videoTitle || event.videoId || "Finished A/B test";
-  const bestYoutubeCandidate = youtubeCandidates.find((item) => Number(item.score) >= 0.82) || null;
+  const bestYoutubeCandidate = youtubeCandidates.find((item) => isStrongYoutubeCandidate(event, item)) || null;
   const enrichedEvent = bestYoutubeCandidate && !event.videoId
     ? { ...event, videoId: bestYoutubeCandidate.videoId }
     : event;
@@ -128,6 +132,32 @@ function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandid
     connectorLastSeenAt: event.observedAt || "",
     connectorActorName: event.actorName || ""
   };
+}
+
+function isStrongYoutubeCandidate(event, candidate) {
+  const score = Number(candidate?.score || 0);
+  if (score >= 0.95) return true;
+  if (score >= 0.84 && relatedChannelName(event.channel, candidate.channel)) return true;
+  return false;
+}
+
+function relatedChannelName(left, right) {
+  const a = channelAliasKey(left);
+  const b = channelAliasKey(right);
+  return Boolean(a && b && a === b);
+}
+
+function channelAliasKey(channel) {
+  const normalized = String(channel || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (["jotform", "jotform apps", "apps", "jotform sign", "sign"].includes(normalized)) return "jotform";
+  return normalized;
 }
 
 function inferEventTestType(event) {
