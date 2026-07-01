@@ -322,6 +322,7 @@ a {
   font-size: 12px;
   font-weight: 800;
   padding: 0 11px;
+  --scan-accent: var(--muted);
 }
 
 .scan-channel-chips.compact {
@@ -332,9 +333,10 @@ a {
 }
 
 .scan-channel-chips button.active {
-  border-color: color-mix(in srgb, var(--red) 50%, var(--border));
-  background: color-mix(in srgb, var(--red) 12%, var(--surface));
-  color: var(--text);
+  border-color: color-mix(in srgb, var(--scan-accent) 58%, var(--border));
+  background: color-mix(in srgb, var(--scan-accent) 14%, var(--surface));
+  color: color-mix(in srgb, var(--scan-accent) 78%, var(--text));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--scan-accent) 18%, transparent);
 }
 
 .scan-channel-meta,

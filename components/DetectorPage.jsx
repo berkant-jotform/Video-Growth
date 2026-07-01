@@ -502,6 +502,7 @@ export default function DetectorPage({ session }) {
                         key={item}
                         type="button"
                         className={active ? "active" : ""}
+                        style={scanChipStyle(item)}
                         onClick={() => toggleScanChannel(item)}
                       >
                         {item === "all" ? "All channels" : item}
@@ -522,6 +523,7 @@ export default function DetectorPage({ session }) {
                               key={item}
                               type="button"
                               className={active ? "active" : ""}
+                              style={scanChipStyle(item)}
                               onClick={() => toggleScanChannel(item)}
                             >
                               {item}
@@ -2244,6 +2246,13 @@ function channelAccent(value) {
   if (CHANNEL_ACCENTS.has(channel)) return CHANNEL_ACCENTS.get(channel);
   const index = Math.abs(channelHue(channel)) % DEFAULT_CHANNEL_ACCENTS.length;
   return DEFAULT_CHANNEL_ACCENTS[index];
+}
+
+function scanChipStyle(channel) {
+  if (!channel || channel === "all") {
+    return { "--scan-accent": "var(--muted)" };
+  }
+  return { "--scan-accent": channelAccent(channel) };
 }
 
 function channelInitials(value) {
