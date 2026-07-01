@@ -21,6 +21,7 @@ export async function POST(request) {
         studioTabUrls: Array.isArray(body.studioTabUrls)
           ? body.studioTabUrls.map(String).filter(Boolean).slice(0, 20)
           : [],
+        studioTabs: sanitizeStudioTabs(body.studioTabs),
         userAgent: body.userAgent || "",
         observedAt: body.observedAt || new Date().toISOString(),
         lastStudioScan: sanitizeLastStudioScan(body.lastStudioScan)
@@ -30,6 +31,20 @@ export async function POST(request) {
   } catch (error) {
     return errorJson(error);
   }
+}
+
+function sanitizeStudioTabs(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 10).map((tab) => ({
+    tabTitle: String(tab?.tabTitle || "").slice(0, 160),
+    tabUrl: String(tab?.tabUrl || "").slice(0, 300),
+    channel: String(tab?.channel || "").slice(0, 120),
+    notificationButtonFound: Boolean(tab?.notificationButtonFound),
+    visibleNotificationContainers: Number(tab?.visibleNotificationContainers || 0),
+    bodySnippetCount: Number(tab?.bodySnippetCount || 0),
+    ok: tab?.ok !== false,
+    error: String(tab?.error || "").slice(0, 240)
+  }));
 }
 
 function sanitizeLastStudioScan(value) {

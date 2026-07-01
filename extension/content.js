@@ -1,7 +1,7 @@
 const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.11";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.12";
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
   "tp-yt-paper-toast",
@@ -15,6 +15,10 @@ const seen = new Set();
 let currentUrl = location.href;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "studio-tab-status") {
+    sendResponse(studioTabStatus());
+    return false;
+  }
   if (message?.type !== "scrape-studio-notifications") return false;
   scrapeStudioNotifications({ includeSeen: true })
     .then(async ({ events, diagnostics }) => {
@@ -43,7 +47,7 @@ window.setInterval(() => {
 
 function collectNotificationEvents({ includeSeen = false } = {}) {
   const channel = detectChannelName();
-  const candidates = [...document.querySelectorAll(NOTIFICATION_SELECTORS.join(","))];
+  const candidates = queryAllDeep(NOTIFICATION_SELECTORS.join(","));
 
   const events = collectStudioPageStatusEvents(channel);
   for (const element of candidates) {
@@ -116,13 +120,29 @@ async function scrapeStudioNotifications({ includeSeen = false } = {}) {
 }
 
 function scanDiagnostics({ menuOpened, before, after, events }) {
+  const bodyText = document.body?.innerText || "";
   return {
     url: location.href,
     channel: detectChannelName(),
     menuOpened,
+    notificationButtonFound: Boolean(findNotificationButton()),
+    visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
+    bodySnippetCount: finishNotificationSnippets(bodyText).length,
+    bodyTextLength: bodyText.length,
     beforeCount: before.length,
     afterCount: after.length,
     eventCount: events.length,
+    checkedAt: new Date().toISOString()
+  };
+}
+
+function studioTabStatus() {
+  return {
+    url: location.href,
+    channel: detectChannelName(),
+    notificationButtonFound: Boolean(findNotificationButton()),
+    visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
+    bodySnippetCount: finishNotificationSnippets(document.body?.innerText || "").length,
     checkedAt: new Date().toISOString()
   };
 }
@@ -288,7 +308,7 @@ function detectChannelName() {
     "meta[itemprop='name']"
   ];
   for (const selector of selectors) {
-    const element = document.querySelector(selector);
+    const element = queryOneDeep(selector);
     const value =
       element?.getAttribute("data-channel-name") ||
       element?.getAttribute("aria-label") ||
@@ -310,7 +330,7 @@ function cleanChannelLabel(value) {
 }
 
 function findStudioVideoUrl(element) {
-  const html = element.outerHTML || "";
+  const html = deepOuterHtml(element).slice(0, 200000);
   const match = html.match(/https:\/\/studio\.youtube\.com\/video\/[A-Za-z0-9_-]{6,}\/edit[^"'<\s]*/);
   return match ? match[0] : "";
 }
@@ -337,11 +357,11 @@ function findNotificationButton() {
     "[aria-label*='Bildirim' i]"
   ];
   for (const selector of selectors) {
-    const element = document.querySelector(selector);
+    const element = queryOneDeep(selector);
     const clickable = findClickable(element);
     if (clickable && isVisible(clickable)) return clickable;
   }
-  const candidates = [...document.querySelectorAll("button, ytcp-icon-button, tp-yt-paper-icon-button")];
+  const candidates = queryAllDeep("button, ytcp-icon-button, tp-yt-paper-icon-button");
   return (
     candidates.find((element) =>
       /notifications|bildirim/i.test(
@@ -361,7 +381,59 @@ function findNotificationButton() {
 function findClickable(element) {
   if (!element) return null;
   if (typeof element.click === "function") return element;
-  return element.querySelector?.("button, ytcp-icon-button, tp-yt-paper-icon-button") || null;
+  return queryOneDeep("button, ytcp-icon-button, tp-yt-paper-icon-button", element) || null;
+}
+
+function queryOneDeep(selector, root = document) {
+  return queryAllDeep(selector, root)[0] || null;
+}
+
+function queryAllDeep(selector, root = document) {
+  const results = [];
+  const roots = [root];
+  const seenRoots = new Set();
+  for (let index = 0; index < roots.length; index += 1) {
+    const scope = roots[index];
+    if (!scope || seenRoots.has(scope)) continue;
+    seenRoots.add(scope);
+    if (scope.nodeType === Node.ELEMENT_NODE && scope.matches?.(selector)) results.push(scope);
+    if (scope.shadowRoot) roots.push(scope.shadowRoot);
+    for (const match of scope.querySelectorAll?.(selector) || []) results.push(match);
+    const elements = scope.querySelectorAll?.("*") || [];
+    for (const element of elements) {
+      if (element.shadowRoot) roots.push(element.shadowRoot);
+    }
+  }
+  return Array.from(new Set(results));
+}
+
+function walkDeep(root) {
+  const output = [];
+  const stack = [root];
+  const seenNodes = new Set();
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || seenNodes.has(node)) continue;
+    seenNodes.add(node);
+    output.push(node);
+    const shadow = node.shadowRoot;
+    if (shadow) stack.push(shadow);
+    const children = node.children || node.childNodes || [];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push(children[index]);
+    }
+  }
+  return output;
+}
+
+function deepOuterHtml(root) {
+  const parts = [];
+  for (const node of walkDeep(root || document.body)) {
+    if (node?.nodeType === Node.ELEMENT_NODE) {
+      parts.push(node.outerHTML || node.textContent || "");
+    }
+  }
+  return parts.join(" ");
 }
 
 function delay(ms) {

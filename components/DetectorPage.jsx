@@ -2082,6 +2082,7 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
   const channels = coverageChannelNames({ connectorConfig, runs, selectedChannel });
   const activeStatuses = connectorStatus.filter((item) => item.active);
   const openUrls = activeStatuses.flatMap((item) => item.payload?.studioTabUrls || []).filter(Boolean);
+  const openTabs = activeStatuses.flatMap((item) => item.payload?.studioTabs || []).filter(Boolean);
   const latestVersion = connectorConfig?.latestExtensionVersion || "";
   const hasCurrentVersion = Boolean(
     latestVersion && activeStatuses.some((item) => !isOlderVersion(item.version || "", latestVersion))
@@ -2094,7 +2095,10 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
   const wrongStudioTabOpen = Boolean(
     openUrls.length &&
       connectorConfig?.watcherTabs?.length &&
-      !connectorConfig.watcherTabs.some((tab) => openUrls.some((url) => sameStudioTarget(url, tab.url)))
+      !connectorConfig.watcherTabs.some((tab) =>
+        openUrls.some((url) => sameStudioTarget(url, tab.url)) ||
+        openTabs.some((openTab) => sameChannel(openTab.channel, tab.label))
+      )
   );
   const statuses = channels.map((channel) => {
     if (!connectorConfig?.configured) {
@@ -2105,7 +2109,10 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
       };
     }
     const watcher = findWatcherForChannel(channel, connectorConfig?.watcherTabs || []);
-    const hasOpenWatcher = watcher?.url ? openUrls.some((url) => sameStudioTarget(url, watcher.url)) : false;
+    const hasOpenWatcher = watcher?.url
+      ? openUrls.some((url) => sameStudioTarget(url, watcher.url)) ||
+        openTabs.some((openTab) => sameChannel(openTab.channel, channel) || sameChannel(openTab.channel, watcher.label))
+      : openTabs.some((openTab) => sameChannel(openTab.channel, channel));
     const channelStatus = activeStatuses.find((item) =>
       (item.channels || []).some((candidate) => sameChannel(candidate, channel))
     );

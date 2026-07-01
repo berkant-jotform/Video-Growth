@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.11";
+const EXTENSION_VERSION = "0.1.12";
 const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
@@ -274,6 +274,7 @@ async function sendHeartbeat(extraPayload = {}) {
   const settings = await getSettings();
   requireConfigured(settings);
   const studioTabs = await chrome.tabs.query({ url: "https://studio.youtube.com/*" });
+  const studioTabDetails = await collectStudioTabDetails(studioTabs);
   const lastStudioScan = extraPayload.lastStudioScan === undefined
     ? await buildLastStudioScanPayload()
     : extraPayload.lastStudioScan;
@@ -281,6 +282,7 @@ async function sendHeartbeat(extraPayload = {}) {
     location: "chrome-extension",
     openStudioTabs: studioTabs.length,
     studioTabUrls: studioTabs.map((tab) => tab.url || "").filter(Boolean).slice(0, 10),
+    studioTabs: studioTabDetails.slice(0, 10),
     userAgent: navigator.userAgent,
     observedAt: new Date().toISOString(),
     ...extraPayload,
@@ -309,6 +311,37 @@ async function sendHeartbeat(extraPayload = {}) {
   });
   if (!response.ok) throw new Error(responsePayload.error || `Heartbeat failed: ${response.status}`);
   return responsePayload;
+}
+
+async function collectStudioTabDetails(studioTabs) {
+  const details = [];
+  for (const tab of studioTabs.slice(0, 10)) {
+    const base = {
+      tabId: tab.id,
+      tabTitle: tab.title || "",
+      tabUrl: tab.url || "",
+      channel: "",
+      notificationButtonFound: false,
+      visibleNotificationContainers: 0,
+      bodySnippetCount: 0,
+      ok: true,
+      error: ""
+    };
+    try {
+      await ensureContentScript(tab.id);
+      const status = await chrome.tabs.sendMessage(tab.id, { type: "studio-tab-status" });
+      details.push({
+        ...base,
+        channel: status?.channel || "",
+        notificationButtonFound: Boolean(status?.notificationButtonFound),
+        visibleNotificationContainers: Number(status?.visibleNotificationContainers || 0),
+        bodySnippetCount: Number(status?.bodySnippetCount || 0)
+      });
+    } catch (error) {
+      details.push({ ...base, ok: false, error: error.message });
+    }
+  }
+  return details;
 }
 
 async function buildLastStudioScanPayload() {
