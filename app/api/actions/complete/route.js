@@ -1,5 +1,5 @@
 import { requireSession } from "@/lib/auth.js";
-import { completeTestRun } from "@/lib/repository.js";
+import { completeTestRun, resolveReviewItem } from "@/lib/repository.js";
 import { badRequest, errorJson, json } from "@/lib/http.js";
 
 export const runtime = "nodejs";
@@ -14,6 +14,19 @@ export async function POST(request) {
     const action = String(body.action || "").trim().toUpperCase();
     if (!testRunId) throw badRequest("Missing testRunId.");
     if (!ALLOWED_ACTIONS.has(action)) throw badRequest("Unsupported action.");
+    if (testRunId.startsWith("finish_event:")) {
+      const eventId = testRunId.slice("finish_event:".length);
+      if (!eventId) throw badRequest("Missing finish event id.");
+      const resolution = await resolveReviewItem({
+        targetType: "finish_event",
+        targetId: eventId,
+        action,
+        actorName: session.actorName,
+        note: body.note || "",
+        metadata: { source: "unregistered_finish_signal", testRunId }
+      });
+      return json({ ok: true, test: { testRunId, latestAction: action, resolution } });
+    }
     const test = await completeTestRun({
       testRunId,
       action,

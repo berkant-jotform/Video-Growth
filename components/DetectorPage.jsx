@@ -260,15 +260,17 @@ export default function DetectorPage({ session }) {
     if (!run?.testRunId) return;
     setQuickSaving(`${run.testRunId}:IGNORE`);
     setError("");
+    const targetType = run.unregistered ? "finish_event" : "test_run";
+    const targetId = run.unregistered ? run.finishEventId : run.testRunId;
     try {
       const response = await fetch("/api/resolutions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          targetType: "test_run",
-          targetId: run.testRunId,
+          targetType,
+          targetId,
           action: "ignore",
-          metadata: { queueStatus: run.queueStatus, videoId: run.videoId }
+          metadata: { queueStatus: run.queueStatus, videoId: run.videoId, unregistered: Boolean(run.unregistered) }
         })
       });
       const payload = await response.json();
@@ -1103,6 +1105,7 @@ function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSavin
           </div>
           <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
           <p>{outcomeLabel(run)}</p>
+          {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
         </div>
       </div>
       <div className="board-card-actions">
@@ -1257,6 +1260,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
       <CardVisual run={run} result={result} />
       <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
       <p className="outcome compact">{outcomeLabel(run)}</p>
+      {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
       {requiresRetestConfirmation(run) ? <span className="badge warning">Possible Retest</span> : null}
       <div className="card-actions">
         <a
@@ -1380,7 +1384,7 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen }) {
       </a>
       <div className="detail-grid">
         <Info label="Video ID" value={run.videoId || "Missing"} />
-        <Info label="Source row" value={`${run.sheetName} row ${run.rowNumber}`} />
+        <Info label="Source row" value={run.unregistered ? "Not registered in A/B sheet" : `${run.sheetName} row ${run.rowNumber}`} />
         <Info label="Signal" value={signalSourceLabel(run)} />
         <Info label="Test lasted" value={testDurationLabel(run)} />
         <Info label="Extension" value={run.connectorCovered ? `Watching${run.connectorActorName ? ` by ${run.connectorActorName}` : ""}` : "Not watching"} />
@@ -1711,6 +1715,7 @@ function tokenOverlap(a, b) {
 }
 
 function outcomeLabel(run) {
+  if (run.unregistered) return "Studio says this test finished, but no matching row exists in the configured A/B sheet.";
   if (run.queueStatus === "action_conflict") return `Tool says ${run.latestAction}; sheet now says ${sheetResultText(run)}. Resolve before closing.`;
   if (run.queueStatus === "sheet_changed_after_done") return "Sheet changed after the tool action; review only if this was unexpected";
   if (run.queueStatus === "confirmed_finished") {
@@ -1729,6 +1734,15 @@ function outcomeLabel(run) {
 }
 
 function cardResult(run) {
+  if (run.unregistered) {
+    const detected = detectedOutcomeLabel(run.finishEventOutcome || run.detectedOutcome);
+    return {
+      key: detected.key === "no_clear" ? "no_clear" : detected.key === "winner" ? "winner" : "unregistered",
+      label: detected.label || "Unregistered",
+      value: "Not in A/B sheet",
+      tone: detected.tone || "warning"
+    };
+  }
   if (run.queueStatus === "action_conflict") {
     return { key: "action_conflict", label: "Conflict", value: "Tool vs sheet", tone: "danger" };
   }
@@ -1857,6 +1871,7 @@ function signalDateLabel(run) {
 }
 
 function signalSourceLabel(run) {
+  if (run.unregistered) return "Studio signal only";
   if (run.finishEventSource === "studio_bell") return "Studio extension";
   if (run.finishEventSource === "studio_page_status") return "Studio page status";
   if (run.finishEventSource === "metadata") return "Metadata observed";
