@@ -3,11 +3,13 @@ import { test } from "node:test";
 import {
   detectAppliedChange,
   detectNotificationOutcome,
+  explainUnmatchedFinishEvent,
   extractFinishNotificationSnippets,
   isLikelyFinishNotification,
   matchFinishEventToRun,
   parseWatcherTabs,
-  parseStudioNotification
+  parseStudioNotification,
+  suggestFinishEventMatches
 } from "../lib/finish-events.mjs";
 import { parseSheetRecords } from "../lib/domain.mjs";
 
@@ -185,7 +187,31 @@ test("matches exact notification titles across channel name variants", () => {
   });
   const match = matchFinishEventToRun(event, activeRuns);
   assert.equal(match.run.testRunId, "jotform-apps-run");
-  assert.equal(match.matchedConfidence, "title_channel_variant");
+  assert.equal(match.matchedConfidence, "title_channel_alias");
+});
+
+test("suggests possible sheet rows for unregistered finish signals", () => {
+  const runs = [
+    {
+      testRunId: "candidate",
+      videoId: "candidate123",
+      channel: "Jotform Apps",
+      testType: "title",
+      sheetName: "Jotform Apps",
+      rowNumber: 42,
+      videoTitle: "Introducing Jotform AI App Builder",
+      currentYoutubeTitle: "Introducing Jotform AI App Builder"
+    }
+  ];
+  const event = parseStudioNotification({
+    channel: "Jotform",
+    rawText: "A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance"
+  });
+  const suggestions = suggestFinishEventMatches(event, runs);
+  assert.equal(suggestions[0].testRunId, "candidate");
+  assert.equal(suggestions[0].confidence, "high");
+  assert.match(suggestions[0].reason, /related channel name|channel name differs/);
+  assert.equal(explainUnmatchedFinishEvent(event, suggestions), "Possible sheet row found; review before accepting the match.");
 });
 
 test("matches close Studio notification titles by token overlap", () => {

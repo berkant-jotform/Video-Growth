@@ -328,6 +328,33 @@ export default function DetectorPage({ session }) {
     }
   }
 
+  async function matchUnregisteredRun(run, suggestion) {
+    if (!run?.finishEventId || !suggestion?.testRunId) return;
+    setQuickSaving(`${run.testRunId}:MATCH`);
+    setError("");
+    try {
+      const response = await fetch("/api/resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetType: "finish_event",
+          targetId: run.finishEventId,
+          action: "match",
+          testRunId: suggestion.testRunId,
+          metadata: { videoId: run.videoId, source: run.finishEventSource, acceptedSuggestion: suggestion }
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not accept match.");
+      setSelected(null);
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setQuickSaving("");
+    }
+  }
+
   async function quickComplete(run, action) {
     if (requiresRetestConfirmation(run)) {
       setModalInitialAction(action);
@@ -672,6 +699,8 @@ export default function DetectorPage({ session }) {
           onClose={() => setSelected(null)}
           opened={openedStudioRuns.has(selected.testRunId)}
           onStudioOpen={markStudioOpened}
+          onAcceptMatch={matchUnregisteredRun}
+          quickSaving={quickSaving}
         />
       ) : null}
       {modalRun ? (
@@ -694,6 +723,7 @@ function Summary({ summary }) {
   const items = [
     ["Conflicts", summary?.actionConflict || 0],
     ["Confirmed", summary?.confirmedFinished || summary?.newlyFinished || 0],
+    ["Unregistered", summary?.unregisteredSignals || 0],
     ["Observed", summary?.appliedChangeObserved || 0],
     ["Manual Check", summary?.pastDueCheck || 0],
     ["Needs Signal", summary?.uncovered || 0],
@@ -1106,6 +1136,9 @@ function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSavin
           <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
           <p>{outcomeLabel(run)}</p>
           {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
+          {run.unregistered && run.signalResolution?.bestSuggestion ? (
+            <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span>
+          ) : null}
         </div>
       </div>
       <div className="board-card-actions">
@@ -1261,6 +1294,9 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
       <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
       <p className="outcome compact">{outcomeLabel(run)}</p>
       {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
+      {run.unregistered && run.signalResolution?.bestSuggestion ? (
+        <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span>
+      ) : null}
       {requiresRetestConfirmation(run) ? <span className="badge warning">Possible Retest</span> : null}
       <div className="card-actions">
         <a
@@ -1360,7 +1396,7 @@ function CardVisual({ run, result }) {
   );
 }
 
-function DetailDrawer({ run, onClose, opened, onStudioOpen }) {
+function DetailDrawer({ run, onClose, opened, onStudioOpen, onAcceptMatch, quickSaving }) {
   return (
     <aside className="drawer">
       <button className="icon-button drawer-close" onClick={onClose} title="Close details">
@@ -1398,6 +1434,47 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen }) {
           <p className="muted">
             {signalSourceLabel(run)} · {run.finishEventAt ? formatDateTimeWithExactAge(run.finishEventAt) : "No timestamp"} · {run.matchedConfidence || "matched"}
           </p>
+        </section>
+      ) : null}
+      {run.unregistered ? (
+        <section className="drawer-section">
+          <h3>Sheet Match</h3>
+          <p className="muted">{run.signalResolution?.reason || "No matching A/B sheet row found."}</p>
+          {run.signalResolution?.suggestions?.length ? (
+            <div className="match-suggestion-list">
+              {run.signalResolution.suggestions.map((suggestion) => (
+                <div className="match-suggestion-card" key={suggestion.testRunId}>
+                  <div>
+                    <strong>{suggestion.title || suggestion.videoId}</strong>
+                    <span>
+                      {suggestion.channel || "Unknown channel"} · {titleCase(suggestion.testType || "test")} · {suggestion.sheetName || "Sheet"} row {suggestion.rowNumber || "?"}
+                    </span>
+                    <em>{suggestion.reason} · {Math.round(Number(suggestion.score || 0) * 100)}% confidence</em>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => onAcceptMatch?.(run, suggestion)}
+                    disabled={quickSaving === `${run.testRunId}:MATCH`}
+                  >
+                    {quickSaving === `${run.testRunId}:MATCH` ? "Matching" : "Accept match"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No strong sheet candidate found. You can still handle this Studio signal directly from the card.</p>
+          )}
+          {run.signalResolution?.youtubeCandidates?.length ? (
+            <div className="youtube-candidate-note">
+              <strong>YouTube API candidates</strong>
+              {run.signalResolution.youtubeCandidates.map((candidate) => (
+                <span key={candidate.videoId}>
+                  {candidate.title} · {candidate.channel || "Unknown channel"} · {Math.round(Number(candidate.score || 0) * 100)}%
+                </span>
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
       <section className="drawer-section">
@@ -1907,6 +1984,12 @@ function matchStateLabel(run) {
   if (run.queueStatus === "watching" || run.queueStatus === "uncovered") return "Open";
   if (["result_logged", "sheet_marked_done", "winner_found", "no_clear"].includes(run.status)) return "Sheet logged";
   return titleCase(run.queueStatus || run.status || "row");
+}
+
+function formatSuggestion(suggestion) {
+  if (!suggestion) return "";
+  const row = suggestion.rowNumber ? `row ${suggestion.rowNumber}` : "sheet row";
+  return `${suggestion.channel || "Unknown"} · ${titleCase(suggestion.testType || "test")} · ${row}`;
 }
 
 function dateOnlyText(value) {

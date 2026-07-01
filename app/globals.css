@@ -1773,6 +1773,15 @@ select {
   color: var(--blue);
 }
 
+.signal-resolution-note {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
 .current-thumb {
   width: 100%;
   height: 100%;
@@ -1911,6 +1920,65 @@ select {
 
 .drawer-section h3 {
   margin: 0 0 10px;
+}
+
+.match-suggestion-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.match-suggestion-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+
+.match-suggestion-card div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.match-suggestion-card strong,
+.match-suggestion-card span,
+.match-suggestion-card em {
+  overflow-wrap: anywhere;
+}
+
+.match-suggestion-card span,
+.match-suggestion-card em {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.match-suggestion-card em {
+  font-style: normal;
+}
+
+.youtube-candidate-note {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed color-mix(in srgb, var(--blue) 32%, var(--border));
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.youtube-candidate-note strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.youtube-candidate-note span {
+  overflow-wrap: anywhere;
 }
 
 .option-row {
