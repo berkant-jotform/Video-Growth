@@ -24,13 +24,17 @@
         <div id="watcherButtons" class="watcher-buttons"></div>
       </section>
       <div class="actions stacked">
-        <button id="scan">Scan notification tabs</button>
-        <button id="deepScan">Check active tests now</button>
+        <button id="scan">Check real finish signals</button>
+        <button id="openNotifications">Open notifications watcher</button>
         <button id="heartbeat">Check connection</button>
+        <details class="more-actions">
+          <summary>More checks</summary>
+          <button id="deepScan">Check active tests now</button>
+        </details>
         <button id="openWatchers">Open watcher tabs</button>
         <button id="options">Settings</button>
       </div>
-      <p class="hint">Scan checks open Studio tabs and YouTube notification pages in this Chrome profile. It may open the notification menu to read text, but it does not change YouTube.</p>
+      <p class="hint">Check scans open Studio tabs and YouTube notification pages in this Chrome profile. It may open the notification menu to read text, but it does not change YouTube.</p>
       <details class="scan-log">
         <summary>
           <span>Last scan details</span>

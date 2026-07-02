@@ -11,6 +11,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     await render();
     setSummary(scanResultText(response));
   });
+  document.getElementById("openNotifications").addEventListener("click", async () => {
+    setSummary("Opening or reusing YouTube notifications watcher...");
+    const response = await chrome.runtime.sendMessage({ type: "open-notification-page" });
+    setSummary(response?.ok ? (response.reused ? "Notifications watcher is already open." : "Notifications watcher opened.") : response?.error || "Could not open notifications watcher.");
+    await render();
+  });
   document.getElementById("deepScan").addEventListener("click", async () => {
     setSummary("Checking up to 8 active test pages. Read-only; no YouTube changes.");
     const response = await chrome.runtime.sendMessage({ type: "deep-scan-active-videos" });

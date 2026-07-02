@@ -204,6 +204,7 @@ a {
 .nav-tab,
 .secondary-button,
 .primary-button,
+.quiet-button,
 .studio-button,
 .done-button,
 .icon-button {
@@ -222,8 +223,15 @@ a {
 
 .nav-tab.active,
 .secondary-button:hover,
+.quiet-button:hover,
 .icon-button:hover {
   background: var(--surface-2);
+}
+
+.quiet-button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
 }
 
 .primary-button,
@@ -675,6 +683,61 @@ a {
 .extension-scan-tabs li {
   font-size: 12px;
   font-weight: 760;
+}
+
+.extension-quick-check {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: -12px 0 24px;
+  padding: 14px 16px;
+}
+
+.extension-quick-check.ok {
+  border-color: color-mix(in srgb, var(--green) 28%, var(--border));
+}
+
+.extension-quick-check.warn {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+}
+
+.extension-quick-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.extension-quick-copy h3 {
+  font-size: 16px;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.extension-quick-copy p,
+.extension-quick-copy em {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 720;
+  margin: 0;
+}
+
+.extension-quick-copy em {
+  color: var(--text);
+  font-weight: 820;
+}
+
+.extension-quick-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .scan-progress-panel {

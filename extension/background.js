@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.15";
+const EXTENSION_VERSION = "0.1.16";
 const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
@@ -40,6 +40,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === "scan-studio-tab") {
     requestStudioScrape()
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "open-notification-page") {
+    openNotificationPage()
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "report-missed-notification") {
+    reportMissedNotification()
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -122,15 +134,21 @@ async function collectScrapeTabs() {
     chrome.tabs.query({ url: "https://studio.youtube.com/*" }),
     chrome.tabs.query({ url: "https://www.youtube.com/*" })
   ]);
-  const map = new Map();
-  for (const tab of studioTabs) {
-    if (tab.id) map.set(tab.id, tab);
-  }
-
   const notificationTabs = youtubeTabs.filter((tab) => isLikelyNotificationTab(tab));
-  const fallbackYouTubeTabs = youtubeTabs.filter((tab) => !map.has(tab.id)).slice(0, 4);
-  for (const tab of notificationTabs.length ? notificationTabs : fallbackYouTubeTabs) {
-    if (tab.id) map.set(tab.id, tab);
+  const enrichedStudioTabs = [];
+  for (const tab of studioTabs) {
+    enrichedStudioTabs.push(await enrichStudioTab(tab));
+  }
+  const ranked = [
+    ...notificationTabs.map((tab) => ({ ...tab, scanKind: "youtube_notifications", scanRank: 0 })),
+    ...enrichedStudioTabs.map((tab) => ({ ...tab, scanKind: classifyStudioTab(tab), scanRank: rankStudioTab(tab) }))
+  ].sort((a, b) => a.scanRank - b.scanRank || String(a.title || "").localeCompare(String(b.title || "")));
+
+  const map = new Map();
+  for (const tab of ranked) {
+    if (!tab.id) continue;
+    const key = scrapeTabKey(tab);
+    if (!map.has(key)) map.set(key, tab);
   }
   return Array.from(map.values()).slice(0, 12);
 }
@@ -138,6 +156,43 @@ async function collectScrapeTabs() {
 function isLikelyNotificationTab(tab) {
   const text = `${tab.url || ""} ${tab.title || ""}`.toLowerCase();
   return text.includes("/notifications") || text.includes("notifications") || text.includes("bildirim");
+}
+
+async function enrichStudioTab(tab) {
+  if (!tab?.id) return tab;
+  try {
+    await ensureContentScript(tab.id);
+    const status = await chrome.tabs.sendMessage(tab.id, { type: "studio-tab-status" });
+    return { ...tab, studioStatus: status || {} };
+  } catch {
+    return { ...tab, studioStatus: {} };
+  }
+}
+
+function classifyStudioTab(tab) {
+  const url = String(tab.url || "");
+  if (/\/channel\/UC[A-Za-z0-9_-]{10,}/i.test(url)) return "studio_channel";
+  if (/\/video\/[A-Za-z0-9_-]{6,}/i.test(url)) return "studio_video";
+  return "studio_other";
+}
+
+function rankStudioTab(tab) {
+  const kind = classifyStudioTab(tab);
+  if (kind === "studio_channel") return 10;
+  if (kind === "studio_other") return 20;
+  return 30;
+}
+
+function scrapeTabKey(tab) {
+  if (tab.scanKind === "youtube_notifications" || isLikelyNotificationTab(tab)) return `youtube_notifications:${new URL(tab.url || "https://www.youtube.com").origin}`;
+  const url = String(tab.url || "");
+  const videoId = url.match(/\/video\/([A-Za-z0-9_-]{6,})/)?.[1] || "";
+  if (videoId) return `studio_video:${videoId}`;
+  const channelId = url.match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] || tab.studioStatus?.channelId || "";
+  if (channelId) return `studio_channel:${channelId}`;
+  const channelName = tab.studioStatus?.channel || "";
+  if (channelName) return `studio_channel_name:${channelName.toLowerCase()}`;
+  return `tab:${tab.id}`;
 }
 
 function summarizeTabScanResult(tab) {
@@ -340,6 +395,29 @@ async function openWatcherTabs(requestedTargets = []) {
     lastWatcherOpenCount: opened.length
   });
   return { ok: true, opened, heartbeat, scan };
+}
+
+async function openNotificationPage() {
+  const notificationTabs = (await chrome.tabs.query({ url: "https://www.youtube.com/*" })).filter(isLikelyNotificationTab);
+  if (notificationTabs[0]) {
+    await chrome.tabs.update(notificationTabs[0].id, { active: true });
+    return { ok: true, reused: true, tabId: notificationTabs[0].id, url: notificationTabs[0].url || "" };
+  }
+  const created = await chrome.tabs.create({ url: "https://www.youtube.com/notifications", active: true });
+  return { ok: true, reused: false, tabId: created.id, url: created.url || "https://www.youtube.com/notifications" };
+}
+
+async function reportMissedNotification() {
+  await appendDiagnosticLog({
+    category: "user_reported_miss",
+    severity: "warning",
+    message: "User reported a visible A/B finish notification that was not captured",
+    context: { reportedAt: new Date().toISOString() }
+  });
+  const scan = await requestStudioScrape().catch((error) => ({ ok: false, error: error.message }));
+  const heartbeat = await sendHeartbeat({ userReportedMiss: true, lastStudioScan: await buildLastStudioScanPayload() })
+    .catch((error) => ({ ok: false, error: error.message }));
+  return { ok: scan.ok !== false, scan, heartbeat };
 }
 
 async function fetchConnectorConfig(settings) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  BellRing,
   Check,
   ChevronDown,
   Clipboard,
@@ -98,6 +99,7 @@ export default function DetectorPage({ session }) {
   const [advancedStatus, setAdvancedStatus] = useState("all");
   const [openedStudioRuns, setOpenedStudioRuns] = useState(() => new Set());
   const [collapsedChannels, setCollapsedChannels] = useState(() => new Set());
+  const [extensionRequest, setExtensionRequest] = useState({ status: "idle", message: "" });
 
   useEffect(() => {
     refresh();
@@ -255,6 +257,29 @@ export default function DetectorPage({ session }) {
       setError(err.message);
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function sendExtensionCommand(type) {
+    setExtensionRequest({ status: "running", message: extensionCommandLoadingText(type) });
+    try {
+      const response = await requestExtension(type);
+      if (!response?.ok) throw new Error(response?.error || "Extension did not complete the request.");
+      const message =
+        type === "check-studio-now"
+          ? extensionScanSummary(response)
+          : type === "open-notification-page"
+            ? response.reused
+              ? "YouTube notifications watcher is already open."
+              : "YouTube notifications watcher opened."
+            : "Miss report sent with the latest scan diagnostics.";
+      setExtensionRequest({ status: "ok", message });
+      window.setTimeout(() => refresh(), 800);
+    } catch (err) {
+      setExtensionRequest({
+        status: "warn",
+        message: `${err.message} Install/update extension 0.1.16, then reload this page.`
+      });
     }
   }
 
@@ -583,6 +608,13 @@ export default function DetectorPage({ session }) {
         />
 
         <ExtensionScanReceipt connectorStatus={connectorStatus} />
+
+        <ExtensionQuickCheck
+          request={extensionRequest}
+          onCheck={() => sendExtensionCommand("check-studio-now")}
+          onOpenNotifications={() => sendExtensionCommand("open-notification-page")}
+          onReportMiss={() => sendExtensionCommand("report-missed-notification")}
+        />
 
         <ScanProgress
           scan={lastScan}
@@ -978,6 +1010,35 @@ function ExtensionScanReceipt({ connectorStatus }) {
           </div>
         </details>
       ) : null}
+    </section>
+  );
+}
+
+function ExtensionQuickCheck({ request, onCheck, onOpenNotifications, onReportMiss }) {
+  const running = request.status === "running";
+  const tone = request.status === "ok" ? "ok" : request.status === "warn" ? "warn" : "neutral";
+  return (
+    <section className={`extension-quick-check ${tone}`}>
+      <div className="extension-quick-copy">
+        <span className="eyebrow">Real signal scan</span>
+        <h3>Check YouTube notifications now</h3>
+        <p>
+          Uses the Chrome extension to read open Studio and YouTube notification tabs. It does not open channel watcher tabs or change YouTube.
+        </p>
+        {request.message ? <em>{request.message}</em> : null}
+      </div>
+      <div className="extension-quick-actions">
+        <button className="primary-button" type="button" onClick={onCheck} disabled={running}>
+          <BellRing size={17} />
+          {running ? "Checking" : "Check Studio now"}
+        </button>
+        <button className="secondary-button" type="button" onClick={onOpenNotifications} disabled={running}>
+          Open notifications watcher
+        </button>
+        <button className="quiet-button" type="button" onClick={onReportMiss} disabled={running}>
+          I see a missed notification
+        </button>
+      </div>
     </section>
   );
 }
@@ -2354,6 +2415,51 @@ function exactDaysAgo(value) {
   if (Number.isNaN(date.valueOf())) return "unknown age";
   const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
   return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function requestExtension(type) {
+  if (typeof window === "undefined") return Promise.reject(new Error("Browser extension bridge is unavailable."));
+  const requestId = `ytab_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("message", onMessage);
+      reject(new Error("Chrome extension did not respond."));
+    }, 12000);
+    function onMessage(event) {
+      if (event.source !== window) return;
+      const message = event.data || {};
+      if (message.source !== "youtube-ab-tests-extension" || message.requestId !== requestId) return;
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", onMessage);
+      resolve(message.response || {});
+    }
+    window.addEventListener("message", onMessage);
+    window.postMessage({ source: "youtube-ab-tests-app", type, requestId }, window.location.origin);
+  });
+}
+
+function extensionCommandLoadingText(type) {
+  if (type === "open-notification-page") return "Opening or reusing the YouTube notifications watcher...";
+  if (type === "report-missed-notification") return "Sending a debug snapshot from the extension...";
+  return "Asking the Chrome extension to scan open notification tabs...";
+}
+
+function extensionScanSummary(response) {
+  const tabs = Array.isArray(response.tabs) ? response.tabs : [];
+  const totals = tabs.reduce(
+    (summary, tab) => {
+      summary.tabs += 1;
+      summary.candidates += Number(tab.candidates || 0);
+      summary.received += Number(tab.received || 0);
+      summary.matched += Number(tab.matched || 0);
+      summary.unmatched += Number(tab.unmatched || 0);
+      return summary;
+    },
+    { tabs: 0, candidates: 0, received: 0, matched: 0, unmatched: 0 }
+  );
+  if (!totals.tabs) return "No Studio or YouTube notification tabs were open.";
+  if (!totals.received) return `Checked ${totals.tabs} tab${totals.tabs === 1 ? "" : "s"}; no finish notification text was captured.`;
+  return `Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered.`;
 }
 
 function clampPercent(value) {

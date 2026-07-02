@@ -1,7 +1,7 @@
 const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.15";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.16";
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
   "tp-yt-paper-toast",
@@ -47,6 +47,7 @@ window.setInterval(() => {
 
 function collectNotificationEvents({ includeSeen = false } = {}) {
   const channel = detectChannelName();
+  const channelId = detectChannelId();
   const candidates = queryAllDeep(NOTIFICATION_SELECTORS.join(","));
 
   const events = collectStudioPageStatusEvents(channel);
@@ -65,7 +66,9 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
         url,
         videoId: extractVideoId(`${linkedUrl || ""} ${text}`),
         channel,
+        channelId,
         videoTitle: extractNotificationVideoTitle(text),
+        notificationAge: extractAgeAfterSnippet(rawText, text),
         observedAt: new Date().toISOString()
       };
       if (!rememberEvent(event, includeSeen)) continue;
@@ -81,7 +84,9 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
       url: location.href,
       videoId: extractVideoId(text),
       channel,
+      channelId,
       videoTitle: extractNotificationVideoTitle(text),
+      notificationAge: extractAgeAfterSnippet(document.body?.innerText || "", text),
       observedAt: new Date().toISOString()
     };
     if (!rememberEvent(event, includeSeen)) continue;
@@ -125,6 +130,7 @@ function scanDiagnostics({ menuOpened, before, after, events }) {
   return {
     url: location.href,
     channel: detectChannelName(),
+    channelId: detectChannelId(),
     menuOpened,
     notificationButtonFound: Boolean(findNotificationButton()),
     visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
@@ -141,6 +147,7 @@ function studioTabStatus() {
   return {
     url: location.href,
     channel: detectChannelName(),
+    channelId: detectChannelId(),
     notificationButtonFound: Boolean(findNotificationButton()),
     visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
     bodySnippetCount: finishNotificationSnippets(document.body?.innerText || "").length,
@@ -173,6 +180,7 @@ function collectStudioPageStatusEvents(channel) {
       url: location.href,
       videoId,
       channel,
+      channelId: detectChannelId(),
       observedAt: new Date().toISOString()
     }
   ];
@@ -272,6 +280,25 @@ function trimNotificationTail(value) {
     .trim();
 }
 
+function extractAgeAfterSnippet(rawText, snippet) {
+  const source = collapseLongText(rawText);
+  const target = collapseText(snippet);
+  const index = source.indexOf(target);
+  const tail = index >= 0 ? source.slice(index + target.length, index + target.length + 120) : source;
+  const match = tail.match(/\b(\d+)\s+(minute|hour|day|week|month)s?\s+ago\b/i);
+  if (!match) return { label: "", days: null };
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const days =
+    unit === "minute" ? 0 :
+      unit === "hour" ? 0 :
+        unit === "day" ? amount :
+          unit === "week" ? amount * 7 :
+            unit === "month" ? amount * 30 :
+              null;
+  return { label: match[0], days };
+}
+
 function collapseText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -320,6 +347,14 @@ function detectChannelName() {
     if (cleaned) return cleaned;
   }
   return "";
+}
+
+function detectChannelId() {
+  const urlMatch = location.href.match(/\/channel\/(UC[A-Za-z0-9_-]{10,})/i);
+  if (urlMatch?.[1]) return urlMatch[1];
+  const html = deepOuterHtml(document.body).slice(0, 200000);
+  const match = html.match(/(?:channelId|externalChannelId|browseId)["':\s]+(UC[A-Za-z0-9_-]{10,})/i);
+  return match?.[1] || "";
 }
 
 function cleanChannelLabel(value) {

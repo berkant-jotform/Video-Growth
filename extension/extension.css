@@ -138,17 +138,41 @@ textarea {
   min-height: 42px;
 }
 
-.actions.stacked button:last-child {
+.actions.stacked > button:last-child {
   background: transparent;
   border-color: transparent;
   color: var(--muted);
   min-height: 30px;
 }
 
-.actions.stacked button:last-child:hover {
+.actions.stacked > button:last-child:hover {
   background: var(--surface);
   border-color: var(--border);
   color: var(--text);
+}
+
+.more-actions {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.more-actions summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+  list-style: none;
+  padding: 9px 11px;
+}
+
+.more-actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-actions button {
+  border-radius: 0;
+  width: 100%;
 }
 
 .watcher-menu {

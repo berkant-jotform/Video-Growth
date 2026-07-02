@@ -100,7 +100,7 @@ export default function ExtensionPage({ session }) {
             />
             <StatusTile
               label="Latest version"
-              value={config?.latestExtensionVersion || "0.1.14"}
+              value={config?.latestExtensionVersion || "0.1.16"}
               tone="neutral"
             />
             <StatusTile
@@ -178,7 +178,7 @@ export default function ExtensionPage({ session }) {
         <section className="settings-panel full-width">
           <p className="eyebrow">3. Watch channels</p>
           <h2>Studio watcher tabs</h2>
-          <p className="muted">Add the channels the extension should keep open. Use a YouTube channel ID or direct Studio channel URL.</p>
+          <p className="muted">Add the channels the extension should keep open. Use a YouTube channel ID or direct Studio channel URL so the friendly channel name is backed by a stable ID.</p>
           <WatcherRows
             rows={watcherRows}
             openUrls={openUrls}
