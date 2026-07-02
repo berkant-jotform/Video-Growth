@@ -924,7 +924,7 @@ function ExtensionScanReceipt({ connectorStatus }) {
             : "No A/B finish candidates found"}
         </h3>
         <p>
-          Checked {Number(totals.tabs || tabs.length)} Studio tab{Number(totals.tabs || tabs.length) === 1 ? "" : "s"}
+          Checked {Number(totals.tabs || tabs.length)} notification tab{Number(totals.tabs || tabs.length) === 1 ? "" : "s"}
           {receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Sent {Number(totals.received || 0)} signal
           {Number(totals.received || 0) === 1 ? "" : "s"}: {matched} matched, {unmatched} needs matching.
         </p>

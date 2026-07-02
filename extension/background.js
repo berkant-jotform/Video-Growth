@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.13";
+const EXTENSION_VERSION = "0.1.14";
 const DEEP_SCAN_LIMIT = 8;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
@@ -77,7 +77,7 @@ function scheduleHourlyAlarm() {
 }
 
 async function requestStudioScrape() {
-  const tabs = await chrome.tabs.query({ url: "https://studio.youtube.com/*" });
+  const tabs = await collectScrapeTabs();
   const results = [];
   for (const tab of tabs) {
     try {
@@ -98,6 +98,29 @@ async function requestStudioScrape() {
   });
   await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
   return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results) };
+}
+
+async function collectScrapeTabs() {
+  const [studioTabs, youtubeTabs] = await Promise.all([
+    chrome.tabs.query({ url: "https://studio.youtube.com/*" }),
+    chrome.tabs.query({ url: "https://www.youtube.com/*" })
+  ]);
+  const map = new Map();
+  for (const tab of studioTabs) {
+    if (tab.id) map.set(tab.id, tab);
+  }
+
+  const notificationTabs = youtubeTabs.filter((tab) => isLikelyNotificationTab(tab));
+  const fallbackYouTubeTabs = youtubeTabs.filter((tab) => !map.has(tab.id)).slice(0, 4);
+  for (const tab of notificationTabs.length ? notificationTabs : fallbackYouTubeTabs) {
+    if (tab.id) map.set(tab.id, tab);
+  }
+  return Array.from(map.values()).slice(0, 12);
+}
+
+function isLikelyNotificationTab(tab) {
+  const text = `${tab.url || ""} ${tab.title || ""}`.toLowerCase();
+  return text.includes("/notifications") || text.includes("notifications") || text.includes("bildirim");
 }
 
 function summarizeTabScanResult(tab) {

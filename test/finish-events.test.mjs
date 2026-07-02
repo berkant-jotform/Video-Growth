@@ -40,6 +40,20 @@ test("extracts multiple current Studio A/B notifications from a bell panel", () 
   ]);
 });
 
+test("extracts current YouTube notification page A/B results", () => {
+  const text = [
+    "Notifications All Earn Analytics Ideas News Today",
+    "A/B test performed well for all June 2026 | Announcing Jotform AI App Builder: Results with very similar performance 1 hour ago",
+    "A/B test inconclusive How to Auto-Close Forms in ChatGPT: Not enough views to determine a winner 9 days ago",
+    "Brand deals, your way: Learn from fellow creators on our new series 13 days ago"
+  ].join(" ");
+  const snippets = extractFinishNotificationSnippets(text);
+  assert.deepEqual(snippets, [
+    "A/B test performed well for all June 2026 | Announcing Jotform AI App Builder: Results with very similar performance",
+    "A/B test inconclusive How to Auto-Close Forms in ChatGPT: Not enough views to determine a winner"
+  ]);
+});
+
 test("detects winner option from notification text", () => {
   assert.equal(detectNotificationOutcome("Thumbnail test completed. Option B won."), "winner_b");
   assert.equal(detectNotificationOutcome("Title test finished. Winner: C"), "winner_c");

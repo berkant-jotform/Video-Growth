@@ -5,7 +5,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await openWatcherTargets([], "Opening all configured Studio watcher tabs...");
   });
   document.getElementById("scan").addEventListener("click", async () => {
-    setSummary("Scanning every open YouTube Studio tab and checking the notification menu...");
+    setSummary("Scanning open Studio and YouTube notification tabs...");
     const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
     setSummary(scanResultText(response));
     await render();
@@ -76,7 +76,7 @@ function renderScanLog(scanAt, result) {
   const tabs = Array.isArray(result?.tabs) ? result.tabs : [];
   if (!scanAt || !tabs.length) {
     summaryEl.textContent = "No scan yet";
-    bodyEl.innerHTML = `<p class="muted">Click Scan open Studio tabs to create a diagnostic log.</p>`;
+    bodyEl.innerHTML = `<p class="muted">Click Scan notification tabs to create a diagnostic log.</p>`;
     return;
   }
   summaryEl.textContent = `${totals.tabs || tabs.length} tab${(totals.tabs || tabs.length) === 1 ? "" : "s"}, ${totals.candidates || 0} candidate${Number(totals.candidates || 0) === 1 ? "" : "s"}`;
@@ -205,25 +205,25 @@ function scanResultText(response) {
     ? ` ${diagnosis.message}${diagnosis.action ? ` ${diagnosis.action}` : ""}`
     : "";
   if (!summary.checked) {
-    return "No YouTube Studio tabs are open. Open watcher tabs first, then scan again.";
+    return "No Studio or YouTube notification tabs are open. Open watcher tabs or a YouTube notifications page, then scan again.";
   }
   if (!summary.received) {
     const failedText = summary.failed ? ` ${summary.failed} tab${summary.failed === 1 ? "" : "s"} could not be read.` : "";
-    return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}. No finish notifications found.${failedText}${diagnosisSuffix}`;
+    return `Checked ${summary.checked} tab${summary.checked === 1 ? "" : "s"}. No finish notifications found.${failedText}${diagnosisSuffix}`;
   }
   const ignoredText = summary.ignored ? `, ${summary.ignored} ignored` : "";
   const failedText = summary.failed ? `. ${summary.failed} tab${summary.failed === 1 ? "" : "s"} could not be read` : "";
-  return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}. Sent ${summary.received} finish signal${summary.received === 1 ? "" : "s"}: ${summary.matched} matched, ${summary.unmatched} unmatched${ignoredText}${failedText}.`;
+  return `Checked ${summary.checked} tab${summary.checked === 1 ? "" : "s"}. Sent ${summary.received} finish signal${summary.received === 1 ? "" : "s"}: ${summary.matched} matched, ${summary.unmatched} unmatched${ignoredText}${failedText}.`;
 }
 
 function shortScanResultText(response) {
   const summary = summarizeScrapeTabs(response?.tabs || []);
-  if (!summary.checked) return "No Studio tabs were found.";
+  if (!summary.checked) return "No Studio or YouTube notification tabs were found.";
   const diagnosis = response?.diagnosis || buildPopupDiagnosis(response?.tabs || []);
   const diagnosisSuffix = diagnosis?.severity && diagnosis.severity !== "ok"
     ? ` ${diagnosis.message}`
     : "";
-  if (!summary.received) return `Checked ${summary.checked} Studio tab${summary.checked === 1 ? "" : "s"}; no finish notifications found.${diagnosisSuffix}`;
+  if (!summary.received) return `Checked ${summary.checked} tab${summary.checked === 1 ? "" : "s"}; no finish notifications found.${diagnosisSuffix}`;
   return `Sent ${summary.received} finish signal${summary.received === 1 ? "" : "s"}.`;
 }
 
@@ -272,7 +272,7 @@ function buildPopupDiagnosis(tabs = []) {
   const visibleContainers = diagnostics.reduce((sum, item) => sum + Number(item.visibleNotificationContainers || 0), 0);
   const bodySnippetCount = diagnostics.reduce((sum, item) => sum + Number(item.bodySnippetCount || 0), 0);
   if (!summary.checked) {
-    return { severity: "warn", message: "No Studio tabs were open.", action: "Open watcher tabs first." };
+    return { severity: "warn", message: "No Studio or YouTube notification tabs were open.", action: "Open watcher tabs or the YouTube notifications page first." };
   }
   if (summary.failed >= summary.checked) {
     return { severity: "warn", message: "The extension could not read any Studio tab.", action: "Reload Studio and scan again." };

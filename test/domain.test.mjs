@@ -173,6 +173,44 @@ test("explicit finish date marks tests as needing review", () => {
   assert.equal(records[0].status, "needs_review");
 });
 
+test("parses thumbnail tabs when headers are not on the first row", () => {
+  const records = parseSheetRecords({
+    spreadsheetId: "sheet",
+    sourceKind: "thumbnail",
+    sheetName: "Jotform New Thumbnail Tab",
+    today: "2026-07-02",
+    values: [
+      ["Internal notes"],
+      ["Owner", "BG"],
+      [
+        "Start Date",
+        "End Date",
+        "Video Link",
+        "Title",
+        "A Thumbnail",
+        "B Thumbnail",
+        "A Result",
+        "B Result"
+      ],
+      [
+        "2026-07-01",
+        "",
+        "https://www.youtube.com/watch?v=abc123XYZ89",
+        "New thumbnail test",
+        "A image",
+        "B image",
+        "",
+        ""
+      ]
+    ]
+  });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].rowNumber, 4);
+  assert.equal(records[0].testType, "thumbnail");
+  assert.equal(records[0].videoId, "abc123XYZ89");
+  assert.deepEqual(records[0].options, { A: "A image", B: "B image" });
+});
+
 test("test run ID changes when option fingerprint changes", () => {
   const base = {
     spreadsheetId: "sheet",

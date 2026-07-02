@@ -1,7 +1,7 @@
 const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.13";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.14";
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
   "tp-yt-paper-toast",
@@ -354,6 +354,9 @@ function findNotificationButton() {
     "tp-yt-paper-icon-button[aria-label*='Notifications' i]",
     "ytcp-icon-button[aria-label*='Notifications' i]",
     "[tooltip-label*='Notifications' i]",
+    "button[aria-label*='notifications' i]",
+    "yt-icon-button[aria-label*='Notifications' i]",
+    "a[href*='/notifications']",
     "[aria-label*='Bildirim' i]"
   ];
   for (const selector of selectors) {
