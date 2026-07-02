@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, History, Moon, Settings, Sun, Upload, Youtube } from "lucide-react";
+import { Bell, History, Moon, Puzzle, Settings, Sun, Upload, Youtube } from "lucide-react";
 
 const THEME_STORAGE_KEY = "youtube-ab-tests-theme";
 
@@ -13,6 +13,7 @@ export default function AppShell({ session, active, children }) {
     { href: "/", label: "Detector", key: "detector", icon: Youtube },
     { href: "/history", label: "History", key: "history", icon: History },
     { href: "/uploads", label: "Uploads", key: "uploads", icon: Upload },
+    { href: "/extension", label: "Extension", key: "extension", icon: Puzzle },
     { href: "/notifications", label: "Notifications", key: "notifications", icon: Bell },
     { href: "/settings", label: "Settings", key: "settings", icon: Settings }
   ];

@@ -3024,6 +3024,150 @@ textarea {
   gap: 10px;
 }
 
+.extension-workspace {
+  align-items: start;
+}
+
+.extension-hero-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.extension-status-strip {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.extension-status-tile {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.extension-status-tile span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.extension-status-tile strong {
+  color: var(--text);
+  font-size: 17px;
+}
+
+.extension-status-tile.ok {
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+}
+
+.extension-status-tile.warn {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+}
+
+.extension-token-panel {
+  min-height: 100%;
+}
+
+.extension-token-reveal {
+  background: color-mix(in srgb, var(--green) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--green) 32%, var(--border));
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.extension-token-reveal strong {
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.extension-token-reveal code {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.install-actions.compact {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.extension-steps-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.extension-steps-list span {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  display: flex;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 10px 12px;
+}
+
+.extension-channel-field {
+  margin-top: 14px;
+}
+
+.extension-check-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 14px;
+}
+
+.extension-check-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+}
+
+.extension-check-card strong {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.extension-check-card span,
+.extension-check-card p,
+.extension-check-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  margin: 0;
+}
+
+.extension-check-card em {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.extension-check-card em.ok {
+  color: var(--green);
+}
+
+.extension-check-card em.warn {
+  color: var(--amber);
+}
+
 .history-search {
   margin-bottom: 14px;
 }
