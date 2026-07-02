@@ -11,7 +11,7 @@ import {
   parseStudioNotification,
   suggestFinishEventMatches
 } from "../lib/finish-events.mjs";
-import { parseSheetRecords } from "../lib/domain.mjs";
+import { inspectWorkbookSheets, parseSheetRecords } from "../lib/domain.mjs";
 
 test("parses Studio notification video IDs and no-clear outcome", () => {
   const event = parseStudioNotification({
@@ -247,7 +247,7 @@ test("matches current Studio A/B notification wording by extracted video title",
   assert.equal(match.matchedConfidence, "title_channel");
 });
 
-test("matches exact notification titles across channel name variants", () => {
+test("keeps exact notification title matches lower confidence across channel name variants", () => {
   const activeRuns = [
     {
       testRunId: "jotform-apps-run",
@@ -262,7 +262,27 @@ test("matches exact notification titles across channel name variants", () => {
   });
   const match = matchFinishEventToRun(event, activeRuns);
   assert.equal(match.run.testRunId, "jotform-apps-run");
-  assert.equal(match.matchedConfidence, "title_channel_alias");
+  assert.equal(match.matchedConfidence, "title_channel_variant");
+});
+
+test("does not title-match across different channel IDs", () => {
+  const activeRuns = [
+    {
+      testRunId: "apps-run",
+      videoId: "apps123",
+      channel: "Apps",
+      youtubeChannelId: "UCapps1234567890123456",
+      videoTitle: "Introducing Jotform AI App Builder"
+    }
+  ];
+  const event = parseStudioNotification({
+    channel: "Jotform",
+    channelId: "UCjotform123456789012",
+    rawText: "A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance"
+  });
+  const match = matchFinishEventToRun(event, activeRuns);
+  assert.equal(match.run, null);
+  assert.equal(match.matchedConfidence, "unmatched");
 });
 
 test("suggests possible sheet rows for unregistered finish signals", () => {
@@ -285,7 +305,7 @@ test("suggests possible sheet rows for unregistered finish signals", () => {
   const suggestions = suggestFinishEventMatches(event, runs);
   assert.equal(suggestions[0].testRunId, "candidate");
   assert.equal(suggestions[0].confidence, "high");
-  assert.match(suggestions[0].reason, /related channel name|channel name differs/);
+  assert.match(suggestions[0].reason, /channel name differs/);
   assert.equal(explainUnmatchedFinishEvent(event, suggestions), "Possible sheet row found; review before accepting the match.");
 });
 
@@ -320,6 +340,32 @@ test("blank finish date stays running instead of becoming a guessed finished ite
   });
   assert.equal(records[0].status, "running");
   assert.equal(records[0].effectiveFinishDate, "");
+});
+
+test("sheet inspection reports non-empty tabs without recognizable A/B headers", () => {
+  const inspection = inspectWorkbookSheets({
+    sourceKind: "thumbnail",
+    sheets: [
+      {
+        title: "New Thumbnail Tests",
+        values: [
+          ["Date", "Video", "Notes"],
+          ["2026-07-01", "How to Preview your Form in Claude AI", "Needs setup"]
+        ]
+      },
+      {
+        title: "Jotform",
+        values: [
+          ["Published Date/ Test Start Date", "Video URL", "Thumbnail A", "Thumbnail B"],
+          ["2026-07-01", "https://youtu.be/abc123XYZ_9", "A", "B"]
+        ]
+      }
+    ]
+  });
+  assert.equal(inspection[0].hasContent, true);
+  assert.equal(inspection[0].recognized, false);
+  assert.equal(inspection[1].recognized, true);
+  assert.equal(inspection[1].testType, "thumbnail");
 });
 
 test("B/C title metadata change creates applied-change event, but A does not", () => {

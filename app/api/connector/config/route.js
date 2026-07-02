@@ -20,9 +20,10 @@ export async function GET(request) {
       latestExtensionVersion: LATEST_EXTENSION_VERSION,
       activeTests: runs.map((run) => ({
         testRunId: run.testRunId,
-        videoId: run.videoId,
-        channel: run.channel,
-        testType: run.testType,
+	        videoId: run.videoId,
+	        channel: run.channel,
+	        youtubeChannelId: run.youtubeChannelId || "",
+	        testType: run.testType,
         videoTitle: run.videoTitle || run.currentYoutubeTitle,
         studioUrl: run.studioUrl,
         options: run.options,

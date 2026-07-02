@@ -1,5 +1,6 @@
 import { requireConnector } from "@/lib/connector-auth.js";
 import { json, errorJson } from "@/lib/http.js";
+import { getAppConfig } from "@/lib/config.js";
 import { recordConnectorEvents, recordDiagnosticLog } from "@/lib/repository.js";
 
 export const runtime = "nodejs";
@@ -14,11 +15,13 @@ export async function POST(request) {
       error.status = 400;
       throw error;
     }
+    const config = await getAppConfig();
     const results = await recordConnectorEvents({
       events,
       actorName: body.actorName || body.reviewerInitials || "",
       connectorId: body.connectorId || "",
-      source: body.source || "studio_bell"
+      source: body.source || "studio_bell",
+      youtubeApiKey: config.youtubeApiKey
     });
     await recordDiagnosticLog({
       category: "connector_events",
@@ -29,9 +32,10 @@ export async function POST(request) {
         connectorId: body.connectorId || "",
         source: body.source || "studio_bell",
         received: events.length,
-        matched: results.filter((item) => item.processingStatus === "matched").length,
-        unmatched: results.filter((item) => item.processingStatus === "unmatched").length,
-        ignored: results.filter((item) => item.processingStatus === "ignored").length,
+          matched: results.filter((item) => item.processingStatus === "matched").length,
+          unmatched: results.filter((item) => item.processingStatus === "unmatched").length,
+          ignored: results.filter((item) => item.processingStatus === "ignored").length,
+          youtubeResolved: results.filter((item) => item.youtubeResolved).length,
         previews: events.slice(0, 5).map((event) => ({
           videoId: event.videoId || "",
           channel: event.channel || "",
@@ -44,10 +48,11 @@ export async function POST(request) {
       ok: true,
       received: events.length,
       matched: results.filter((item) => item.processingStatus === "matched").length,
-      unmatched: results.filter((item) => item.processingStatus === "unmatched").length,
-      ignored: results.filter((item) => item.processingStatus === "ignored").length,
-      results
-    });
+        unmatched: results.filter((item) => item.processingStatus === "unmatched").length,
+        ignored: results.filter((item) => item.processingStatus === "ignored").length,
+        youtubeResolved: results.filter((item) => item.youtubeResolved).length,
+        results
+      });
   } catch (error) {
     await recordDiagnosticLog({
       category: "connector_events",

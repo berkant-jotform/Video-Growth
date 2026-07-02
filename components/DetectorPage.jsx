@@ -278,7 +278,7 @@ export default function DetectorPage({ session }) {
     } catch (err) {
       setExtensionRequest({
         status: "warn",
-        message: `${err.message} Install/update extension 0.1.17, then reload this page.`
+        message: `${err.message} Install/update extension 0.1.18, then reload this page.`
       });
     }
   }
@@ -946,6 +946,7 @@ function ExtensionScanReceipt({ connectorStatus }) {
   const diagnosis = receipt.scan.diagnosis || null;
   const diagnosisWarn = diagnosis?.severity === "warn" || diagnosis?.severity === "error";
   const tone = failed || diagnosisWarn ? "warn" : found ? "ok" : "neutral";
+  const stages = extensionScanStages(tabs, totals);
   return (
     <section className={`extension-scan-receipt ${tone}`}>
       <div className="extension-scan-copy">
@@ -975,6 +976,11 @@ function ExtensionScanReceipt({ connectorStatus }) {
         <span>
           Matched <strong>{matched}</strong>
         </span>
+        {Number(totals.youtubeResolved || 0) ? (
+          <span>
+            YouTube resolved <strong>{Number(totals.youtubeResolved || 0)}</strong>
+          </span>
+        ) : null}
         <span>
           Needs matching <strong>{unmatched}</strong>
         </span>
@@ -983,6 +989,14 @@ function ExtensionScanReceipt({ connectorStatus }) {
             Failed tabs <strong>{failed}</strong>
           </span>
         ) : null}
+      </div>
+      <div className="extension-scan-stage-row" aria-label="Extension scan stages">
+        {stages.map((stage) => (
+          <span className={`extension-scan-stage ${stage.state}`} key={stage.key}>
+            <strong>{stage.label}</strong>
+            <em>{stage.value}</em>
+          </span>
+        ))}
       </div>
       {tabs.length ? (
         <details className="extension-scan-tabs">
@@ -1012,6 +1026,59 @@ function ExtensionScanReceipt({ connectorStatus }) {
       ) : null}
     </section>
   );
+}
+
+function extensionScanStages(tabs, totals) {
+  const openedMenus = tabs.filter((tab) => tab.menuOpened).length;
+  const visibleTextTabs = tabs.filter((tab) => Number(tab.candidates || 0) > 0 || Number(tab.received || 0) > 0).length;
+  const sent = Number(totals.received || 0);
+  const matched = Number(totals.matched || 0);
+  const unregistered = Number(totals.unmatched || 0);
+  const youtubeResolved = Number(totals.youtubeResolved || 0);
+  return [
+    {
+      key: "tabs",
+      label: "Tabs checked",
+      value: `${Number(totals.tabs || tabs.length || 0)}`,
+      state: Number(totals.tabs || tabs.length || 0) ? "ok" : "warn"
+    },
+    {
+      key: "bell",
+      label: "Bell opened",
+      value: openedMenus ? `${openedMenus}` : "0",
+      state: openedMenus ? "ok" : "warn"
+    },
+    {
+      key: "text",
+      label: "Finish text",
+      value: `${Number(totals.candidates || 0)}`,
+      state: Number(totals.candidates || 0) || visibleTextTabs ? "ok" : "neutral"
+    },
+    {
+      key: "sent",
+      label: "Signals sent",
+      value: `${sent}`,
+      state: sent ? "ok" : "neutral"
+    },
+    {
+      key: "matched",
+      label: "Auto-matched",
+      value: `${matched}`,
+      state: matched ? "ok" : sent && unregistered ? "warn" : "neutral"
+    },
+    {
+      key: "youtube",
+      label: "YouTube resolved",
+      value: `${youtubeResolved}`,
+      state: youtubeResolved ? "ok" : "neutral"
+    },
+    {
+      key: "unregistered",
+      label: "Unregistered",
+      value: `${unregistered}`,
+      state: unregistered ? "warn" : "neutral"
+    }
+  ];
 }
 
 function ExtensionQuickCheck({ request, onCheck, onOpenNotifications, onReportMiss }) {
@@ -1560,7 +1627,7 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen, onAcceptMatch, quick
           <h3>Finish Signal</h3>
           <p>{run.finishEventText}</p>
           <p className="muted">
-            {signalSourceLabel(run)} · {run.finishEventAt ? formatDateTimeWithExactAge(run.finishEventAt) : "No timestamp"} · {run.matchedConfidence || "matched"}
+            {signalSourceLabel(run)} · {finishSignalTimeLabel(run)} · {run.matchedConfidence || "matched"}
           </p>
         </section>
       ) : null}
@@ -2074,10 +2141,18 @@ function hasUsefulDebugSignals(events = []) {
 }
 
 function signalDateLabel(run) {
+  if (run.finishEventNotificationAge) return normalizeNotificationAgeLabel(run.finishEventNotificationAge);
   if (run.finishEventAt) return formatDateTimeWithExactAge(run.finishEventAt);
   if (run.queueStatus === "past_due_check") return "Manual check";
   if (run.effectiveFinishDate) return `Sheet ${formatDateWithExactAge(run.effectiveFinishDate)}`;
   return "No signal yet";
+}
+
+function finishSignalTimeLabel(run) {
+  const exactAge = run.finishEventNotificationAge ? normalizeNotificationAgeLabel(run.finishEventNotificationAge) : "";
+  if (run.finishEventAt && exactAge) return `${formatDateTime(run.finishEventAt)} · ${exactAge}`;
+  if (run.finishEventAt) return formatDateTimeWithExactAge(run.finishEventAt);
+  return exactAge || "No timestamp";
 }
 
 function signalSourceLabel(run) {
@@ -2415,6 +2490,24 @@ function exactDaysAgo(value) {
   if (Number.isNaN(date.valueOf())) return "unknown age";
   const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
   return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function normalizeNotificationAgeLabel(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const match = text.match(/^(\d+)\s+(minute|hour|day|week|month)s?\s+ago$/);
+  if (!match) return text || "";
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (unit === "day") return `${amount} day${amount === 1 ? "" : "s"} ago`;
+  if (unit === "week") {
+    const days = amount * 7;
+    return `${days} days ago`;
+  }
+  if (unit === "month") {
+    const days = amount * 30;
+    return `${days} days ago`;
+  }
+  return `${amount} ${unit}${amount === 1 ? "" : "s"} ago`;
 }
 
 function requestExtension(type) {

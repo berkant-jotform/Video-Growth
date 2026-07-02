@@ -636,6 +636,43 @@ a {
   font-size: 20px;
 }
 
+.extension-scan-stage-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+
+.extension-scan-stage {
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+}
+
+.extension-scan-stage strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.extension-scan-stage em {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.extension-scan-stage.ok {
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+}
+
+.extension-scan-stage.warn {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+}
+
 .extension-scan-tabs {
   border-top: 1px solid var(--border);
   padding-top: 10px;
@@ -3229,6 +3266,12 @@ textarea {
 
 .extension-check-card em.warn {
   color: var(--amber);
+}
+
+.diagnostic-actions {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 14px;
 }
 
 .history-search {

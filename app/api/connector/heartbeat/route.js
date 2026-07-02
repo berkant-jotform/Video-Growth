@@ -65,7 +65,8 @@ function sanitizeStudioTabs(value) {
   return value.slice(0, 10).map((tab) => ({
     tabTitle: String(tab?.tabTitle || "").slice(0, 160),
     tabUrl: String(tab?.tabUrl || "").slice(0, 300),
-    channel: String(tab?.channel || "").slice(0, 120),
+      channel: String(tab?.channel || "").slice(0, 120),
+      channelId: String(tab?.channelId || "").slice(0, 40),
     notificationButtonFound: Boolean(tab?.notificationButtonFound),
     visibleNotificationContainers: Number(tab?.visibleNotificationContainers || 0),
     bodySnippetCount: Number(tab?.bodySnippetCount || 0),
@@ -107,9 +108,10 @@ function sanitizeLastStudioScan(value) {
       failed: Number(totals.failed || 0),
       received: Number(totals.received || 0),
       matched: Number(totals.matched || 0),
-      unmatched: Number(totals.unmatched || 0),
-      ignored: Number(totals.ignored || 0),
-      candidates: Number(totals.candidates || 0)
+        unmatched: Number(totals.unmatched || 0),
+        ignored: Number(totals.ignored || 0),
+        youtubeResolved: Number(totals.youtubeResolved || 0),
+        candidates: Number(totals.candidates || 0)
     },
     tabs: Array.isArray(value.tabs)
       ? value.tabs.slice(0, 8).map((tab) => ({
@@ -119,8 +121,9 @@ function sanitizeLastStudioScan(value) {
           error: String(tab.error || "").slice(0, 240),
           received: Number(tab.received || 0),
           matched: Number(tab.matched || 0),
-          unmatched: Number(tab.unmatched || 0),
-          candidates: Number(tab.candidates || 0),
+            unmatched: Number(tab.unmatched || 0),
+            youtubeResolved: Number(tab.youtubeResolved || 0),
+            candidates: Number(tab.candidates || 0),
           menuOpened: Boolean(tab.menuOpened),
           channel: String(tab.channel || "").slice(0, 120),
           previews: Array.isArray(tab.previews)

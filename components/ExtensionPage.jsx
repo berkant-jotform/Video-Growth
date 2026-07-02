@@ -100,7 +100,7 @@ export default function ExtensionPage({ session }) {
             />
             <StatusTile
               label="Latest version"
-              value={config?.latestExtensionVersion || "0.1.17"}
+              value={config?.latestExtensionVersion || "0.1.18"}
               tone="neutral"
             />
             <StatusTile
@@ -231,6 +231,12 @@ export default function ExtensionPage({ session }) {
             ) : (
               <p className="muted">No extension check-in yet. Install the extension, paste the token, then click Check connection in the extension popup.</p>
             )}
+          </div>
+          <div className="install-actions compact diagnostic-actions">
+            <a className="secondary-button" href="/api/troubleshooting/bundle" target="_blank" rel="noreferrer">
+              <Download size={16} />
+              Download Troubleshooting Bundle
+            </a>
           </div>
         </section>
 

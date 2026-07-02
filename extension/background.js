@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.17";
+const EXTENSION_VERSION = "0.1.18";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const DEFAULT_SETTINGS = {
@@ -207,10 +207,11 @@ function summarizeTabScanResult(tab) {
     ok: tab.ok !== false,
     error: tab.error || "",
     received: Number(tab.received || 0),
-    matched: Number(tab.matched || 0),
-    unmatched: Number(tab.unmatched || 0),
-    ignored: Number(tab.ignored || 0),
-    candidates: Number(tab.candidates || 0),
+      matched: Number(tab.matched || 0),
+      unmatched: Number(tab.unmatched || 0),
+      ignored: Number(tab.ignored || 0),
+      youtubeResolved: Number(tab.youtubeResolved || 0),
+      candidates: Number(tab.candidates || 0),
     diagnostics: tab.diagnostics || {},
     previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 5) : []
   };
@@ -223,12 +224,13 @@ function summarizeScanResults(results) {
       if (item.ok === false) total.failed += 1;
       total.received += Number(item.received || 0);
       total.matched += Number(item.matched || 0);
-      total.unmatched += Number(item.unmatched || 0);
-      total.ignored += Number(item.ignored || 0);
-      total.candidates += Number(item.candidates || 0);
+        total.unmatched += Number(item.unmatched || 0);
+        total.ignored += Number(item.ignored || 0);
+        total.youtubeResolved += Number(item.youtubeResolved || 0);
+        total.candidates += Number(item.candidates || 0);
       return total;
     },
-    { tabs: 0, failed: 0, received: 0, matched: 0, unmatched: 0, ignored: 0, candidates: 0 }
+      { tabs: 0, failed: 0, received: 0, matched: 0, unmatched: 0, ignored: 0, youtubeResolved: 0, candidates: 0 }
   );
 }
 
@@ -369,10 +371,11 @@ async function postEvents(events, tabUrl) {
     context: {
       tabUrl,
       received: payload.received || events.length,
-      matched: payload.matched || 0,
-      unmatched: payload.unmatched || 0,
-      ignored: payload.ignored || 0
-    }
+        matched: payload.matched || 0,
+        unmatched: payload.unmatched || 0,
+        ignored: payload.ignored || 0,
+        youtubeResolved: payload.youtubeResolved || 0
+      }
   });
   return payload;
 }
@@ -580,9 +583,10 @@ async function collectStudioTabDetails(studioTabs) {
     const base = {
       tabId: tab.id,
       tabTitle: tab.title || "",
-      tabUrl: tab.url || "",
-      channel: "",
-      notificationButtonFound: false,
+        tabUrl: tab.url || "",
+        channel: "",
+        channelId: "",
+        notificationButtonFound: false,
       visibleNotificationContainers: 0,
       bodySnippetCount: 0,
       ok: true,
@@ -591,10 +595,11 @@ async function collectStudioTabDetails(studioTabs) {
     try {
       await ensureContentScript(tab.id);
       const status = await chrome.tabs.sendMessage(tab.id, { type: "studio-tab-status" });
-      details.push({
-        ...base,
-        channel: status?.channel || "",
-        notificationButtonFound: Boolean(status?.notificationButtonFound),
+        details.push({
+          ...base,
+          channel: status?.channel || "",
+          channelId: status?.channelId || "",
+          notificationButtonFound: Boolean(status?.notificationButtonFound),
         visibleNotificationContainers: Number(status?.visibleNotificationContainers || 0),
         bodySnippetCount: Number(status?.bodySnippetCount || 0)
       });

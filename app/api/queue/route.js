@@ -55,6 +55,7 @@ async function findEventYouTubeCandidates(event, config) {
   return findYouTubeVideoCandidates({
     title: event.videoTitle,
     channel: event.channel,
+    channelId: event.channelId,
     apiKey: config.youtubeApiKey,
     limit: 2
   }).catch(() => []);
@@ -80,6 +81,7 @@ function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandid
     rowNumber: 0,
     testType: inferEventTestType(event),
     channel: event.channel || "Unknown source",
+    youtubeChannelId: enrichedEvent.channelId || "",
     videoTitle: title,
     videoUrl: enrichedEvent.videoId ? `https://www.youtube.com/watch?v=${enrichedEvent.videoId}` : "",
     studioUrl: enrichedEvent.videoId ? `https://studio.youtube.com/video/${enrichedEvent.videoId}/edit` : event.notificationUrl || "",
@@ -127,6 +129,7 @@ function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandid
     finishEventUrl: event.notificationUrl || "",
     finishEventOutcome: event.detectedOutcome || "",
     finishEventAt: event.observedAt || "",
+    finishEventNotificationAge: event.notificationAge || "",
     matchedConfidence: "unregistered",
     connectorCovered: true,
     connectorLastSeenAt: event.observedAt || "",
@@ -156,7 +159,8 @@ function channelAliasKey(channel) {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (["jotform", "jotform apps", "apps", "jotform sign", "sign"].includes(normalized)) return "jotform";
+  if (["jotform apps", "apps"].includes(normalized)) return "apps";
+  if (["jotform sign", "sign"].includes(normalized)) return "sign";
   return normalized;
 }
 
