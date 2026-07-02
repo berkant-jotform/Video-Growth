@@ -1,9 +1,9 @@
 import { requireConnector } from "@/lib/connector-auth.js";
 import { json, errorJson } from "@/lib/http.js";
 import { listConnectorActiveRuns, getConnectorStatus } from "@/lib/repository.js";
+import { LATEST_EXTENSION_VERSION } from "@/lib/app-version.js";
 
 export const runtime = "nodejs";
-const LATEST_EXTENSION_VERSION = "0.1.14";
 
 export async function GET(request) {
   try {

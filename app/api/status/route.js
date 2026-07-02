@@ -3,9 +3,9 @@ import { getConnectorStatus, lastScanRun, lastSuccessfulScanRun } from "@/lib/re
 import { getAppConfig } from "@/lib/config.js";
 import { readSession } from "@/lib/auth.js";
 import { json } from "@/lib/http.js";
+import { LATEST_EXTENSION_VERSION } from "@/lib/app-version.js";
 
 export const runtime = "nodejs";
-const LATEST_EXTENSION_VERSION = "0.1.4";
 
 export async function GET() {
   const session = await readSession();

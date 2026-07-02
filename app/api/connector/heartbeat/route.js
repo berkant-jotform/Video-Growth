@@ -1,7 +1,7 @@
 import { requireConnector } from "@/lib/connector-auth.js";
 import { json, errorJson } from "@/lib/http.js";
 import { parseConnectorChannels } from "@/lib/finish-events.mjs";
-import { recordConnectorHeartbeat } from "@/lib/repository.js";
+import { recordConnectorHeartbeat, recordDiagnosticLog } from "@/lib/repository.js";
 
 export const runtime = "nodejs";
 
@@ -24,11 +24,38 @@ export async function POST(request) {
         studioTabs: sanitizeStudioTabs(body.studioTabs),
         userAgent: body.userAgent || "",
         observedAt: body.observedAt || new Date().toISOString(),
-        lastStudioScan: sanitizeLastStudioScan(body.lastStudioScan)
+        lastStudioScan: sanitizeLastStudioScan(body.lastStudioScan),
+        diagnosticLog: sanitizeExtensionDiagnosticLog(body.diagnosticLog)
       }
     });
+    const diagnosis = body.lastStudioScan?.diagnosis || null;
+    const totals = body.lastStudioScan?.totals || {};
+    if (diagnosis?.severity && diagnosis.severity !== "ok") {
+      await recordDiagnosticLog({
+        category: "extension_scan",
+        severity: diagnosis.severity === "warn" ? "warning" : diagnosis.severity,
+        message: diagnosis.message || "Extension scan diagnosis",
+        actorName: body.actorName || body.reviewerInitials || "",
+        context: {
+          connectorId: body.connectorId || "",
+          version: body.version || "",
+          channels: parseConnectorChannels(body.channels || []),
+          openStudioTabs: Number(body.openStudioTabs || 0),
+          scanCheckedAt: body.lastStudioScan?.checkedAt || "",
+          totals,
+          diagnosis,
+          diagnosticLog: Array.isArray(body.diagnosticLog) ? body.diagnosticLog.slice(-10) : []
+        }
+      });
+    }
     return json({ ok: true, connectorStatus: status });
   } catch (error) {
+    await recordDiagnosticLog({
+      category: "extension_heartbeat",
+      severity: "error",
+      message: "Connector heartbeat failed",
+      context: { error: error.message }
+    });
     return errorJson(error);
   }
 }
@@ -45,6 +72,29 @@ function sanitizeStudioTabs(value) {
     ok: tab?.ok !== false,
     error: String(tab?.error || "").slice(0, 240)
   }));
+}
+
+function sanitizeExtensionDiagnosticLog(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-20).map((item) => ({
+    at: String(item?.at || "").slice(0, 40),
+    category: String(item?.category || "").slice(0, 60),
+    severity: String(item?.severity || "info").slice(0, 20),
+    message: String(item?.message || "").slice(0, 240),
+    context: sanitizePlainContext(item?.context || {})
+  }));
+}
+
+function sanitizePlainContext(value) {
+  if (Array.isArray(value)) return value.slice(0, 20).map(sanitizePlainContext);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).slice(0, 30).map(([key, item]) => {
+      if (/token|password|secret|key|authorization|credential/i.test(key)) return [key, item ? "[redacted]" : ""];
+      if (typeof item === "string") return [key, item.slice(0, 300)];
+      return [key, sanitizePlainContext(item)];
+    })
+  );
 }
 
 function sanitizeLastStudioScan(value) {

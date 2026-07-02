@@ -96,6 +96,23 @@ async function requestStudioScrape() {
       diagnosis: buildScanDiagnosis(results)
     }
   });
+  await appendDiagnosticLog({
+    category: "extension_scan",
+    severity: buildScanDiagnosis(results).severity || "info",
+    message: buildScanDiagnosis(results).message || "Extension scan completed",
+    context: {
+      totals: summarizeScanResults(results),
+      tabs: results.slice(0, 8).map((tab) => ({
+        title: tab.tabTitle || "",
+        url: tab.tabUrl || "",
+        ok: tab.ok !== false,
+        candidates: Number(tab.candidates || 0),
+        received: Number(tab.received || 0),
+        error: tab.error || "",
+        diagnostics: tab.diagnostics || {}
+      }))
+    }
+  });
   await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
   return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results) };
 }
@@ -277,7 +294,27 @@ async function postEvents(events, tabUrl) {
     lastEventPostResult: payload,
     lastEventPostOk: response.ok
   });
-  if (!response.ok) throw new Error(payload.error || `Connector event post failed: ${response.status}`);
+  if (!response.ok) {
+    await appendDiagnosticLog({
+      category: "connector_events",
+      severity: "error",
+      message: payload.error || `Connector event post failed: ${response.status}`,
+      context: { status: response.status, tabUrl, events: events.length }
+    });
+    throw new Error(payload.error || `Connector event post failed: ${response.status}`);
+  }
+  await appendDiagnosticLog({
+    category: "connector_events",
+    severity: payload.matched ? "info" : "warning",
+    message: "Connector events posted",
+    context: {
+      tabUrl,
+      received: payload.received || events.length,
+      matched: payload.matched || 0,
+      unmatched: payload.unmatched || 0,
+      ignored: payload.ignored || 0
+    }
+  });
   return payload;
 }
 
@@ -389,6 +426,7 @@ async function sendHeartbeat(extraPayload = {}) {
     studioTabs: studioTabDetails.slice(0, 10),
     userAgent: navigator.userAgent,
     observedAt: new Date().toISOString(),
+    diagnosticLog: await readDiagnosticLog(),
     ...extraPayload,
     lastStudioScan
   };
@@ -413,7 +451,15 @@ async function sendHeartbeat(extraPayload = {}) {
     lastHeartbeatOk: response.ok,
     lastHeartbeatResult: responsePayload
   });
-  if (!response.ok) throw new Error(responsePayload.error || `Heartbeat failed: ${response.status}`);
+  if (!response.ok) {
+    await appendDiagnosticLog({
+      category: "heartbeat",
+      severity: "error",
+      message: responsePayload.error || `Heartbeat failed: ${response.status}`,
+      context: { status: response.status }
+    });
+    throw new Error(responsePayload.error || `Heartbeat failed: ${response.status}`);
+  }
   return responsePayload;
 }
 
@@ -482,6 +528,39 @@ function sanitizeDiagnosis(value) {
     message: String(value.message || "").slice(0, 240),
     action: String(value.action || "").slice(0, 240)
   };
+}
+
+async function appendDiagnosticLog({ category, severity = "info", message = "", context = {} }) {
+  const local = await chrome.storage.local.get(["diagnosticLog"]).catch(() => ({ diagnosticLog: [] }));
+  const entries = Array.isArray(local.diagnosticLog) ? local.diagnosticLog : [];
+  const next = [
+    ...entries,
+    {
+      at: new Date().toISOString(),
+      category,
+      severity,
+      message,
+      context: redactDiagnosticContext(context)
+    }
+  ].slice(-50);
+  await chrome.storage.local.set({ diagnosticLog: next }).catch(() => {});
+}
+
+async function readDiagnosticLog() {
+  const local = await chrome.storage.local.get(["diagnosticLog"]).catch(() => ({ diagnosticLog: [] }));
+  return Array.isArray(local.diagnosticLog) ? local.diagnosticLog.slice(-20) : [];
+}
+
+function redactDiagnosticContext(value) {
+  if (Array.isArray(value)) return value.slice(0, 20).map(redactDiagnosticContext);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).slice(0, 30).map(([key, item]) => {
+      if (/token|password|secret|key|authorization|credential/i.test(key)) return [key, item ? "[redacted]" : ""];
+      if (typeof item === "string") return [key, item.slice(0, 300)];
+      return [key, redactDiagnosticContext(item)];
+    })
+  );
 }
 
 async function getSettings() {

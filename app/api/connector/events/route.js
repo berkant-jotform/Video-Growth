@@ -1,6 +1,6 @@
 import { requireConnector } from "@/lib/connector-auth.js";
 import { json, errorJson } from "@/lib/http.js";
-import { recordConnectorEvents } from "@/lib/repository.js";
+import { recordConnectorEvents, recordDiagnosticLog } from "@/lib/repository.js";
 
 export const runtime = "nodejs";
 
@@ -20,6 +20,26 @@ export async function POST(request) {
       connectorId: body.connectorId || "",
       source: body.source || "studio_bell"
     });
+    await recordDiagnosticLog({
+      category: "connector_events",
+      severity: results.some((item) => item.processingStatus === "matched") ? "info" : "warning",
+      message: "Connector events received",
+      actorName: body.actorName || body.reviewerInitials || "",
+      context: {
+        connectorId: body.connectorId || "",
+        source: body.source || "studio_bell",
+        received: events.length,
+        matched: results.filter((item) => item.processingStatus === "matched").length,
+        unmatched: results.filter((item) => item.processingStatus === "unmatched").length,
+        ignored: results.filter((item) => item.processingStatus === "ignored").length,
+        previews: events.slice(0, 5).map((event) => ({
+          videoId: event.videoId || "",
+          channel: event.channel || "",
+          videoTitle: event.videoTitle || "",
+          rawText: String(event.rawText || "").slice(0, 240)
+        }))
+      }
+    });
     return json({
       ok: true,
       received: events.length,
@@ -29,6 +49,12 @@ export async function POST(request) {
       results
     });
   } catch (error) {
+    await recordDiagnosticLog({
+      category: "connector_events",
+      severity: "error",
+      message: "Connector events failed",
+      context: { error: error.message }
+    });
     return errorJson(error);
   }
 }
