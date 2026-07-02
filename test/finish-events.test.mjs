@@ -147,6 +147,50 @@ test("matches finish events by video ID first", () => {
   assert.equal(match.matchedConfidence, "video_id");
 });
 
+test("rejects video ID match when notification title clearly belongs to another video", () => {
+  const activeRuns = [
+    {
+      testRunId: "wrong-video-id",
+      videoId: "E2YxV9Dovsc",
+      channel: "Jotform",
+      videoTitle: "How to Use VLOOKUP and XLOOKUP in Excel | Step-by-step Guide"
+    },
+    {
+      testRunId: "zoom-run",
+      videoId: "zoom123",
+      channel: "Jotform",
+      videoTitle: "How to Configure Zoom Settings & AI Companion"
+    }
+  ];
+  const event = parseStudioNotification({
+    videoId: "E2YxV9Dovsc",
+    channel: "Jotform",
+    rawText: "A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner"
+  });
+  const match = matchFinishEventToRun(event, activeRuns);
+  assert.equal(match.run.testRunId, "zoom-run");
+  assert.match(match.matchedConfidence, /^title_after_video_id_conflict:/);
+});
+
+test("keeps video ID match when notification title matches the same video", () => {
+  const activeRuns = [
+    {
+      testRunId: "same-video",
+      videoId: "E2YxV9Dovsc",
+      channel: "Jotform",
+      videoTitle: "How to Use VLOOKUP and XLOOKUP in Excel | Step-by-step Guide"
+    }
+  ];
+  const event = parseStudioNotification({
+    videoId: "E2YxV9Dovsc",
+    channel: "Jotform",
+    rawText: "A/B test performed well for all How to Use VLOOKUP and XLOOKUP in Excel | Step-by-step Guide: Results with very similar performance"
+  });
+  const match = matchFinishEventToRun(event, activeRuns);
+  assert.equal(match.run.testRunId, "same-video");
+  assert.equal(match.matchedConfidence, "video_id");
+});
+
 test("matches finish events by normalized title and channel when video ID is missing", () => {
   const activeRuns = [
     {

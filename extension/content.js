@@ -1,7 +1,7 @@
 const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.14";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.15";
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
   "tp-yt-paper-toast",
@@ -56,13 +56,14 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
     const snippets = finishNotificationSnippets(rawText);
     if (!snippets.length && !isRelevant(rawText)) continue;
     const link = element.closest("a[href]") || element.querySelector?.("a[href]");
-    const url = link?.href || findStudioVideoUrl(element) || location.href;
+    const linkedUrl = link?.href || findStudioVideoUrl(element);
+    const url = linkedUrl || location.href;
     const texts = snippets.length ? snippets : [rawText];
     for (const text of texts) {
       const event = {
         rawText: text,
         url,
-        videoId: extractVideoId(`${url} ${text}`),
+        videoId: extractVideoId(`${linkedUrl || ""} ${text}`),
         channel,
         videoTitle: extractNotificationVideoTitle(text),
         observedAt: new Date().toISOString()
@@ -77,8 +78,8 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
   for (const text of bodySnippets) {
     const event = {
       rawText: text,
-      url: findStudioVideoUrl(document.body) || location.href,
-      videoId: extractVideoId(`${location.href} ${text}`),
+      url: location.href,
+      videoId: extractVideoId(text),
       channel,
       videoTitle: extractNotificationVideoTitle(text),
       observedAt: new Date().toISOString()
