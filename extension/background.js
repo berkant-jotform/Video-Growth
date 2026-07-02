@@ -1,5 +1,6 @@
-const EXTENSION_VERSION = "0.1.16";
+const EXTENSION_VERSION = "0.1.17";
 const DEEP_SCAN_LIMIT = 8;
+const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
   connectorToken: "",
@@ -134,13 +135,15 @@ async function collectScrapeTabs() {
     chrome.tabs.query({ url: "https://studio.youtube.com/*" }),
     chrome.tabs.query({ url: "https://www.youtube.com/*" })
   ]);
+  const watcherTab = await getNotificationWatcherTab();
   const notificationTabs = youtubeTabs.filter((tab) => isLikelyNotificationTab(tab));
   const enrichedStudioTabs = [];
   for (const tab of studioTabs) {
     enrichedStudioTabs.push(await enrichStudioTab(tab));
   }
   const ranked = [
-    ...notificationTabs.map((tab) => ({ ...tab, scanKind: "youtube_notifications", scanRank: 0 })),
+    ...(watcherTab ? [{ ...watcherTab, scanKind: "youtube_bell_watcher", scanRank: 0 }] : []),
+    ...notificationTabs.map((tab) => ({ ...tab, scanKind: "youtube_notifications", scanRank: 1 })),
     ...enrichedStudioTabs.map((tab) => ({ ...tab, scanKind: classifyStudioTab(tab), scanRank: rankStudioTab(tab) }))
   ].sort((a, b) => a.scanRank - b.scanRank || String(a.title || "").localeCompare(String(b.title || "")));
 
@@ -184,6 +187,7 @@ function rankStudioTab(tab) {
 }
 
 function scrapeTabKey(tab) {
+  if (tab.scanKind === "youtube_bell_watcher") return `youtube_bell_watcher:${tab.id}`;
   if (tab.scanKind === "youtube_notifications" || isLikelyNotificationTab(tab)) return `youtube_notifications:${new URL(tab.url || "https://www.youtube.com").origin}`;
   const url = String(tab.url || "");
   const videoId = url.match(/\/video\/([A-Za-z0-9_-]{6,})/)?.[1] || "";
@@ -240,8 +244,8 @@ function buildScanDiagnosis(results) {
     return {
       severity: "warn",
       code: "no_studio_tabs",
-      message: "No YouTube Studio tabs were open during the extension scan.",
-      action: "Open a watched Studio channel from the extension, then scan again."
+      message: "No Studio or YouTube bell watcher tabs were open during the extension scan.",
+      action: "Open a watched Studio channel or the YouTube bell watcher from the extension, then scan again."
     };
   }
   if (totals.failed >= totals.tabs) {
@@ -398,13 +402,39 @@ async function openWatcherTabs(requestedTargets = []) {
 }
 
 async function openNotificationPage() {
-  const notificationTabs = (await chrome.tabs.query({ url: "https://www.youtube.com/*" })).filter(isLikelyNotificationTab);
-  if (notificationTabs[0]) {
-    await chrome.tabs.update(notificationTabs[0].id, { active: true });
-    return { ok: true, reused: true, tabId: notificationTabs[0].id, url: notificationTabs[0].url || "" };
+  const existing = await getNotificationWatcherTab();
+  if (existing?.id) {
+    const update = isUnavailableNotificationUrl(existing.url) ? { active: true, url: NOTIFICATION_WATCHER_URL } : { active: true };
+    const tab = await chrome.tabs.update(existing.id, update);
+    await chrome.storage.local.set({ notificationWatcherTabId: existing.id });
+    return { ok: true, reused: true, tabId: existing.id, url: tab.url || existing.url || NOTIFICATION_WATCHER_URL };
   }
-  const created = await chrome.tabs.create({ url: "https://www.youtube.com/notifications", active: true });
-  return { ok: true, reused: false, tabId: created.id, url: created.url || "https://www.youtube.com/notifications" };
+
+  const youtubeTabs = await chrome.tabs.query({ url: "https://www.youtube.com/*" });
+  const reusable = youtubeTabs.find((tab) => !isUnavailableNotificationUrl(tab.url));
+  if (reusable?.id) {
+    await chrome.tabs.update(reusable.id, { active: true });
+    await chrome.storage.local.set({ notificationWatcherTabId: reusable.id });
+    return { ok: true, reused: true, tabId: reusable.id, url: reusable.url || NOTIFICATION_WATCHER_URL };
+  }
+
+  const created = await chrome.tabs.create({ url: NOTIFICATION_WATCHER_URL, active: true });
+  await chrome.storage.local.set({ notificationWatcherTabId: created.id });
+  return { ok: true, reused: false, tabId: created.id, url: created.url || NOTIFICATION_WATCHER_URL };
+}
+
+async function getNotificationWatcherTab() {
+  const local = await chrome.storage.local.get(["notificationWatcherTabId"]).catch(() => ({}));
+  const tabId = Number(local.notificationWatcherTabId || 0);
+  if (tabId) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (tab?.id && /^https:\/\/www\.youtube\.com\//i.test(tab.url || "")) return tab;
+  }
+  return null;
+}
+
+function isUnavailableNotificationUrl(url) {
+  return /^https:\/\/www\.youtube\.com\/notifications(?:[/?#]|$)/i.test(String(url || ""));
 }
 
 async function reportMissedNotification() {
@@ -493,6 +523,7 @@ async function sendHeartbeat(extraPayload = {}) {
   const settings = await getSettings();
   requireConfigured(settings);
   const studioTabs = await chrome.tabs.query({ url: "https://studio.youtube.com/*" });
+  const notificationWatcherTab = await getNotificationWatcherTab();
   const studioTabDetails = await collectStudioTabDetails(studioTabs);
   const lastStudioScan = extraPayload.lastStudioScan === undefined
     ? await buildLastStudioScanPayload()
@@ -501,6 +532,8 @@ async function sendHeartbeat(extraPayload = {}) {
     location: "chrome-extension",
     openStudioTabs: studioTabs.length,
     studioTabUrls: studioTabs.map((tab) => tab.url || "").filter(Boolean).slice(0, 10),
+    notificationWatcherOpen: Boolean(notificationWatcherTab),
+    notificationWatcherUrl: notificationWatcherTab?.url || "",
     studioTabs: studioTabDetails.slice(0, 10),
     userAgent: navigator.userAgent,
     observedAt: new Date().toISOString(),

@@ -54,6 +54,23 @@ test("extracts current YouTube notification page A/B results", () => {
   ]);
 });
 
+test("extracts recent YouTube bell A/B notifications with exact age text", () => {
+  const text = [
+    "Notifications All Earn Analytics Ideas News Today",
+    "A/B test performed well for all How to Preview your Form in Claude AI: Results with very similar performance 11 minutes ago",
+    "A/B test performed well for all How to Optimize Forms with AI in ChatGPT: Results with very similar performance 15 hours ago",
+    "A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner 2 days ago",
+    "A/B test inconclusive How to Create Forms from Spreadsheets in ChatGPT: The test completed with no winner 5 days ago"
+  ].join(" ");
+  const snippets = extractFinishNotificationSnippets(text);
+  assert.deepEqual(new Set(snippets), new Set([
+    "A/B test performed well for all How to Preview your Form in Claude AI: Results with very similar performance",
+    "A/B test performed well for all How to Optimize Forms with AI in ChatGPT: Results with very similar performance",
+    "A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner",
+    "A/B test inconclusive How to Create Forms from Spreadsheets in ChatGPT: The test completed with no winner"
+  ]));
+});
+
 test("detects winner option from notification text", () => {
   assert.equal(detectNotificationOutcome("Thumbnail test completed. Option B won."), "winner_b");
   assert.equal(detectNotificationOutcome("Title test finished. Winner: C"), "winner_c");

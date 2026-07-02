@@ -270,15 +270,15 @@ export default function DetectorPage({ session }) {
           ? extensionScanSummary(response)
           : type === "open-notification-page"
             ? response.reused
-              ? "YouTube notifications watcher is already open."
-              : "YouTube notifications watcher opened."
+              ? "YouTube bell watcher is already open."
+              : "YouTube bell watcher opened. Click Check Studio now after the page loads."
             : "Miss report sent with the latest scan diagnostics.";
       setExtensionRequest({ status: "ok", message });
       window.setTimeout(() => refresh(), 800);
     } catch (err) {
       setExtensionRequest({
         status: "warn",
-        message: `${err.message} Install/update extension 0.1.16, then reload this page.`
+        message: `${err.message} Install/update extension 0.1.17, then reload this page.`
       });
     }
   }
@@ -1021,9 +1021,9 @@ function ExtensionQuickCheck({ request, onCheck, onOpenNotifications, onReportMi
     <section className={`extension-quick-check ${tone}`}>
       <div className="extension-quick-copy">
         <span className="eyebrow">Real signal scan</span>
-        <h3>Check YouTube notifications now</h3>
+        <h3>Check YouTube bell now</h3>
         <p>
-          Uses the Chrome extension to read open Studio and YouTube notification tabs. It does not open channel watcher tabs or change YouTube.
+          Uses the Chrome extension to read open Studio tabs and the YouTube bell watcher. It does not open channel watcher tabs or change YouTube.
         </p>
         {request.message ? <em>{request.message}</em> : null}
       </div>
@@ -1033,7 +1033,7 @@ function ExtensionQuickCheck({ request, onCheck, onOpenNotifications, onReportMi
           {running ? "Checking" : "Check Studio now"}
         </button>
         <button className="secondary-button" type="button" onClick={onOpenNotifications} disabled={running}>
-          Open notifications watcher
+          Open YouTube bell watcher
         </button>
         <button className="quiet-button" type="button" onClick={onReportMiss} disabled={running}>
           I see a missed notification
@@ -2439,9 +2439,9 @@ function requestExtension(type) {
 }
 
 function extensionCommandLoadingText(type) {
-  if (type === "open-notification-page") return "Opening or reusing the YouTube notifications watcher...";
+  if (type === "open-notification-page") return "Opening or reusing the YouTube bell watcher...";
   if (type === "report-missed-notification") return "Sending a debug snapshot from the extension...";
-  return "Asking the Chrome extension to scan open notification tabs...";
+  return "Asking the Chrome extension to scan open Studio tabs and the YouTube bell watcher...";
 }
 
 function extensionScanSummary(response) {
@@ -2457,7 +2457,7 @@ function extensionScanSummary(response) {
     },
     { tabs: 0, candidates: 0, received: 0, matched: 0, unmatched: 0 }
   );
-  if (!totals.tabs) return "No Studio or YouTube notification tabs were open.";
+  if (!totals.tabs) return "No Studio or YouTube bell watcher tabs were open.";
   if (!totals.received) return `Checked ${totals.tabs} tab${totals.tabs === 1 ? "" : "s"}; no finish notification text was captured.`;
   return `Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered.`;
 }

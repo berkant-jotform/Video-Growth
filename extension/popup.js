@@ -5,16 +5,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     await openWatcherTargets([], "Opening all configured Studio watcher tabs...");
   });
   document.getElementById("scan").addEventListener("click", async () => {
-    setSummary("Scanning open Studio and YouTube notification tabs...");
+    setSummary("Scanning open Studio tabs and the YouTube bell watcher...");
     const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
     setSummary(scanResultText(response));
     await render();
     setSummary(scanResultText(response));
   });
   document.getElementById("openNotifications").addEventListener("click", async () => {
-    setSummary("Opening or reusing YouTube notifications watcher...");
+    setSummary("Opening or reusing the YouTube bell watcher...");
     const response = await chrome.runtime.sendMessage({ type: "open-notification-page" });
-    setSummary(response?.ok ? (response.reused ? "Notifications watcher is already open." : "Notifications watcher opened.") : response?.error || "Could not open notifications watcher.");
+    setSummary(response?.ok ? (response.reused ? "YouTube bell watcher is already open." : "YouTube bell watcher opened. Run Check real finish signals next.") : response?.error || "Could not open YouTube bell watcher.");
     await render();
   });
   document.getElementById("deepScan").addEventListener("click", async () => {
@@ -82,7 +82,7 @@ function renderScanLog(scanAt, result) {
   const tabs = Array.isArray(result?.tabs) ? result.tabs : [];
   if (!scanAt || !tabs.length) {
     summaryEl.textContent = "No scan yet";
-    bodyEl.innerHTML = `<p class="muted">Click Scan notification tabs to create a diagnostic log.</p>`;
+    bodyEl.innerHTML = `<p class="muted">Click Check real finish signals to create a diagnostic log.</p>`;
     return;
   }
   summaryEl.textContent = `${totals.tabs || tabs.length} tab${(totals.tabs || tabs.length) === 1 ? "" : "s"}, ${totals.candidates || 0} candidate${Number(totals.candidates || 0) === 1 ? "" : "s"}`;
@@ -211,7 +211,7 @@ function scanResultText(response) {
     ? ` ${diagnosis.message}${diagnosis.action ? ` ${diagnosis.action}` : ""}`
     : "";
   if (!summary.checked) {
-    return "No Studio or YouTube notification tabs are open. Open watcher tabs or a YouTube notifications page, then scan again.";
+    return "No Studio or YouTube bell watcher tabs are open. Open watcher tabs or the YouTube bell watcher, then scan again.";
   }
   if (!summary.received) {
     const failedText = summary.failed ? ` ${summary.failed} tab${summary.failed === 1 ? "" : "s"} could not be read.` : "";
@@ -224,7 +224,7 @@ function scanResultText(response) {
 
 function shortScanResultText(response) {
   const summary = summarizeScrapeTabs(response?.tabs || []);
-  if (!summary.checked) return "No Studio or YouTube notification tabs were found.";
+  if (!summary.checked) return "No Studio or YouTube bell watcher tabs were found.";
   const diagnosis = response?.diagnosis || buildPopupDiagnosis(response?.tabs || []);
   const diagnosisSuffix = diagnosis?.severity && diagnosis.severity !== "ok"
     ? ` ${diagnosis.message}`
@@ -278,7 +278,7 @@ function buildPopupDiagnosis(tabs = []) {
   const visibleContainers = diagnostics.reduce((sum, item) => sum + Number(item.visibleNotificationContainers || 0), 0);
   const bodySnippetCount = diagnostics.reduce((sum, item) => sum + Number(item.bodySnippetCount || 0), 0);
   if (!summary.checked) {
-    return { severity: "warn", message: "No Studio or YouTube notification tabs were open.", action: "Open watcher tabs or the YouTube notifications page first." };
+    return { severity: "warn", message: "No Studio or YouTube bell watcher tabs were open.", action: "Open watcher tabs or the YouTube bell watcher first." };
   }
   if (summary.failed >= summary.checked) {
     return { severity: "warn", message: "The extension could not read any Studio tab.", action: "Reload Studio and scan again." };

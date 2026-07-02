@@ -1,11 +1,16 @@
 const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
+const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.16";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.17";
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
   "tp-yt-paper-toast",
   "ytd-notification-renderer",
+  "ytd-notification-renderer *",
+  "ytd-multi-page-menu-renderer",
+  "ytd-popup-container",
+  "tp-yt-iron-dropdown",
   "ytcp-notifications-dialog",
   "ytcp-notification-menu",
   "[role='alert']",
@@ -73,9 +78,9 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
       };
       if (!rememberEvent(event, includeSeen)) continue;
       events.push(event);
-      if (events.length >= 20) break;
+      if (events.length >= MAX_EVENTS) break;
     }
-    if (events.length >= 20) break;
+    if (events.length >= MAX_EVENTS) break;
   }
   const bodySnippets = finishNotificationSnippets(document.body?.innerText || "");
   for (const text of bodySnippets) {
@@ -91,7 +96,7 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
     };
     if (!rememberEvent(event, includeSeen)) continue;
     events.push(event);
-    if (events.length >= 20) break;
+    if (events.length >= MAX_EVENTS) break;
   }
   return compactEvents(events);
 }
@@ -113,19 +118,22 @@ async function scrapeStudioNotifications({ includeSeen = false } = {}) {
   }
   await delay(1200);
   const after = collectNotificationEvents({ includeSeen });
-  const events = compactEvents([...before, ...after]);
+  const scrolls = await scrollNotificationSurfaces();
+  await delay(scrolls ? 900 : 300);
+  const afterScroll = scrolls ? collectNotificationEvents({ includeSeen }) : [];
+  const events = compactEvents([...before, ...after, ...afterScroll]);
   return {
     events,
     diagnostics: scanDiagnostics({
       menuOpened: true,
       before,
-      after,
+      after: [...after, ...afterScroll],
       events
-    })
+    }, { scrolls })
   };
 }
 
-function scanDiagnostics({ menuOpened, before, after, events }) {
+function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
   const bodyText = document.body?.innerText || "";
   return {
     url: location.href,
@@ -139,6 +147,7 @@ function scanDiagnostics({ menuOpened, before, after, events }) {
     beforeCount: before.length,
     afterCount: after.length,
     eventCount: events.length,
+    notificationScrolls: Number(extra.scrolls || 0),
     checkedAt: new Date().toISOString()
   };
 }
@@ -386,14 +395,17 @@ function findNotificationButton() {
   const selectors = [
     "#notification-button",
     "ytcp-notification-button",
+    "ytd-notification-topbar-button-renderer",
+    "ytd-notification-topbar-button-renderer button",
+    "ytd-notification-topbar-button-renderer #button",
     "button[aria-label*='Notifications' i]",
     "tp-yt-paper-icon-button[aria-label*='Notifications' i]",
     "ytcp-icon-button[aria-label*='Notifications' i]",
     "[tooltip-label*='Notifications' i]",
     "button[aria-label*='notifications' i]",
     "yt-icon-button[aria-label*='Notifications' i]",
-    "a[href*='/notifications']",
-    "[aria-label*='Bildirim' i]"
+    "[aria-label*='Bildirim' i]",
+    "[aria-label*='Bildirimler' i]"
   ];
   for (const selector of selectors) {
     const element = queryOneDeep(selector);
@@ -415,6 +427,34 @@ function findNotificationButton() {
       )
     ) || null
   );
+}
+
+async function scrollNotificationSurfaces() {
+  const surfaces = queryAllDeep(
+    [
+      "ytd-multi-page-menu-renderer",
+      "ytd-notification-renderer",
+      "tp-yt-iron-dropdown",
+      "ytcp-notifications-dialog",
+      "ytcp-notification-menu",
+      "[role='menu']",
+      "[role='dialog']"
+    ].join(",")
+  ).filter(isVisible);
+  const containers = new Set();
+  for (const surface of surfaces) {
+    for (const candidate of [surface, surface.parentElement, surface.parentElement?.parentElement]) {
+      if (!candidate) continue;
+      if (candidate.scrollHeight > candidate.clientHeight + 20) containers.add(candidate);
+    }
+  }
+  let count = 0;
+  for (const container of containers) {
+    container.scrollTop = container.scrollHeight;
+    container.dispatchEvent(new Event("scroll", { bubbles: true }));
+    count += 1;
+  }
+  return count;
 }
 
 function findClickable(element) {
