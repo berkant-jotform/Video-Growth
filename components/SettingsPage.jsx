@@ -541,7 +541,7 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
             <li>In Studio watcher settings below, add channel URLs or IDs.</li>
             <li>Use one line per channel: <code>Jotform | UC...</code></li>
             <li>Open the extension popup.</li>
-            <li>Click <strong>Open watcher tabs</strong> in the extension.</li>
+            <li>Click <strong>Start watching + check</strong> in the extension.</li>
           </ol>
           <p>The extension checks open Studio watchers hourly. An extension check without Studio open is not detection.</p>
         </div>
@@ -555,7 +555,7 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
           <h3>5. Confirm coverage</h3>
           <ol>
             <li>Open the extension popup.</li>
-            <li>Click the extension check-in button.</li>
+            <li>Use <strong>Start watching + check</strong> or <strong>Check now</strong>.</li>
             <li>Refresh this Settings page.</li>
             <li>Look for <strong>Watching</strong>, not just connected.</li>
           </ol>

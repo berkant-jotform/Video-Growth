@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.19";
+const EXTENSION_VERSION = "0.1.20";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -69,7 +69,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === "open-watcher-tabs") {
-    openWatcherTabs(message.targets || [])
+    openWatcherTabs(message.targets || [], { onlyMissing: message.onlyMissing !== false })
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "smart-start-watching") {
+    openWatcherTabs([], { onlyMissing: true, runScan: true })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -428,7 +434,7 @@ async function postEvents(events, tabUrl) {
   return payload;
 }
 
-async function openWatcherTabs(requestedTargets = []) {
+async function openWatcherTabs(requestedTargets = [], options = {}) {
   const settings = await getSettings();
   requireConfigured(settings);
   const config = await fetchConnectorConfig(settings);
@@ -436,20 +442,44 @@ async function openWatcherTabs(requestedTargets = []) {
   const targets = watcherTabs.length
     ? watcherTabs
     : [{ label: "YouTube Studio", url: "https://studio.youtube.com" }];
+  const openStudioUrls = (await chrome.tabs.query({ url: "https://studio.youtube.com/*" }))
+    .map((tab) => tab.url || "")
+    .filter(Boolean);
+  const targetsToOpen = options.onlyMissing
+    ? targets.filter((target) => !isWatcherTargetOpen(target, openStudioUrls))
+    : targets;
   const opened = [];
-  for (const target of targets) {
+  for (const target of targetsToOpen) {
     if (!target.url) continue;
-    const tab = await chrome.tabs.create({ url: target.url, active: opened.length === 0 });
+    const tab = await chrome.tabs.create({ url: target.url, active: false });
     opened.push({ label: target.label || target.url, url: target.url, tabId: tab.id });
   }
+  if (opened.length) await delay(1500);
   const heartbeat = await sendHeartbeat().catch((error) => ({ ok: false, error: error.message }));
-  await delay(2500);
-  const scan = await requestStudioScrape().catch((error) => ({ ok: false, error: error.message }));
+  let scan = null;
+  if (options.runScan !== false) {
+    if (opened.length) await delay(1500);
+    scan = await requestStudioScrape().catch((error) => ({ ok: false, error: error.message }));
+  }
   await chrome.storage.local.set({
     lastWatcherOpenAt: new Date().toISOString(),
     lastWatcherOpenCount: opened.length
   });
-  return { ok: true, opened, heartbeat, scan };
+  return {
+    ok: true,
+    opened,
+    alreadyOpen: targets.length - targetsToOpen.length,
+    totalTargets: targets.length,
+    heartbeat,
+    scan
+  };
+}
+
+function isWatcherTargetOpen(target, openStudioUrls) {
+  const url = String(target?.url || "").replace(/\/+$/, "");
+  const channelId = url.match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] || "";
+  if (channelId) return openStudioUrls.some((item) => String(item).includes(channelId));
+  return url ? openStudioUrls.some((item) => String(item).replace(/\/+$/, "").startsWith(url)) : false;
 }
 
 async function openNotificationPage() {

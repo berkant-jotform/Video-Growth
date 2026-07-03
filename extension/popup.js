@@ -1,8 +1,13 @@
+let autoConnectionChecked = false;
+
 document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("versionBadge").textContent = `v${chrome.runtime.getManifest().version}`;
   await render();
+  document.getElementById("smartStart").addEventListener("click", async () => {
+    await runPrimaryAction();
+  });
   document.getElementById("openWatchers").addEventListener("click", async () => {
-    await openWatcherTargets([], "Opening all configured Studio watcher tabs...");
+    await openWatcherTargets([], "Opening missing Studio watcher tabs...");
   });
   document.getElementById("scan").addEventListener("click", async () => {
     setSummary("Scanning open Studio tabs and the YouTube bell menu...");
@@ -14,7 +19,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("openNotifications").addEventListener("click", async () => {
     setSummary("Opening or reusing YouTube home for a bell check...");
     const response = await chrome.runtime.sendMessage({ type: "open-notification-page" });
-    setSummary(response?.ok ? (response.reused ? "YouTube home is already open for bell checks." : "YouTube home opened. Open the bell menu if needed, then run Check real finish signals.") : response?.error || "Could not open YouTube home.");
+    setSummary(response?.ok ? (response.reused ? "YouTube home is already open for bell checks." : "YouTube home opened. Open the bell menu if needed, then run Check now.") : response?.error || "Could not open YouTube home.");
     await render();
   });
   document.getElementById("deepScan").addEventListener("click", async () => {
@@ -56,7 +61,9 @@ async function render() {
   const openStudioUrls = latestHeartbeat?.payload?.studioTabUrls || [];
   renderWatcherButtons(connectorConfig?.watcherTabs || [], openStudioUrls, connectorConfig);
   renderScanLog(local.lastStudioScanAt, local.lastStudioScanResult);
-  renderHealthPanel({ sync, local, connectorConfig, openStudioTabs, openStudioUrls });
+  const watchState = buildWatchState({ sync, local, connectorConfig, openStudioTabs, openStudioUrls });
+  renderHealthPanel(watchState);
+  renderPrimaryAction(watchState);
   if (!sync.appUrl) {
     setSummary("Open Settings to connect this watcher to the dashboard.");
   } else if (local.lastHeartbeatOk && openStudioTabs === 0) {
@@ -72,6 +79,42 @@ async function render() {
   document.getElementById("lastEvent").textContent = local.lastEventPostAt
     ? `${formatTime(local.lastEventPostAt)} (${local.lastEventPostOk ? "ok" : "failed"})`
     : "Never";
+  maybeAutoCheckConnection({ sync, local, connectorConfig });
+}
+
+async function runPrimaryAction() {
+  const button = document.getElementById("smartStart");
+  const action = button?.dataset.action || "smart-start";
+  if (action === "settings") {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+  if (action === "scan") {
+    setSummary("Scanning open Studio tabs and the YouTube bell menu...");
+    const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
+    setSummary(scanResultText(response));
+    await render();
+    setSummary(scanResultText(response));
+    return;
+  }
+  setSummary("Opening missing watcher tabs, checking connection, then scanning...");
+  const response = await chrome.runtime.sendMessage({ type: "smart-start-watching" });
+  setSummary(smartStartResultText(response));
+  await render();
+  setSummary(smartStartResultText(response));
+}
+
+async function maybeAutoCheckConnection({ sync, local, connectorConfig }) {
+  if (autoConnectionChecked) return;
+  if (!sync.appUrl || connectorConfig?.ok === false) return;
+  const lastChecked = local.lastHeartbeatAt ? new Date(local.lastHeartbeatAt).getTime() : 0;
+  const stale = !lastChecked || Date.now() - lastChecked > 10 * 60 * 1000;
+  if (!stale) return;
+  autoConnectionChecked = true;
+  chrome.runtime
+    .sendMessage({ type: "send-heartbeat" })
+    .then(() => render())
+    .catch(() => {});
 }
 
 function renderScanLog(scanAt, result) {
@@ -82,7 +125,7 @@ function renderScanLog(scanAt, result) {
   const tabs = Array.isArray(result?.tabs) ? result.tabs : [];
   if (!scanAt || !tabs.length) {
     summaryEl.textContent = "No scan yet";
-    bodyEl.innerHTML = `<p class="muted">Click Check real finish signals to create a diagnostic log.</p>`;
+    bodyEl.innerHTML = `<p class="muted">Click Check now to create a diagnostic log.</p>`;
     return;
   }
   summaryEl.textContent = `${totals.tabs || tabs.length} tab${(totals.tabs || tabs.length) === 1 ? "" : "s"}, ${totals.candidates || 0} candidate${Number(totals.candidates || 0) === 1 ? "" : "s"}`;
@@ -113,61 +156,139 @@ function renderScanLogTab(tab) {
   `;
 }
 
-function renderHealthPanel({ sync, local, connectorConfig, openStudioTabs, openStudioUrls }) {
+function buildWatchState({ sync, local, connectorConfig, openStudioTabs, openStudioUrls }) {
   const watcherTabs = connectorConfig?.watcherTabs || [];
   const openWatchers = watcherTabs.filter((target) => isWatcherOpen(target, openStudioUrls));
   const missingWatchers = watcherTabs.filter((target) => !isWatcherOpen(target, openStudioUrls));
   const anyConfiguredWatcherOpen = openWatchers.length > 0;
-  const health = document.getElementById("healthPanel");
-  const title = document.getElementById("healthTitle");
-  const text = document.getElementById("healthText");
   let state = {
     tone: "neutral",
     title: "Watching status unknown",
-    text: "Open watcher tabs, then check the connection."
+    text: "Open watcher tabs, then check the connection.",
+    action: "smart-start",
+    actionLabel: "Start watching + check",
+    actionHint: "Opens missing Studio watcher tabs, checks the dashboard connection, then scans once.",
+    watcherTabs,
+    openWatchers,
+    missingWatchers,
+    openStudioTabs
   };
 
   if (!sync.appUrl) {
-    state = { tone: "warn", title: "Setup needed", text: "Open Settings and add the app URL plus extension token." };
+    state = {
+      ...state,
+      tone: "warn",
+      title: "Setup needed",
+      text: "Open Settings and add the app URL plus extension token.",
+      action: "settings",
+      actionLabel: "Open Settings",
+      actionHint: "Connect the extension to the dashboard before scanning."
+    };
   } else if (connectorConfig?.ok === false) {
-    state = { tone: "warn", title: "Cannot reach dashboard", text: connectorConfig.error || "Check the extension token." };
+    state = {
+      ...state,
+      tone: "warn",
+      title: "Cannot reach dashboard",
+      text: connectorConfig.error || "Check the extension token.",
+      action: "settings",
+      actionLabel: "Fix Settings",
+      actionHint: "The dashboard rejected the extension config. Check app URL and token."
+    };
+  } else if (!watcherTabs.length) {
+    state = {
+      ...state,
+      tone: "warn",
+      title: "No watcher channels",
+      text: "Add watched channels in the dashboard Extension settings.",
+      action: "settings",
+      actionLabel: "Open Settings",
+      actionHint: "Configure Jotform, AI Agents Podcast, AI Agents, or any other channel before relying on passive detection."
+    };
   } else if (!local.lastHeartbeatAt) {
-    state = { tone: "warn", title: "Not checked yet", text: "Open watcher tabs, then click Check connection." };
+    state = {
+      ...state,
+      tone: "warn",
+      title: "Not checked yet",
+      text: "Open watcher tabs, then click Start watching.",
+      actionHint: "One click opens missing watcher tabs, checks connection, then scans."
+    };
   } else if (openStudioTabs === 0) {
-    state = { tone: "warn", title: "No Studio tab open", text: "Open at least one watcher tab before relying on live detection." };
+    state = {
+      ...state,
+      tone: "warn",
+      title: "No Studio tab open",
+      text: "Open at least one watcher tab before relying on live detection.",
+      actionHint: "Opens the configured Studio channels in background tabs, then checks for finish signals."
+    };
   } else if (watcherTabs.length && !anyConfiguredWatcherOpen) {
-    state = { tone: "warn", title: "Wrong Studio tab open", text: "A Studio tab is open, but not a configured watcher channel." };
+    state = {
+      ...state,
+      tone: "warn",
+      title: "Wrong Studio tab open",
+      text: "A Studio tab is open, but not a configured watcher channel.",
+      actionHint: "Keeps your existing tabs and opens only the missing configured watcher channels."
+    };
   } else if (missingWatchers.length) {
     const names = missingWatchers.map((item) => item.label || "Studio").slice(0, 2).join(", ");
     state = {
+      ...state,
       tone: "warn",
       title: `${missingWatchers.length} watcher${missingWatchers.length === 1 ? "" : "s"} missing`,
-      text: `Open ${names}${missingWatchers.length > 2 ? "..." : ""}.`
+      text: `Open ${names}${missingWatchers.length > 2 ? "..." : ""}.`,
+      actionHint: "Opens only the missing watcher channels and scans after they load."
     };
   } else {
     state = {
+      ...state,
       tone: "ok",
       title: `Watching ${openWatchers.length || openStudioTabs} Studio tab${(openWatchers.length || openStudioTabs) === 1 ? "" : "s"}`,
-      text: "Passive checks run hourly. Use deep scan only when you want an immediate check."
+      text: "Passive checks run hourly. Use Check now when you want an immediate scan.",
+      action: "scan",
+      actionLabel: "Check now",
+      actionHint: "Watcher tabs are open. Scan visible Studio notifications now."
     };
   }
+  return state;
+}
 
+function renderHealthPanel(state) {
+  const health = document.getElementById("healthPanel");
+  const title = document.getElementById("healthTitle");
+  const text = document.getElementById("healthText");
   health.className = `health-panel ${state.tone}`;
   title.textContent = state.title;
   text.textContent = state.text;
 }
 
+function renderPrimaryAction(state) {
+  const title = document.getElementById("primaryTitle");
+  const hint = document.getElementById("primaryHint");
+  const button = document.getElementById("smartStart");
+  if (!title || !hint || !button) return;
+  title.textContent = state.action === "scan" ? "Ready for real-signal check" : "Next best action";
+  hint.textContent = state.actionHint;
+  button.textContent = state.actionLabel;
+  button.dataset.action = state.action;
+  button.className = state.action === "settings" ? "secondary-action" : "";
+}
+
 async function openWatcherTargets(targets, loadingText) {
   setSummary(loadingText);
-  const response = await chrome.runtime.sendMessage({ type: "open-watcher-tabs", targets });
+  const response = await chrome.runtime.sendMessage({ type: "open-watcher-tabs", targets, onlyMissing: true });
   if (!response?.ok) {
     setSummary(response?.error || "Could not open watcher tabs.");
     return;
   }
   const count = response.opened?.length || 0;
+  const alreadyOpen = Number(response.alreadyOpen || 0);
   const heartbeatText = response.heartbeat?.ok === false ? " Connection check failed." : " Connection checked.";
-  const scanText = response.scan?.ok === false ? " Scan could not run yet." : ` ${shortScanResultText(response.scan)}`;
-  const doneText = `Opened ${count} watcher tab${count === 1 ? "" : "s"}.${heartbeatText}${scanText}`;
+  const scanText = response.scan?.ok === false ? " Scan could not run yet." : response.scan ? ` ${shortScanResultText(response.scan)}` : "";
+  const openText = count
+    ? `Opened ${count} missing watcher tab${count === 1 ? "" : "s"}`
+    : alreadyOpen
+      ? `${alreadyOpen} watcher tab${alreadyOpen === 1 ? " is" : "s are"} already open`
+      : "No watcher tabs needed";
+  const doneText = `${openText}.${heartbeatText}${scanText}`;
   await render();
   setSummary(doneText);
 }
@@ -201,6 +322,26 @@ function renderWatcherButtons(watcherTabs, openStudioUrls, connectorConfig) {
 
 function setSummary(text) {
   document.getElementById("summary").textContent = text;
+}
+
+function smartStartResultText(response) {
+  if (!response?.ok) return response?.error || "Could not start watching.";
+  const opened = Number(response.opened?.length || 0);
+  const alreadyOpen = Number(response.alreadyOpen || 0);
+  const openText = opened
+    ? `Opened ${opened} missing watcher tab${opened === 1 ? "" : "s"}`
+    : alreadyOpen
+      ? `${alreadyOpen} watcher tab${alreadyOpen === 1 ? " is" : "s are"} already open`
+      : "No watcher tabs were opened";
+  const connectionText = response.heartbeat?.ok === false
+    ? "Dashboard connection failed."
+    : "Dashboard connection checked.";
+  const scanText = response.scan?.ok === false
+    ? " Scan could not finish."
+    : response.scan
+      ? ` ${shortScanResultText(response.scan)}`
+      : "";
+  return `${openText}. ${connectionText}${scanText}`;
 }
 
 function scanResultText(response) {

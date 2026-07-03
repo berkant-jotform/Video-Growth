@@ -106,6 +106,46 @@ p {
   color: #7a510f;
 }
 
+.automation-card {
+  align-items: center;
+  background: linear-gradient(135deg, #172026, #222c34);
+  border: 1px solid #2d3943;
+  border-radius: 10px;
+  box-shadow: 0 10px 26px rgba(23, 32, 38, 0.14);
+  color: #ffffff;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 12px;
+}
+
+.automation-card strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.automation-card p {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 720;
+  margin-top: 3px;
+}
+
+.automation-card button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  min-height: 42px;
+  width: 100%;
+}
+
+.automation-card button.secondary-action {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: var(--text);
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -134,8 +174,14 @@ textarea {
   display: grid;
 }
 
-.actions.stacked button:first-child {
-  min-height: 42px;
+.actions.stacked > button {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.actions.stacked > button:hover {
+  background: #f9fafb;
 }
 
 .actions.stacked > button:last-child {
@@ -171,6 +217,9 @@ textarea {
 }
 
 .more-actions button {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
   border-radius: 0;
   width: 100%;
 }
