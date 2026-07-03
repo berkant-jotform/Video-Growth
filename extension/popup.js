@@ -1,5 +1,6 @@
 let autoConnectionChecked = false;
 let actionRunning = false;
+let appBridgeRepairTried = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("versionBadge").textContent = `v${chrome.runtime.getManifest().version}`;
@@ -12,6 +13,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   document.getElementById("scan").addEventListener("click", async () => {
     await withBusy(async () => {
+      await repairDashboardBridge({ force: true });
       setSummary("Scanning open Studio tabs and the YouTube bell menu...");
       const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
       setSummary(scanResultText(response));
@@ -38,7 +40,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   document.getElementById("heartbeat").addEventListener("click", async () => {
     await withBusy(async () => {
-      setSummary("Checking dashboard connection...");
+      setSummary("Checking dashboard connection and page bridge...");
+      await repairDashboardBridge({ force: true });
       const response = await chrome.runtime.sendMessage({ type: "send-heartbeat" });
       setSummary(connectionResultText(response));
       await render();
@@ -60,7 +63,9 @@ async function render() {
     "lastDeepScanAt",
     "lastDeepScanResult",
     "lastStudioScanAt",
-    "lastStudioScanResult"
+    "lastStudioScanResult",
+    "lastAppBridgeRepairAt",
+    "lastAppBridgeRepairResult"
   ]);
   const connectorConfig = await chrome.runtime
     .sendMessage({ type: "get-connector-config" })
@@ -70,6 +75,7 @@ async function render() {
   const openStudioUrls = latestHeartbeat?.payload?.studioTabUrls || [];
   renderWatcherButtons(connectorConfig?.watcherTabs || [], openStudioUrls, connectorConfig);
   renderScanLog(local.lastStudioScanAt, local.lastStudioScanResult);
+  renderDashboardBridge(local.lastAppBridgeRepairAt, local.lastAppBridgeRepairResult);
   const watchState = buildWatchState({ sync, local, connectorConfig, openStudioTabs, openStudioUrls });
   renderHealthPanel(watchState);
   renderPrimaryAction(watchState);
@@ -88,6 +94,7 @@ async function render() {
   document.getElementById("lastEvent").textContent = local.lastEventPostAt
     ? `${formatTime(local.lastEventPostAt)} (${local.lastEventPostOk ? "ok" : "failed"})`
     : "Never";
+  maybeRepairDashboardBridge(sync);
   maybeAutoCheckConnection({ sync, local, connectorConfig });
 }
 
@@ -99,6 +106,7 @@ async function runPrimaryAction() {
     return;
   }
   if (action === "scan") {
+    await repairDashboardBridge({ force: true });
     setSummary("Scanning open Studio tabs and the YouTube bell menu...");
     const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
     setSummary(scanResultText(response));
@@ -107,10 +115,30 @@ async function runPrimaryAction() {
     return;
   }
   setSummary("Opening missing watcher tabs, checking connection, then scanning...");
+  await repairDashboardBridge({ force: true });
   const response = await chrome.runtime.sendMessage({ type: "smart-start-watching" });
   setSummary(smartStartResultText(response));
   await render();
   setSummary(smartStartResultText(response));
+}
+
+function maybeRepairDashboardBridge(sync) {
+  if (appBridgeRepairTried) return;
+  if (actionRunning) return;
+  if (!sync.appUrl) return;
+  repairDashboardBridge()
+    .then(() => render())
+    .catch(() => {});
+}
+
+async function repairDashboardBridge({ force = false } = {}) {
+  if (appBridgeRepairTried && !force) return null;
+  appBridgeRepairTried = true;
+  const response = await chrome.runtime.sendMessage({ type: "inject-app-bridge" });
+  if (response?.ok === false) {
+    throw new Error(response.error || "Dashboard page bridge could not be repaired.");
+  }
+  return response;
 }
 
 async function maybeAutoCheckConnection({ sync, local, connectorConfig }) {
@@ -301,6 +329,38 @@ function renderPrimaryAction(state) {
   button.textContent = state.actionLabel;
   button.dataset.action = state.action;
   button.className = state.action === "settings" ? "secondary-action" : "";
+}
+
+function renderDashboardBridge(checkedAt, result) {
+  const element = document.getElementById("dashboardBridge");
+  if (!element) return;
+  if (!checkedAt || !result) {
+    element.textContent = "Not checked yet";
+    element.className = "";
+    return;
+  }
+  if (result.ok === false) {
+    element.textContent = `Needs attention (${result.error || "could not check dashboard tab"})`;
+    element.className = "warn";
+    return;
+  }
+  const checked = Number(result.checked || 0);
+  const failed = Number(result.failed || 0);
+  const injected = Number(result.injected || 0);
+  if (!checked) {
+    element.textContent = "No dashboard tab open";
+    element.className = "warn";
+    return;
+  }
+  if (failed) {
+    element.textContent = `Partly connected (${checked - failed}/${checked} dashboard tabs)`;
+    element.className = "warn";
+    return;
+  }
+  element.textContent = injected
+    ? `Ready (${injected} tab${injected === 1 ? "" : "s"} repaired)`
+    : `Ready (${checked} dashboard tab${checked === 1 ? "" : "s"})`;
+  element.className = "ok";
 }
 
 async function openWatcherTargets(targets, loadingText) {

@@ -68,7 +68,7 @@ const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
-const REQUIRED_EXTENSION_VERSION = "0.1.21";
+const REQUIRED_EXTENSION_VERSION = "0.1.22";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -333,7 +333,7 @@ export default function DetectorPage({ session }) {
         setExtensionBridge({
           status: "missing",
           version: "",
-          message: `Update to ${REQUIRED_EXTENSION_VERSION}, then reload this page.`
+          message: "Open the extension popup once; reload this page if it stays offline."
         });
         setExtensionRequest({ status: "warn", message: "" });
       } else {
@@ -1205,7 +1205,7 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
             {bridge?.status === "ready"
               ? "Website buttons can talk to the extension."
               : bridge?.status === "missing"
-                ? "Update the extension, then reload this page."
+                ? "Open the extension popup once; reload this page if it stays offline."
                 : "This should only take a moment."}
           </span>
         </div>

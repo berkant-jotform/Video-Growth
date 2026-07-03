@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.21";
+const EXTENSION_VERSION = "0.1.22";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -404,12 +404,18 @@ async function injectAppBridgeIntoAppTabs() {
       results.push({ tabId: tab.id, url: tab.url || "", ok: false, error: error.message });
     }
   }
-  return {
+  const payload = {
     ok: true,
     checked: results.length,
     injected: results.filter((item) => item.injected).length,
+    failed: results.filter((item) => item.ok === false).length,
     results
   };
+  await chrome.storage.local.set({
+    lastAppBridgeRepairAt: new Date().toISOString(),
+    lastAppBridgeRepairResult: payload
+  }).catch(() => {});
+  return payload;
 }
 
 async function postEvents(events, tabUrl) {
@@ -631,6 +637,27 @@ async function deepScanActiveVideos() {
 async function sendHeartbeat(extraPayload = {}) {
   const settings = await getSettings();
   requireConfigured(settings);
+  const appBridge = await injectAppBridgeIntoAppTabs().catch(async (error) => {
+    const payload = {
+      ok: false,
+      checked: 0,
+      injected: 0,
+      failed: 1,
+      error: error.message,
+      results: []
+    };
+    await chrome.storage.local.set({
+      lastAppBridgeRepairAt: new Date().toISOString(),
+      lastAppBridgeRepairResult: payload
+    }).catch(() => {});
+    await appendDiagnosticLog({
+      category: "app_bridge",
+      severity: "warning",
+      message: "Dashboard bridge repair failed",
+      context: { error: error.message }
+    });
+    return payload;
+  });
   const studioTabs = await chrome.tabs.query({ url: "https://studio.youtube.com/*" });
   const notificationWatcherTab = await getNotificationWatcherTab();
   const studioTabDetails = await collectStudioTabDetails(studioTabs);
@@ -644,6 +671,7 @@ async function sendHeartbeat(extraPayload = {}) {
     notificationWatcherOpen: Boolean(notificationWatcherTab),
     notificationWatcherUrl: notificationWatcherTab?.url || "",
     studioTabs: studioTabDetails.slice(0, 10),
+    appBridge,
     userAgent: navigator.userAgent,
     observedAt: new Date().toISOString(),
     diagnosticLog: await readDiagnosticLog(),

@@ -443,3 +443,11 @@ dd {
   margin: 0;
   font-weight: 760;
 }
+
+dd.ok {
+  color: #16794a;
+}
+
+dd.warn {
+  color: #9a6610;
+}
