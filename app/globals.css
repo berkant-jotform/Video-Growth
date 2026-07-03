@@ -111,8 +111,11 @@ a {
 }
 
 .app-shell {
+  margin: 0 auto;
+  max-width: 1600px;
   min-height: 100vh;
   padding: 26px clamp(20px, 3vw, 48px) 48px;
+  width: 100%;
 }
 
 .topbar,
@@ -269,11 +272,26 @@ a {
   margin: 0 auto;
 }
 
+.detector-workspace {
+  max-width: none;
+}
+
 .hero-row {
   align-items: flex-start;
   justify-content: space-between;
   gap: 22px;
   margin-bottom: 22px;
+}
+
+.detector-workspace .hero-row {
+  align-items: stretch;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.detector-workspace .hero-row > div:first-child {
+  max-width: 760px;
 }
 
 .hero-row h2 {
@@ -300,10 +318,15 @@ a {
   padding: 16px;
 }
 
+.detector-workspace .scan-scope-panel {
+  max-width: none;
+  width: 100%;
+}
+
 .scan-command-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1.12fr) minmax(300px, 0.88fr);
+  grid-template-columns: minmax(280px, 0.82fr) minmax(380px, 1.18fr);
   align-items: stretch;
 }
 
@@ -850,17 +873,32 @@ a {
 }
 
 .extension-bridge-status {
-  align-items: center;
+  align-items: start;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   color: var(--muted);
-  display: inline-flex;
+  display: grid;
   font-size: 12px;
-  font-weight: 850;
+  gap: 2px;
   margin-top: 3px;
-  min-height: 28px;
-  padding: 0 9px;
-  width: fit-content;
+  min-height: 0;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.extension-bridge-status strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.extension-bridge-status span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.35;
 }
 
 .extension-bridge-status.ok {
@@ -869,9 +907,19 @@ a {
   color: var(--green);
 }
 
+.extension-bridge-status.ok strong,
+.extension-bridge-status.ok span {
+  color: var(--green);
+}
+
 .extension-bridge-status.warn {
   background: color-mix(in srgb, var(--amber) 9%, var(--surface));
   border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+  color: var(--amber);
+}
+
+.extension-bridge-status.warn strong,
+.extension-bridge-status.warn span {
   color: var(--amber);
 }
 
@@ -917,8 +965,15 @@ a {
 }
 
 .scan-progress-header strong {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
   color: var(--text);
-  font-size: 30px;
+  display: inline-flex;
+  font-size: 16px;
+  min-height: 34px;
+  padding: 0 12px;
   line-height: 1;
 }
 

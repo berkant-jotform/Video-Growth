@@ -326,7 +326,7 @@ export default function DetectorPage({ session }) {
     } catch (err) {
       setExtensionRequest({
         status: "warn",
-        message: `${err.message} Install/update extension ${REQUIRED_EXTENSION_VERSION}, reload this dashboard page, then try again.`
+        message: `${err.message} Update to ${REQUIRED_EXTENSION_VERSION}, then reload this page.`
       });
     }
   }
@@ -537,7 +537,7 @@ export default function DetectorPage({ session }) {
 
   return (
     <AppShell session={session} active="detector">
-      <main className="workspace">
+      <main className="workspace detector-workspace">
         <section className="hero-row">
           <div>
             <p className="eyebrow">Shared team queue</p>
@@ -1178,13 +1178,22 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
         <p>
           Reads open Studio tabs and the YouTube bell menu in this Chrome profile. It never edits YouTube.
         </p>
-        <span className={`extension-bridge-status ${bridgeTone}`}>
-          {bridge?.status === "ready"
-            ? `Dashboard bridge ready${bridge.version ? ` · v${bridge.version}` : ""}`
-            : bridge?.status === "missing"
-              ? "Dashboard page not connected to extension. Reload this page after updating."
-              : "Checking dashboard bridge..."}
-        </span>
+        <div className={`extension-bridge-status ${bridgeTone}`}>
+          <strong>
+            {bridge?.status === "ready"
+              ? `Dashboard bridge ready${bridge.version ? ` · v${bridge.version}` : ""}`
+              : bridge?.status === "missing"
+                ? "Dashboard bridge offline"
+                : "Checking dashboard bridge"}
+          </strong>
+          <span>
+            {bridge?.status === "ready"
+              ? "Website buttons can talk to the extension."
+              : bridge?.status === "missing"
+                ? "Update the extension, then reload this page."
+                : "This should only take a moment."}
+          </span>
+        </div>
         {request.message ? <em>{request.message}</em> : null}
       </div>
       <div className="extension-quick-actions">
@@ -2609,7 +2618,7 @@ function requestExtension(type, { timeoutMs = 12000 } = {}) {
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       window.removeEventListener("message", onMessage);
-      reject(new Error("Chrome extension did not respond from this dashboard page."));
+      reject(new Error("Extension bridge offline."));
     }, timeoutMs);
     function onMessage(event) {
       if (event.source !== window) return;
