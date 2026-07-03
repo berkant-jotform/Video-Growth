@@ -123,6 +123,11 @@ export default function DetectorPage({ session }) {
         version,
         message: version ? `Dashboard bridge ready (v${version}).` : "Dashboard bridge ready."
       });
+      setExtensionRequest((current) =>
+        current.status === "warn" && (!current.message || isBridgeOfflineMessage(current.message))
+          ? { status: "idle", message: "" }
+          : current
+      );
     }
     function onMessage(event) {
       if (event.source !== window) return;
@@ -324,10 +329,19 @@ export default function DetectorPage({ session }) {
       setExtensionRequest({ status: "ok", message });
       window.setTimeout(() => refresh(), 800);
     } catch (err) {
-      setExtensionRequest({
-        status: "warn",
-        message: `${err.message} Update to ${REQUIRED_EXTENSION_VERSION}, then reload this page.`
-      });
+      if (isBridgeOfflineMessage(err.message)) {
+        setExtensionBridge({
+          status: "missing",
+          version: "",
+          message: `Update to ${REQUIRED_EXTENSION_VERSION}, then reload this page.`
+        });
+        setExtensionRequest({ status: "warn", message: "" });
+      } else {
+        setExtensionRequest({
+          status: "warn",
+          message: err.message || "Extension request failed."
+        });
+      }
     }
   }
 
@@ -1170,6 +1184,7 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
   const running = request.status === "running";
   const tone = request.status === "ok" ? "ok" : request.status === "warn" ? "warn" : "neutral";
   const bridgeTone = bridge?.status === "ready" ? "ok" : bridge?.status === "missing" ? "warn" : "neutral";
+  const requestMessage = isBridgeOfflineMessage(request.message) ? "" : request.message;
   return (
     <section className={`extension-quick-check ${tone}`}>
       <div className="extension-quick-copy">
@@ -1194,7 +1209,7 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
                 : "This should only take a moment."}
           </span>
         </div>
-        {request.message ? <em>{request.message}</em> : null}
+        {requestMessage ? <em>{requestMessage}</em> : null}
       </div>
       <div className="extension-quick-actions">
         <button className="primary-button" type="button" onClick={onCheck} disabled={running}>
@@ -2610,6 +2625,11 @@ function normalizeNotificationAgeLabel(value) {
     return `${days} days ago`;
   }
   return `${amount} ${unit}${amount === 1 ? "" : "s"} ago`;
+}
+
+function isBridgeOfflineMessage(value) {
+  const text = String(value || "").toLowerCase();
+  return text.includes("bridge offline") || text.includes("did not respond from this dashboard page");
 }
 
 function requestExtension(type, { timeoutMs = 12000 } = {}) {
