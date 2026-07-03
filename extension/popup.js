@@ -5,16 +5,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     await openWatcherTargets([], "Opening all configured Studio watcher tabs...");
   });
   document.getElementById("scan").addEventListener("click", async () => {
-    setSummary("Scanning open Studio tabs and the YouTube bell watcher...");
+    setSummary("Scanning open Studio tabs and the YouTube bell menu...");
     const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
     setSummary(scanResultText(response));
     await render();
     setSummary(scanResultText(response));
   });
   document.getElementById("openNotifications").addEventListener("click", async () => {
-    setSummary("Opening or reusing the YouTube bell watcher...");
+    setSummary("Opening or reusing YouTube home for a bell check...");
     const response = await chrome.runtime.sendMessage({ type: "open-notification-page" });
-    setSummary(response?.ok ? (response.reused ? "YouTube bell watcher is already open." : "YouTube bell watcher opened. Run Check real finish signals next.") : response?.error || "Could not open YouTube bell watcher.");
+    setSummary(response?.ok ? (response.reused ? "YouTube home is already open for bell checks." : "YouTube home opened. Open the bell menu if needed, then run Check real finish signals.") : response?.error || "Could not open YouTube home.");
     await render();
   });
   document.getElementById("deepScan").addEventListener("click", async () => {
@@ -211,7 +211,7 @@ function scanResultText(response) {
     ? ` ${diagnosis.message}${diagnosis.action ? ` ${diagnosis.action}` : ""}`
     : "";
   if (!summary.checked) {
-    return "No Studio or YouTube bell watcher tabs are open. Open watcher tabs or the YouTube bell watcher, then scan again.";
+    return "No Studio or YouTube bell tabs are open. Open watcher tabs or YouTube home, then scan again.";
   }
   if (!summary.received) {
     const failedText = summary.failed ? ` ${summary.failed} tab${summary.failed === 1 ? "" : "s"} could not be read.` : "";
@@ -224,7 +224,7 @@ function scanResultText(response) {
 
 function shortScanResultText(response) {
   const summary = summarizeScrapeTabs(response?.tabs || []);
-  if (!summary.checked) return "No Studio or YouTube bell watcher tabs were found.";
+  if (!summary.checked) return "No Studio or YouTube bell tabs were found.";
   const diagnosis = response?.diagnosis || buildPopupDiagnosis(response?.tabs || []);
   const diagnosisSuffix = diagnosis?.severity && diagnosis.severity !== "ok"
     ? ` ${diagnosis.message}`
@@ -278,7 +278,7 @@ function buildPopupDiagnosis(tabs = []) {
   const visibleContainers = diagnostics.reduce((sum, item) => sum + Number(item.visibleNotificationContainers || 0), 0);
   const bodySnippetCount = diagnostics.reduce((sum, item) => sum + Number(item.bodySnippetCount || 0), 0);
   if (!summary.checked) {
-    return { severity: "warn", message: "No Studio or YouTube bell watcher tabs were open.", action: "Open watcher tabs or the YouTube bell watcher first." };
+    return { severity: "warn", message: "No Studio or YouTube bell tabs were open.", action: "Open watcher tabs or YouTube home first." };
   }
   if (summary.failed >= summary.checked) {
     return { severity: "warn", message: "The extension could not read any Studio tab.", action: "Reload Studio and scan again." };

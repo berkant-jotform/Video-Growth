@@ -1,6 +1,7 @@
-const EXTENSION_VERSION = "0.1.18";
+const EXTENSION_VERSION = "0.1.19";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
+const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
   connectorToken: "",
@@ -15,9 +16,13 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.storage.sync.set({ connectorId: crypto.randomUUID() });
   }
   scheduleHourlyAlarm();
+  await injectAppBridgeIntoAppTabs().catch(() => {});
 });
 
-chrome.runtime.onStartup.addListener(() => scheduleHourlyAlarm());
+chrome.runtime.onStartup.addListener(() => {
+  scheduleHourlyAlarm();
+  injectAppBridgeIntoAppTabs().catch(() => {});
+});
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "youtube-ab-heartbeat") return;
@@ -75,6 +80,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         requireConfigured(settings);
         return fetchConnectorConfig(settings);
       })
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "inject-app-bridge") {
+    injectAppBridgeIntoAppTabs()
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -246,8 +257,8 @@ function buildScanDiagnosis(results) {
     return {
       severity: "warn",
       code: "no_studio_tabs",
-      message: "No Studio or YouTube bell watcher tabs were open during the extension scan.",
-      action: "Open a watched Studio channel or the YouTube bell watcher from the extension, then scan again."
+      message: "No Studio or YouTube bell tabs were open during the extension scan.",
+      action: "Open a watched Studio channel or YouTube home from the extension, then scan again."
     };
   }
   if (totals.failed >= totals.tabs) {
@@ -310,7 +321,7 @@ function buildScanDiagnosis(results) {
     severity: "info",
     code: "no_finish_text_seen",
     message: "The extension scanned Studio successfully, but no A/B finish text was visible.",
-    action: "If YouTube notifications are visible, open the bell panel and run Scan Studio tabs again."
+    action: "If YouTube notifications are visible, open the bell panel and run Check now again."
   };
 }
 
@@ -328,6 +339,43 @@ async function ensureContentScript(tabId) {
     files: ["content.js"]
   });
   await delay(100);
+}
+
+async function ensureAppBridge(tabId) {
+  const loaded = await chrome.scripting
+    .executeScript({
+      target: { tabId },
+      func: () => Boolean(globalThis.__youtubeAbTestsAppBridgeLoaded)
+    })
+    .then((results) => Boolean(results?.[0]?.result))
+    .catch(() => false);
+  if (loaded) return { injected: false };
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["app-bridge.js"]
+  });
+  await delay(50);
+  return { injected: true };
+}
+
+async function injectAppBridgeIntoAppTabs() {
+  const tabs = await chrome.tabs.query({ url: APP_BRIDGE_MATCHES });
+  const results = [];
+  for (const tab of tabs) {
+    if (!tab.id) continue;
+    try {
+      const result = await ensureAppBridge(tab.id);
+      results.push({ tabId: tab.id, url: tab.url || "", ok: true, ...result });
+    } catch (error) {
+      results.push({ tabId: tab.id, url: tab.url || "", ok: false, error: error.message });
+    }
+  }
+  return {
+    ok: true,
+    checked: results.length,
+    injected: results.filter((item) => item.injected).length,
+    results
+  };
 }
 
 async function postEvents(events, tabUrl) {

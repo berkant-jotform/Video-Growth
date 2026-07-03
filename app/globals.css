@@ -270,6 +270,7 @@ a {
 }
 
 .hero-row {
+  align-items: flex-start;
   justify-content: space-between;
   gap: 22px;
   margin-bottom: 22px;
@@ -288,20 +289,32 @@ a {
 }
 
 .scan-scope-panel {
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-2));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
   display: grid;
-  gap: 12px;
+  gap: 14px;
   justify-items: stretch;
-  max-width: 760px;
+  max-width: 980px;
+  padding: 16px;
+}
+
+.scan-command-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.12fr) minmax(300px, 0.88fr);
+  align-items: stretch;
 }
 
 .scan-scope-fields {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) minmax(220px, auto);
-  gap: 18px;
-  padding: 14px;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 0;
 }
 
 .scan-scope-fields label {
@@ -386,16 +399,18 @@ a {
 
 .scan-type-control {
   align-self: start;
-  justify-self: end;
+  justify-self: start;
   min-width: 244px;
 }
 
 .scan-action-row {
   align-items: center;
+  border-top: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  padding-top: 12px;
 }
 
 .refresh-thumb-toggle {
@@ -557,6 +572,71 @@ a {
   gap: 14px;
   margin: -12px 0 24px;
   padding: 16px 18px;
+}
+
+.extension-scan-receipt.compact {
+  box-shadow: none;
+  gap: 0;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.extension-scan-receipt.compact summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  list-style: none;
+  padding: 11px 12px;
+}
+
+.extension-scan-receipt.compact summary::-webkit-details-marker {
+  display: none;
+}
+
+.extension-scan-receipt.compact summary > span:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.extension-scan-receipt.compact summary strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.extension-scan-receipt.compact summary em,
+.extension-scan-mini-stats em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 780;
+}
+
+.extension-scan-mini-stats {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.extension-scan-mini-stats em {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.extension-scan-receipt-body {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  padding: 12px;
 }
 
 .extension-scan-receipt.ok {
@@ -723,16 +803,16 @@ a {
 }
 
 .extension-quick-check {
-  align-items: center;
+  align-items: start;
   background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: var(--shadow);
-  display: flex;
+  box-shadow: none;
+  display: grid;
   gap: 16px;
-  justify-content: space-between;
-  margin: -12px 0 24px;
-  padding: 14px 16px;
+  justify-content: stretch;
+  margin: 0;
+  padding: 14px;
 }
 
 .extension-quick-check.ok {
@@ -769,12 +849,38 @@ a {
   font-weight: 820;
 }
 
+.extension-bridge-status {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 850;
+  margin-top: 3px;
+  min-height: 28px;
+  padding: 0 9px;
+  width: fit-content;
+}
+
+.extension-bridge-status.ok {
+  background: color-mix(in srgb, var(--green) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--green) 28%, var(--border));
+  color: var(--green);
+}
+
+.extension-bridge-status.warn {
+  background: color-mix(in srgb, var(--amber) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+  color: var(--amber);
+}
+
 .extension-quick-actions {
   display: flex;
   flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .scan-progress-panel {
@@ -3370,6 +3476,10 @@ textarea {
 
   .scan-scope-panel {
     max-width: none;
+  }
+
+  .scan-command-grid {
+    grid-template-columns: 1fr;
   }
 
   .scan-scope-fields {

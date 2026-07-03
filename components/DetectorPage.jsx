@@ -68,6 +68,7 @@ const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
+const REQUIRED_EXTENSION_VERSION = "0.1.19";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -100,9 +101,56 @@ export default function DetectorPage({ session }) {
   const [openedStudioRuns, setOpenedStudioRuns] = useState(() => new Set());
   const [collapsedChannels, setCollapsedChannels] = useState(() => new Set());
   const [extensionRequest, setExtensionRequest] = useState({ status: "idle", message: "" });
+  const [extensionBridge, setExtensionBridge] = useState({
+    status: "checking",
+    version: "",
+    message: "Checking dashboard extension bridge..."
+  });
 
   useEffect(() => {
     refresh();
+  }, []);
+
+  useEffect(() => {
+    let bridgeReady = false;
+    let cancelled = false;
+    let missingTimer = null;
+    function markReady(version = "") {
+      if (cancelled) return;
+      bridgeReady = true;
+      setExtensionBridge({
+        status: "ready",
+        version,
+        message: version ? `Dashboard bridge ready (v${version}).` : "Dashboard bridge ready."
+      });
+    }
+    function onMessage(event) {
+      if (event.source !== window) return;
+      const message = event.data || {};
+      if (message.source !== "youtube-ab-tests-extension" || message.type !== "bridge-ready") return;
+      markReady(message.version || "");
+    }
+    window.addEventListener("message", onMessage);
+    requestExtension("ping-extension", { timeoutMs: 1600 })
+      .then((response) => {
+        if (response?.ok) markReady(response.version || "");
+      })
+      .catch(() => {
+        missingTimer = window.setTimeout(() => {
+          if (!bridgeReady && !cancelled) {
+            setExtensionBridge({
+              status: "missing",
+              version: "",
+              message: "The extension popup is separate; this dashboard page has not connected to the extension bridge yet."
+            });
+          }
+        }, 150);
+      });
+    return () => {
+      cancelled = true;
+      if (missingTimer) window.clearTimeout(missingTimer);
+      window.removeEventListener("message", onMessage);
+    };
   }, []);
 
   useEffect(() => {
@@ -270,15 +318,15 @@ export default function DetectorPage({ session }) {
           ? extensionScanSummary(response)
           : type === "open-notification-page"
             ? response.reused
-              ? "YouTube bell watcher is already open."
-              : "YouTube bell watcher opened. Click Check Studio now after the page loads."
+              ? "YouTube home is already open for bell checks."
+              : "YouTube home opened. Open the bell menu if needed, then click Check now."
             : "Miss report sent with the latest scan diagnostics.";
       setExtensionRequest({ status: "ok", message });
       window.setTimeout(() => refresh(), 800);
     } catch (err) {
       setExtensionRequest({
         status: "warn",
-        message: `${err.message} Install/update extension 0.1.18, then reload this page.`
+        message: `${err.message} Install/update extension ${REQUIRED_EXTENSION_VERSION}, reload this dashboard page, then try again.`
       });
     }
   }
@@ -516,65 +564,74 @@ export default function DetectorPage({ session }) {
             </div>
           </div>
           <div className="scan-scope-panel">
-            <div className="scan-scope-fields">
-              <div className="scan-channel-control">
-                <span className="filter-label">Scan channels</span>
-                <div className="scan-channel-chips" aria-label="Scan channels">
-                  {primaryScanChannels.map((item) => {
-                    const active = item === "all" ? scanChannels.length === 0 : scanChannels.includes(item);
-                    return (
+            <div className="scan-command-grid">
+              <div className="scan-scope-fields">
+                <div className="scan-channel-control">
+                  <span className="filter-label">Scan channels</span>
+                  <div className="scan-channel-chips" aria-label="Scan channels">
+                    {primaryScanChannels.map((item) => {
+                      const active = item === "all" ? scanChannels.length === 0 : scanChannels.includes(item);
+                      return (
+                        <button
+                          key={item}
+                          type="button"
+                          className={active ? "active" : ""}
+                          style={scanChipStyle(item)}
+                          onClick={() => toggleScanChannel(item)}
+                        >
+                          {item === "all" ? "All channels" : item}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="scan-channel-meta">
+                    <span>{scanChannels.length ? `${scanChannels.length} selected` : "All configured channels"}</span>
+                    {extraScanChannels.length ? (
+                      <details className="more-scan-channels">
+                        <summary>More channels</summary>
+                        <div className="scan-channel-chips compact" aria-label="More scan channels">
+                          {extraScanChannels.map((item) => {
+                            const active = scanChannels.includes(item);
+                            return (
+                              <button
+                                key={item}
+                                type="button"
+                                className={active ? "active" : ""}
+                                style={scanChipStyle(item)}
+                                onClick={() => toggleScanChannel(item)}
+                              >
+                                {item}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="filter-control scan-type-control">
+                  <span className="filter-label">Scan type</span>
+                  <div className="segmented" aria-label="Scan type">
+                    {["all", "title", "thumbnail"].map((item) => (
                       <button
                         key={item}
+                        className={scanType === item ? "active" : ""}
+                        onClick={() => setScanType(item)}
                         type="button"
-                        className={active ? "active" : ""}
-                        style={scanChipStyle(item)}
-                        onClick={() => toggleScanChannel(item)}
                       >
-                        {item === "all" ? "All channels" : item}
+                        {item === "all" ? "All" : titleCase(item)}
                       </button>
-                    );
-                  })}
-                </div>
-                <div className="scan-channel-meta">
-                  <span>{scanChannels.length ? `${scanChannels.length} selected` : "All configured channels"}</span>
-                  {extraScanChannels.length ? (
-                    <details className="more-scan-channels">
-                      <summary>More channels</summary>
-                      <div className="scan-channel-chips compact" aria-label="More scan channels">
-                        {extraScanChannels.map((item) => {
-                          const active = scanChannels.includes(item);
-                          return (
-                            <button
-                              key={item}
-                              type="button"
-                              className={active ? "active" : ""}
-                              style={scanChipStyle(item)}
-                              onClick={() => toggleScanChannel(item)}
-                            >
-                              {item}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </details>
-                  ) : null}
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div className="filter-control scan-type-control">
-                <span className="filter-label">Scan type</span>
-                <div className="segmented" aria-label="Scan type">
-                  {["all", "title", "thumbnail"].map((item) => (
-                    <button
-                      key={item}
-                      className={scanType === item ? "active" : ""}
-                      onClick={() => setScanType(item)}
-                      type="button"
-                    >
-                      {item === "all" ? "All" : titleCase(item)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <ExtensionQuickCheck
+                request={extensionRequest}
+                bridge={extensionBridge}
+                onCheck={() => sendExtensionCommand("check-studio-now")}
+                onOpenNotifications={() => sendExtensionCommand("open-notification-page")}
+                onReportMiss={() => sendExtensionCommand("report-missed-notification")}
+              />
             </div>
             <div className="scan-action-row">
               <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
@@ -597,6 +654,7 @@ export default function DetectorPage({ session }) {
             <p className="scan-scope-help">
               Selected scan is scoped. Full refresh scans all sheets and reconciles missing rows. Thumbnail rebuild is slower and only needed when previews look stale.
             </p>
+            <ExtensionScanReceipt connectorStatus={connectorStatus} compact />
           </div>
         </section>
 
@@ -605,15 +663,6 @@ export default function DetectorPage({ session }) {
           connectorStatus={connectorStatus}
           runs={runs}
           selectedChannel={viewChannel}
-        />
-
-        <ExtensionScanReceipt connectorStatus={connectorStatus} />
-
-        <ExtensionQuickCheck
-          request={extensionRequest}
-          onCheck={() => sendExtensionCommand("check-studio-now")}
-          onOpenNotifications={() => sendExtensionCommand("open-notification-page")}
-          onReportMiss={() => sendExtensionCommand("report-missed-notification")}
         />
 
         <ScanProgress
@@ -934,7 +983,7 @@ function ConnectorCoveragePanel({ connectorConfig, connectorStatus, runs, select
   );
 }
 
-function ExtensionScanReceipt({ connectorStatus }) {
+function ExtensionScanReceipt({ connectorStatus, compact = false }) {
   const receipt = latestExtensionScanReceipt(connectorStatus);
   if (!receipt) return null;
   const totals = receipt.scan.totals || {};
@@ -947,6 +996,46 @@ function ExtensionScanReceipt({ connectorStatus }) {
   const diagnosisWarn = diagnosis?.severity === "warn" || diagnosis?.severity === "error";
   const tone = failed || diagnosisWarn ? "warn" : found ? "ok" : "neutral";
   const stages = extensionScanStages(tabs, totals);
+  const tabCount = Number(totals.tabs || tabs.length);
+  const received = Number(totals.received || 0);
+  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Sent ${received} signal${received === 1 ? "" : "s"}: ${matched} matched, ${unmatched} unregistered.`;
+  if (compact) {
+    return (
+      <details className={`extension-scan-receipt compact ${tone}`} open={Boolean(found || failed || diagnosisWarn)}>
+        <summary>
+          <span>
+            <strong>Latest extension scan</strong>
+            <em>{found ? `${found} A/B candidate${found === 1 ? "" : "s"} found` : "No finish candidates found"}</em>
+          </span>
+          <span className="extension-scan-mini-stats">
+            <em>{matched} matched</em>
+            <em>{unmatched} unregistered</em>
+          </span>
+          <ChevronDown size={16} />
+        </summary>
+        <div className="extension-scan-receipt-body">
+          <div className="extension-scan-copy">
+            <p>{summaryText}</p>
+            {diagnosis && diagnosis.severity !== "ok" ? (
+              <div className={`extension-scan-diagnosis ${diagnosisWarn ? "warn" : "info"}`}>
+                <strong>{diagnosisWarn ? "Scan warning" : "Scan note"}</strong>
+                <span>{diagnosis.message}</span>
+                {diagnosis.action ? <em>{diagnosis.action}</em> : null}
+              </div>
+            ) : null}
+          </div>
+          <div className="extension-scan-stage-row" aria-label="Extension scan stages">
+            {stages.map((stage) => (
+              <span className={`extension-scan-stage ${stage.state}`} key={stage.key}>
+                <strong>{stage.label}</strong>
+                <em>{stage.value}</em>
+              </span>
+            ))}
+          </div>
+        </div>
+      </details>
+    );
+  }
   return (
     <section className={`extension-scan-receipt ${tone}`}>
       <div className="extension-scan-copy">
@@ -956,11 +1045,7 @@ function ExtensionScanReceipt({ connectorStatus }) {
             ? `${found} A/B candidate${found === 1 ? "" : "s"} found`
             : "No A/B finish candidates found"}
         </h3>
-        <p>
-          Checked {Number(totals.tabs || tabs.length)} notification tab{Number(totals.tabs || tabs.length) === 1 ? "" : "s"}
-          {receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Sent {Number(totals.received || 0)} signal
-          {Number(totals.received || 0) === 1 ? "" : "s"}: {matched} matched, {unmatched} needs matching.
-        </p>
+        <p>{summaryText}</p>
         {diagnosis && diagnosis.severity !== "ok" ? (
           <div className={`extension-scan-diagnosis ${diagnosisWarn ? "warn" : "info"}`}>
             <strong>{diagnosisWarn ? "Scan warning" : "Scan note"}</strong>
@@ -1081,26 +1166,34 @@ function extensionScanStages(tabs, totals) {
   ];
 }
 
-function ExtensionQuickCheck({ request, onCheck, onOpenNotifications, onReportMiss }) {
+function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, onReportMiss }) {
   const running = request.status === "running";
   const tone = request.status === "ok" ? "ok" : request.status === "warn" ? "warn" : "neutral";
+  const bridgeTone = bridge?.status === "ready" ? "ok" : bridge?.status === "missing" ? "warn" : "neutral";
   return (
     <section className={`extension-quick-check ${tone}`}>
       <div className="extension-quick-copy">
         <span className="eyebrow">Real signal scan</span>
-        <h3>Check YouTube bell now</h3>
+        <h3>Check visible Studio notifications</h3>
         <p>
-          Uses the Chrome extension to read open Studio tabs and the YouTube bell watcher. It does not open channel watcher tabs or change YouTube.
+          Reads open Studio tabs and the YouTube bell menu in this Chrome profile. It never edits YouTube.
         </p>
+        <span className={`extension-bridge-status ${bridgeTone}`}>
+          {bridge?.status === "ready"
+            ? `Dashboard bridge ready${bridge.version ? ` · v${bridge.version}` : ""}`
+            : bridge?.status === "missing"
+              ? "Dashboard page not connected to extension. Reload this page after updating."
+              : "Checking dashboard bridge..."}
+        </span>
         {request.message ? <em>{request.message}</em> : null}
       </div>
       <div className="extension-quick-actions">
         <button className="primary-button" type="button" onClick={onCheck} disabled={running}>
           <BellRing size={17} />
-          {running ? "Checking" : "Check Studio now"}
+          {running ? "Checking" : "Check now"}
         </button>
         <button className="secondary-button" type="button" onClick={onOpenNotifications} disabled={running}>
-          Open YouTube bell watcher
+          Open YouTube home
         </button>
         <button className="quiet-button" type="button" onClick={onReportMiss} disabled={running}>
           I see a missed notification
@@ -2510,14 +2603,14 @@ function normalizeNotificationAgeLabel(value) {
   return `${amount} ${unit}${amount === 1 ? "" : "s"} ago`;
 }
 
-function requestExtension(type) {
+function requestExtension(type, { timeoutMs = 12000 } = {}) {
   if (typeof window === "undefined") return Promise.reject(new Error("Browser extension bridge is unavailable."));
   const requestId = `ytab_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       window.removeEventListener("message", onMessage);
-      reject(new Error("Chrome extension did not respond."));
-    }, 12000);
+      reject(new Error("Chrome extension did not respond from this dashboard page."));
+    }, timeoutMs);
     function onMessage(event) {
       if (event.source !== window) return;
       const message = event.data || {};
@@ -2532,9 +2625,9 @@ function requestExtension(type) {
 }
 
 function extensionCommandLoadingText(type) {
-  if (type === "open-notification-page") return "Opening or reusing the YouTube bell watcher...";
+  if (type === "open-notification-page") return "Opening or reusing YouTube home for a bell check...";
   if (type === "report-missed-notification") return "Sending a debug snapshot from the extension...";
-  return "Asking the Chrome extension to scan open Studio tabs and the YouTube bell watcher...";
+  return "Asking the Chrome extension to scan open Studio tabs and the YouTube bell menu...";
 }
 
 function extensionScanSummary(response) {
@@ -2550,7 +2643,7 @@ function extensionScanSummary(response) {
     },
     { tabs: 0, candidates: 0, received: 0, matched: 0, unmatched: 0 }
   );
-  if (!totals.tabs) return "No Studio or YouTube bell watcher tabs were open.";
+  if (!totals.tabs) return "No Studio or YouTube bell tabs were open.";
   if (!totals.received) return `Checked ${totals.tabs} tab${totals.tabs === 1 ? "" : "s"}; no finish notification text was captured.`;
   return `Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered.`;
 }
