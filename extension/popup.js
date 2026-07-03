@@ -1,40 +1,49 @@
 let autoConnectionChecked = false;
+let actionRunning = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("versionBadge").textContent = `v${chrome.runtime.getManifest().version}`;
   await render();
   document.getElementById("smartStart").addEventListener("click", async () => {
-    await runPrimaryAction();
+    await withBusy(() => runPrimaryAction());
   });
   document.getElementById("openWatchers").addEventListener("click", async () => {
-    await openWatcherTargets([], "Opening missing Studio watcher tabs...");
+    await withBusy(() => openWatcherTargets([], "Opening missing Studio watcher tabs..."));
   });
   document.getElementById("scan").addEventListener("click", async () => {
-    setSummary("Scanning open Studio tabs and the YouTube bell menu...");
-    const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
-    setSummary(scanResultText(response));
-    await render();
-    setSummary(scanResultText(response));
+    await withBusy(async () => {
+      setSummary("Scanning open Studio tabs and the YouTube bell menu...");
+      const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
+      setSummary(scanResultText(response));
+      await render();
+      setSummary(scanResultText(response));
+    });
   });
   document.getElementById("openNotifications").addEventListener("click", async () => {
-    setSummary("Opening or reusing YouTube home for a bell check...");
-    const response = await chrome.runtime.sendMessage({ type: "open-notification-page" });
-    setSummary(response?.ok ? (response.reused ? "YouTube home is already open for bell checks." : "YouTube home opened. Open the bell menu if needed, then run Check now.") : response?.error || "Could not open YouTube home.");
-    await render();
+    await withBusy(async () => {
+      setSummary("Opening or reusing YouTube home for a bell check...");
+      const response = await chrome.runtime.sendMessage({ type: "open-notification-page" });
+      setSummary(response?.ok ? (response.reused ? "YouTube home is already open for bell checks." : "YouTube home opened. Open the bell menu if needed, then run Check now.") : response?.error || "Could not open YouTube home.");
+      await render();
+    });
   });
   document.getElementById("deepScan").addEventListener("click", async () => {
-    setSummary("Checking up to 8 active test pages. Read-only; no YouTube changes.");
-    const response = await chrome.runtime.sendMessage({ type: "deep-scan-active-videos" });
-    setSummary(deepScanResultText(response));
-    await render();
-    setSummary(deepScanResultText(response));
+    await withBusy(async () => {
+      setSummary("Checking up to 8 active test pages. Read-only; no YouTube changes.");
+      const response = await chrome.runtime.sendMessage({ type: "deep-scan-active-videos" });
+      setSummary(deepScanResultText(response));
+      await render();
+      setSummary(deepScanResultText(response));
+    });
   });
   document.getElementById("heartbeat").addEventListener("click", async () => {
-    setSummary("Checking dashboard connection...");
-    const response = await chrome.runtime.sendMessage({ type: "send-heartbeat" });
-    setSummary(connectionResultText(response));
-    await render();
-    setSummary(connectionResultText(response));
+    await withBusy(async () => {
+      setSummary("Checking dashboard connection...");
+      const response = await chrome.runtime.sendMessage({ type: "send-heartbeat" });
+      setSummary(connectionResultText(response));
+      await render();
+      setSummary(connectionResultText(response));
+    });
   });
   document.getElementById("options").addEventListener("click", () => chrome.runtime.openOptionsPage());
 });
@@ -106,6 +115,7 @@ async function runPrimaryAction() {
 
 async function maybeAutoCheckConnection({ sync, local, connectorConfig }) {
   if (autoConnectionChecked) return;
+  if (actionRunning) return;
   if (!sync.appUrl || connectorConfig?.ok === false) return;
   const lastChecked = local.lastHeartbeatAt ? new Date(local.lastHeartbeatAt).getTime() : 0;
   const stale = !lastChecked || Date.now() - lastChecked > 10 * 60 * 1000;
@@ -115,6 +125,27 @@ async function maybeAutoCheckConnection({ sync, local, connectorConfig }) {
     .sendMessage({ type: "send-heartbeat" })
     .then(() => render())
     .catch(() => {});
+}
+
+async function withBusy(task) {
+  if (actionRunning) return;
+  actionRunning = true;
+  setControlsDisabled(true);
+  try {
+    await task();
+  } catch (error) {
+    setSummary(error.message || "Extension action failed.");
+  } finally {
+    actionRunning = false;
+    setControlsDisabled(false);
+  }
+}
+
+function setControlsDisabled(disabled) {
+  ["smartStart", "openWatchers", "scan", "openNotifications", "deepScan", "heartbeat"].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.disabled = disabled;
+  });
 }
 
 function renderScanLog(scanAt, result) {

@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.20";
+const EXTENSION_VERSION = "0.1.21";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -9,6 +9,8 @@ const DEFAULT_SETTINGS = {
   channels: "Jotform, AI Agents Podcast, AI Agents",
   connectorId: ""
 };
+let studioScrapePromise = null;
+let watcherOpenPromise = null;
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings();
@@ -26,8 +28,18 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "youtube-ab-heartbeat") return;
-  await sendHeartbeat();
-  await requestStudioScrape();
+  await sendHeartbeat().catch((error) => appendDiagnosticLog({
+    category: "heartbeat",
+    severity: "warning",
+    message: "Scheduled heartbeat failed",
+    context: { error: error.message }
+  }));
+  await requestStudioScrapeGuarded().catch((error) => appendDiagnosticLog({
+    category: "extension_scan",
+    severity: "warning",
+    message: "Scheduled scan failed",
+    context: { error: error.message }
+  }));
   scheduleHourlyAlarm();
 });
 
@@ -45,7 +57,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === "scan-studio-tab") {
-    requestStudioScrape()
+    requestStudioScrapeGuarded()
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -69,13 +81,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === "open-watcher-tabs") {
-    openWatcherTabs(message.targets || [], { onlyMissing: message.onlyMissing !== false })
+    openWatcherTabsGuarded(message.targets || [], { onlyMissing: message.onlyMissing !== false })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (message?.type === "smart-start-watching") {
-    openWatcherTabs([], { onlyMissing: true, runScan: true })
+    openWatcherTabsGuarded([], { onlyMissing: true, runScan: true })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -104,6 +116,22 @@ function scheduleHourlyAlarm() {
     delayInMinutes: minutesUntilNextHour(),
     periodInMinutes: 60
   });
+}
+
+function requestStudioScrapeGuarded() {
+  if (studioScrapePromise) return studioScrapePromise;
+  studioScrapePromise = requestStudioScrape().finally(() => {
+    studioScrapePromise = null;
+  });
+  return studioScrapePromise;
+}
+
+function openWatcherTabsGuarded(requestedTargets = [], options = {}) {
+  if (watcherOpenPromise) return watcherOpenPromise;
+  watcherOpenPromise = openWatcherTabs(requestedTargets, options).finally(() => {
+    watcherOpenPromise = null;
+  });
+  return watcherOpenPromise;
 }
 
 async function requestStudioScrape() {
@@ -459,7 +487,7 @@ async function openWatcherTabs(requestedTargets = [], options = {}) {
   let scan = null;
   if (options.runScan !== false) {
     if (opened.length) await delay(1500);
-    scan = await requestStudioScrape().catch((error) => ({ ok: false, error: error.message }));
+    scan = await requestStudioScrapeGuarded().catch((error) => ({ ok: false, error: error.message }));
   }
   await chrome.storage.local.set({
     lastWatcherOpenAt: new Date().toISOString(),
@@ -525,7 +553,7 @@ async function reportMissedNotification() {
     message: "User reported a visible A/B finish notification that was not captured",
     context: { reportedAt: new Date().toISOString() }
   });
-  const scan = await requestStudioScrape().catch((error) => ({ ok: false, error: error.message }));
+  const scan = await requestStudioScrapeGuarded().catch((error) => ({ ok: false, error: error.message }));
   const heartbeat = await sendHeartbeat({ userReportedMiss: true, lastStudioScan: await buildLastStudioScanPayload() })
     .catch((error) => ({ ok: false, error: error.message }));
   return { ok: scan.ok !== false, scan, heartbeat };
