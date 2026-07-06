@@ -4,6 +4,7 @@ import {
   detectAppliedChange,
   detectNotificationOutcome,
   explainUnmatchedFinishEvent,
+  expandConnectorEventInputs,
   extractFinishNotificationSnippets,
   isLikelyFinishNotification,
   matchFinishEventToRun,
@@ -69,6 +70,32 @@ test("extracts recent YouTube bell A/B notifications with exact age text", () =>
     "A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner",
     "A/B test inconclusive How to Create Forms from Spreadsheets in ChatGPT: The test completed with no winner"
   ]));
+});
+
+test("expands raw connector text blocks into app-parsed finish events", () => {
+  const rawText = [
+    "Notifications All Earn Policy Analytics Ideas News Today",
+    "A/B test performed well for all How to Add Conditional Questions in Google Forms (Branching Logic Tutorial): Results with very similar performance 21 hours ago",
+    "Video can't be monetized: Claimed content found in another video",
+    "A/B test won How to Use Claude App to Create Conditional Logic: We updated your video to use the winner 3 days ago"
+  ].join(" ");
+  const events = expandConnectorEventInputs([
+    {
+      source: "visible_text_block",
+      rawText,
+      channel: "Jotform",
+      channelId: "UC12345678901234567890"
+    }
+  ]);
+  assert.deepEqual(new Set(events.map((event) => event.rawText)), new Set([
+    "A/B test performed well for all How to Add Conditional Questions in Google Forms (Branching Logic Tutorial): Results with very similar performance",
+    "A/B test won How to Use Claude App to Create Conditional Logic: We updated your video to use the winner"
+  ]));
+  const conditional = events.find((event) => event.rawText.includes("Conditional Questions"));
+  const claude = events.find((event) => event.rawText.includes("Claude App"));
+  assert.equal(conditional.videoTitle, "How to Add Conditional Questions in Google Forms (Branching Logic Tutorial)");
+  assert.equal(conditional.notificationAge, "21 hours ago");
+  assert.equal(claude.notificationAge, "3 days ago");
 });
 
 test("detects winner option from notification text", () => {

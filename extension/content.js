@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.23";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.24";
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
@@ -93,6 +93,22 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
   const bodySnippets = finishNotificationSnippets(pageText);
   for (const text of bodySnippets) {
     const event = {
+      rawText: text,
+      url: location.href,
+      videoId: extractVideoId(text),
+      channel,
+      channelId,
+      videoTitle: extractNotificationVideoTitle(text),
+      notificationAge: extractAgeAfterSnippet(pageText, text),
+      observedAt: new Date().toISOString()
+    };
+    if (!rememberEvent(event, includeSeen)) continue;
+    events.push(event);
+    if (events.length >= MAX_EVENTS) break;
+  }
+  for (const text of rawFinishTextWindows(pageText)) {
+    const event = {
+      source: "visible_text_block",
       rawText: text,
       url: location.href,
       videoId: extractVideoId(text),
@@ -280,6 +296,25 @@ function finishNotificationSnippets(rawText) {
     }
   }
   return Array.from(new Set(matches));
+}
+
+function rawFinishTextWindows(rawText) {
+  const text = collapseLongText(rawText);
+  if (!text || !FINISH_TEXT_HINT.test(text)) return [];
+  const windows = [];
+  const seenRanges = [];
+  const pattern = new RegExp(FINISH_TEXT_HINT.source, "gi");
+  for (const match of text.matchAll(pattern)) {
+    const center = match.index || 0;
+    const start = Math.max(0, center - 80);
+    const end = Math.min(text.length, center + 900);
+    if (seenRanges.some((range) => start >= range.start && end <= range.end)) continue;
+    seenRanges.push({ start, end });
+    const value = text.slice(start, end).trim();
+    if (value.length >= MIN_TEXT_LENGTH) windows.push(value);
+    if (windows.length >= 12) break;
+  }
+  return Array.from(new Set(windows));
 }
 
 function extractNotificationVideoTitle(rawText) {
