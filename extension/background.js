@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.24";
+const EXTENSION_VERSION = "0.1.25";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -136,6 +136,20 @@ function openWatcherTabsGuarded(requestedTargets = [], options = {}) {
 
 async function requestStudioScrape() {
   const tabs = await collectScrapeTabs();
+  let results = await scrapeTabs(tabs);
+  if (shouldRetryWithNotificationWatcher(results, tabs)) {
+    await openNotificationPage({ active: false }).catch(() => null);
+    await delay(2600);
+    const retryTabs = await collectScrapeTabs();
+    const retryResults = await scrapeTabs(retryTabs);
+    results = mergeScanResults(results, retryResults);
+  }
+  await saveStudioScanResults(results);
+  await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
+  return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results) };
+}
+
+async function scrapeTabs(tabs) {
   const results = [];
   for (const tab of tabs) {
     try {
@@ -146,6 +160,26 @@ async function requestStudioScrape() {
       results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ok: false, error: error.message });
     }
   }
+  return results;
+}
+
+function shouldRetryWithNotificationWatcher(results, tabs) {
+  const totals = summarizeScanResults(results);
+  if (totals.candidates || totals.received) return false;
+  const hasYoutubeTab = tabs.some((tab) => /^https:\/\/www\.youtube\.com\//i.test(tab.url || ""));
+  return !hasYoutubeTab;
+}
+
+function mergeScanResults(first, second) {
+  const map = new Map();
+  for (const item of [...first, ...second]) {
+    const key = item.tabId || item.tabUrl || `${item.tabTitle}-${map.size}`;
+    map.set(key, item);
+  }
+  return Array.from(map.values());
+}
+
+async function saveStudioScanResults(results) {
   await chrome.storage.local.set({
     lastStudioScanAt: new Date().toISOString(),
     lastStudioScanResult: {
@@ -171,8 +205,6 @@ async function requestStudioScrape() {
       }))
     }
   });
-  await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
-  return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results) };
 }
 
 async function collectScrapeTabs() {
@@ -516,10 +548,10 @@ function isWatcherTargetOpen(target, openStudioUrls) {
   return url ? openStudioUrls.some((item) => String(item).replace(/\/+$/, "").startsWith(url)) : false;
 }
 
-async function openNotificationPage() {
+async function openNotificationPage({ active = true } = {}) {
   const existing = await getNotificationWatcherTab();
   if (existing?.id) {
-    const update = isUnavailableNotificationUrl(existing.url) ? { active: true, url: NOTIFICATION_WATCHER_URL } : { active: true };
+    const update = isUnavailableNotificationUrl(existing.url) ? { active, url: NOTIFICATION_WATCHER_URL } : { active };
     const tab = await chrome.tabs.update(existing.id, update);
     await chrome.storage.local.set({ notificationWatcherTabId: existing.id });
     return { ok: true, reused: true, tabId: existing.id, url: tab.url || existing.url || NOTIFICATION_WATCHER_URL };
@@ -528,12 +560,12 @@ async function openNotificationPage() {
   const youtubeTabs = await chrome.tabs.query({ url: "https://www.youtube.com/*" });
   const reusable = youtubeTabs.find((tab) => !isUnavailableNotificationUrl(tab.url));
   if (reusable?.id) {
-    await chrome.tabs.update(reusable.id, { active: true });
+    await chrome.tabs.update(reusable.id, { active });
     await chrome.storage.local.set({ notificationWatcherTabId: reusable.id });
     return { ok: true, reused: true, tabId: reusable.id, url: reusable.url || NOTIFICATION_WATCHER_URL };
   }
 
-  const created = await chrome.tabs.create({ url: NOTIFICATION_WATCHER_URL, active: true });
+  const created = await chrome.tabs.create({ url: NOTIFICATION_WATCHER_URL, active });
   await chrome.storage.local.set({ notificationWatcherTabId: created.id });
   return { ok: true, reused: false, tabId: created.id, url: created.url || NOTIFICATION_WATCHER_URL };
 }
