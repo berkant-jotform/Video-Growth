@@ -22,6 +22,11 @@ export async function POST(request) {
           ? body.studioTabUrls.map(String).filter(Boolean).slice(0, 20)
           : [],
         studioTabs: sanitizeStudioTabs(body.studioTabs),
+        openYoutubeTabs: Number(body.openYoutubeTabs || 0),
+        notificationWatcherOpen: Boolean(body.notificationWatcherOpen),
+        pendingQueue: sanitizePendingQueue(body.pendingQueue),
+        pendingFlush: sanitizePendingFlush(body.pendingFlush),
+        selfTest: sanitizeSelfTest(body.selfTest),
         userAgent: body.userAgent || "",
         observedAt: body.observedAt || new Date().toISOString(),
         lastStudioScan: sanitizeLastStudioScan(body.lastStudioScan),
@@ -65,14 +70,46 @@ function sanitizeStudioTabs(value) {
   return value.slice(0, 10).map((tab) => ({
     tabTitle: String(tab?.tabTitle || "").slice(0, 160),
     tabUrl: String(tab?.tabUrl || "").slice(0, 300),
-      channel: String(tab?.channel || "").slice(0, 120),
-      channelId: String(tab?.channelId || "").slice(0, 40),
+    channel: String(tab?.channel || "").slice(0, 120),
+    channelId: String(tab?.channelId || "").slice(0, 40),
     notificationButtonFound: Boolean(tab?.notificationButtonFound),
     visibleNotificationContainers: Number(tab?.visibleNotificationContainers || 0),
     bodySnippetCount: Number(tab?.bodySnippetCount || 0),
+    rawWindowCount: Number(tab?.rawWindowCount || 0),
+    finishHintCount: Number(tab?.finishHintCount || 0),
     ok: tab?.ok !== false,
     error: String(tab?.error || "").slice(0, 240)
   }));
+}
+
+function sanitizePendingQueue(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    count: Number(value.count || 0),
+    oldestQueuedAt: String(value.oldestQueuedAt || "").slice(0, 40),
+    newestQueuedAt: String(value.newestQueuedAt || "").slice(0, 40),
+    maxAttempts: Number(value.maxAttempts || 0)
+  };
+}
+
+function sanitizePendingFlush(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    ok: value.ok !== false,
+    flushed: Number(value.flushed || 0),
+    remaining: Number(value.remaining || 0),
+    duplicate: Number(value.duplicate || 0),
+    error: String(value.error || "").slice(0, 240)
+  };
+}
+
+function sanitizeSelfTest(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    ok: value.ok !== false,
+    issues: Array.isArray(value.issues) ? value.issues.map(String).slice(0, 12) : [],
+    checkedAt: String(value.checkedAt || "").slice(0, 40)
+  };
 }
 
 function sanitizeExtensionDiagnosticLog(value) {
@@ -108,10 +145,12 @@ function sanitizeLastStudioScan(value) {
       failed: Number(totals.failed || 0),
       received: Number(totals.received || 0),
       matched: Number(totals.matched || 0),
-        unmatched: Number(totals.unmatched || 0),
-        ignored: Number(totals.ignored || 0),
-        youtubeResolved: Number(totals.youtubeResolved || 0),
-        candidates: Number(totals.candidates || 0)
+      unmatched: Number(totals.unmatched || 0),
+      ignored: Number(totals.ignored || 0),
+      youtubeResolved: Number(totals.youtubeResolved || 0),
+      queued: Number(totals.queued || 0),
+      duplicate: Number(totals.duplicate || 0),
+      candidates: Number(totals.candidates || 0)
     },
     tabs: Array.isArray(value.tabs)
       ? value.tabs.slice(0, 8).map((tab) => ({
@@ -121,11 +160,17 @@ function sanitizeLastStudioScan(value) {
           error: String(tab.error || "").slice(0, 240),
           received: Number(tab.received || 0),
           matched: Number(tab.matched || 0),
-            unmatched: Number(tab.unmatched || 0),
-            youtubeResolved: Number(tab.youtubeResolved || 0),
-            candidates: Number(tab.candidates || 0),
+          unmatched: Number(tab.unmatched || 0),
+          ignored: Number(tab.ignored || 0),
+          youtubeResolved: Number(tab.youtubeResolved || 0),
+          queued: Number(tab.queued || 0),
+          duplicate: Number(tab.duplicate || 0),
+          candidates: Number(tab.candidates || 0),
           menuOpened: Boolean(tab.menuOpened),
           channel: String(tab.channel || "").slice(0, 120),
+          rawWindowCount: Number(tab.rawWindowCount || 0),
+          finishHintCount: Number(tab.finishHintCount || 0),
+          debugSample: String(tab.debugSample || "").slice(0, 700),
           previews: Array.isArray(tab.previews)
             ? tab.previews.slice(0, 3).map((preview) => ({
                 title: String(preview.title || "").slice(0, 180),

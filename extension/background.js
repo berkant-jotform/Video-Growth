@@ -1,7 +1,11 @@
-const EXTENSION_VERSION = "0.1.26";
+const EXTENSION_VERSION = "0.1.27";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
+const PENDING_EVENT_QUEUE_KEY = "pendingConnectorEvents";
+const RECENT_EVENT_KEYS_KEY = "recentConnectorEventKeys";
+const MAX_PENDING_EVENTS = 200;
+const RECENT_EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
   connectorToken: "",
@@ -296,11 +300,13 @@ function summarizeTabScanResult(tab) {
     ok: tab.ok !== false,
     error: tab.error || "",
     received: Number(tab.received || 0),
-      matched: Number(tab.matched || 0),
-      unmatched: Number(tab.unmatched || 0),
-      ignored: Number(tab.ignored || 0),
-      youtubeResolved: Number(tab.youtubeResolved || 0),
-      candidates: Number(tab.candidates || 0),
+    matched: Number(tab.matched || 0),
+    unmatched: Number(tab.unmatched || 0),
+    ignored: Number(tab.ignored || 0),
+    youtubeResolved: Number(tab.youtubeResolved || 0),
+    queued: Number(tab.queued || 0),
+    duplicate: Number(tab.duplicate || 0),
+    candidates: Number(tab.candidates || 0),
     diagnostics: tab.diagnostics || {},
     previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 5) : []
   };
@@ -313,13 +319,15 @@ function summarizeScanResults(results) {
       if (item.ok === false) total.failed += 1;
       total.received += Number(item.received || 0);
       total.matched += Number(item.matched || 0);
-        total.unmatched += Number(item.unmatched || 0);
-        total.ignored += Number(item.ignored || 0);
-        total.youtubeResolved += Number(item.youtubeResolved || 0);
-        total.candidates += Number(item.candidates || 0);
+      total.unmatched += Number(item.unmatched || 0);
+      total.ignored += Number(item.ignored || 0);
+      total.youtubeResolved += Number(item.youtubeResolved || 0);
+      total.queued += Number(item.queued || 0);
+      total.duplicate += Number(item.duplicate || 0);
+      total.candidates += Number(item.candidates || 0);
       return total;
     },
-      { tabs: 0, failed: 0, received: 0, matched: 0, unmatched: 0, ignored: 0, youtubeResolved: 0, candidates: 0 }
+    { tabs: 0, failed: 0, received: 0, matched: 0, unmatched: 0, ignored: 0, youtubeResolved: 0, queued: 0, duplicate: 0, candidates: 0 }
   );
 }
 
@@ -330,6 +338,8 @@ function buildScanDiagnosis(results) {
   const notificationButtons = tabs.filter((item) => item.diagnostics.notificationButtonFound).length;
   const visibleContainers = tabs.reduce((sum, item) => sum + Number(item.diagnostics.visibleNotificationContainers || 0), 0);
   const bodySnippetCount = tabs.reduce((sum, item) => sum + Number(item.diagnostics.bodySnippetCount || 0), 0);
+  const rawWindowCount = tabs.reduce((sum, item) => sum + Number(item.diagnostics.rawWindowCount || 0), 0);
+  const finishHintCount = tabs.reduce((sum, item) => sum + Number(item.diagnostics.finishHintCount || 0), 0);
 
   if (!totals.tabs) {
     return {
@@ -348,6 +358,14 @@ function buildScanDiagnosis(results) {
     };
   }
   if (totals.candidates > 0 && totals.received === 0 && totals.ignored === 0) {
+    if (totals.queued > 0) {
+      return {
+        severity: "warn",
+        code: "queued_for_retry",
+        message: "The extension found A/B finish text but could not post it yet.",
+        action: "The signal was saved locally and will retry automatically."
+      };
+    }
     return {
       severity: "warn",
       code: "send_failed",
@@ -387,7 +405,7 @@ function buildScanDiagnosis(results) {
       action: "Open the bell notifications panel manually, keep it visible, then scan again."
     };
   }
-  if (bodySnippetCount > 0) {
+  if (bodySnippetCount > 0 || rawWindowCount > 0 || finishHintCount > 0) {
     return {
       severity: "warn",
       code: "parser_missed_visible_text",
@@ -477,6 +495,58 @@ async function postEvents(events, tabUrl) {
   if (!events.length) return { ok: true, received: 0 };
   const settings = await getSettings();
   requireConfigured(settings);
+  await flushPendingEvents(settings).catch(() => null);
+  const freshEvents = await filterDuplicateEvents(events);
+  if (!freshEvents.length) {
+    return { ok: true, received: 0, matched: 0, unmatched: 0, ignored: 0, duplicate: events.length };
+  }
+  const { response, payload } = await sendEventsBatch(settings, freshEvents, tabUrl).catch(async (error) => {
+    await enqueuePendingEvents(freshEvents, tabUrl, error.message);
+    await appendDiagnosticLog({
+      category: "connector_events",
+      severity: "warning",
+      message: "Connector events queued for retry",
+      context: { tabUrl, events: freshEvents.length, error: error.message }
+    });
+    return {
+      response: { ok: true },
+      payload: { ok: true, received: 0, matched: 0, unmatched: 0, ignored: 0, queued: freshEvents.length, error: error.message }
+    };
+  });
+  await chrome.storage.local.set({
+    lastEventPostAt: new Date().toISOString(),
+    lastEventPostResult: payload,
+    lastEventPostOk: response.ok
+  });
+  if (!response.ok) {
+    await appendDiagnosticLog({
+      category: "connector_events",
+      severity: "error",
+      message: payload.error || `Connector event post failed: ${response.status}`,
+      context: { status: response.status, tabUrl, events: events.length }
+    });
+    throw new Error(payload.error || `Connector event post failed: ${response.status}`);
+  }
+  if (!payload.queued) await rememberPostedEvents(freshEvents);
+  await appendDiagnosticLog({
+    category: "connector_events",
+    severity: payload.queued ? "warning" : payload.matched ? "info" : "warning",
+    message: "Connector events posted",
+    context: {
+      tabUrl,
+      received: payload.received || freshEvents.length,
+      matched: payload.matched || 0,
+      unmatched: payload.unmatched || 0,
+      ignored: payload.ignored || 0,
+      youtubeResolved: payload.youtubeResolved || 0,
+      queued: payload.queued || 0,
+      duplicate: events.length - freshEvents.length
+      }
+  });
+  return { ...payload, duplicate: events.length - freshEvents.length };
+}
+
+async function sendEventsBatch(settings, events, tabUrl) {
   const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/events`, {
     method: "POST",
     headers: {
@@ -493,34 +563,121 @@ async function postEvents(events, tabUrl) {
     })
   });
   const payload = await response.json().catch(() => ({}));
-  await chrome.storage.local.set({
-    lastEventPostAt: new Date().toISOString(),
-    lastEventPostResult: payload,
-    lastEventPostOk: response.ok
-  });
-  if (!response.ok) {
+  if (!response.ok) throw new Error(payload.error || `Connector event post failed: ${response.status}`);
+  return { response, payload };
+}
+
+async function enqueuePendingEvents(events, tabUrl, reason = "") {
+  const local = await chrome.storage.local.get([PENDING_EVENT_QUEUE_KEY]).catch(() => ({}));
+  const current = Array.isArray(local[PENDING_EVENT_QUEUE_KEY]) ? local[PENDING_EVENT_QUEUE_KEY] : [];
+  const pendingKeys = new Set(current.map((item) => eventKey(item.event || item)));
+  const uniqueEvents = [];
+  for (const event of events) {
+    const key = eventKey(event);
+    if (pendingKeys.has(key)) continue;
+    pendingKeys.add(key);
+    uniqueEvents.push(event);
+  }
+  const next = [
+    ...current,
+    ...uniqueEvents.map((event) => ({
+      event,
+      tabUrl,
+      reason,
+      attempts: 0,
+      queuedAt: new Date().toISOString(),
+      lastTriedAt: ""
+    }))
+  ].slice(-MAX_PENDING_EVENTS);
+  await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: next });
+}
+
+async function flushPendingEvents(settings = null) {
+  const resolvedSettings = settings || await getSettings();
+  requireConfigured(resolvedSettings);
+  const local = await chrome.storage.local.get([PENDING_EVENT_QUEUE_KEY]).catch(() => ({}));
+  const queue = Array.isArray(local[PENDING_EVENT_QUEUE_KEY]) ? local[PENDING_EVENT_QUEUE_KEY] : [];
+  if (!queue.length) return { ok: true, flushed: 0, remaining: 0 };
+  const fresh = [];
+  const remaining = [];
+  for (const item of queue) {
+    const event = item.event || item;
+    if (await isRecentDuplicate(event)) continue;
+    fresh.push({ ...item, event });
+  }
+  if (!fresh.length) {
+    await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: [] });
+    return { ok: true, flushed: 0, remaining: 0, duplicate: queue.length };
+  }
+  try {
+    const events = fresh.map((item) => item.event);
+    await sendEventsBatch(resolvedSettings, events, "pending-retry");
+    await rememberPostedEvents(events);
+    await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: remaining });
     await appendDiagnosticLog({
       category: "connector_events",
-      severity: "error",
-      message: payload.error || `Connector event post failed: ${response.status}`,
-      context: { status: response.status, tabUrl, events: events.length }
+      severity: "info",
+      message: "Pending connector events retried successfully",
+      context: { flushed: events.length }
     });
-    throw new Error(payload.error || `Connector event post failed: ${response.status}`);
+    return { ok: true, flushed: events.length, remaining: 0 };
+  } catch (error) {
+    const next = fresh.map((item) => ({
+      ...item,
+      attempts: Number(item.attempts || 0) + 1,
+      lastTriedAt: new Date().toISOString(),
+      reason: error.message
+    })).slice(-MAX_PENDING_EVENTS);
+    await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: next });
+    return { ok: false, flushed: 0, remaining: next.length, error: error.message };
   }
-  await appendDiagnosticLog({
-    category: "connector_events",
-    severity: payload.matched ? "info" : "warning",
-    message: "Connector events posted",
-    context: {
-      tabUrl,
-      received: payload.received || events.length,
-        matched: payload.matched || 0,
-        unmatched: payload.unmatched || 0,
-        ignored: payload.ignored || 0,
-        youtubeResolved: payload.youtubeResolved || 0
-      }
-  });
-  return payload;
+}
+
+async function filterDuplicateEvents(events) {
+  const fresh = [];
+  for (const event of events) {
+    if (!(await isRecentDuplicate(event))) fresh.push(event);
+  }
+  return fresh;
+}
+
+async function isRecentDuplicate(event) {
+  const key = eventKey(event);
+  const recent = await readRecentEventKeys();
+  const timestamp = Number(recent[key] || 0);
+  return Boolean(timestamp && Date.now() - timestamp < RECENT_EVENT_TTL_MS);
+}
+
+async function rememberPostedEvents(events) {
+  const recent = await readRecentEventKeys();
+  const now = Date.now();
+  for (const event of events) recent[eventKey(event)] = now;
+  const pruned = Object.fromEntries(
+    Object.entries(recent)
+      .filter(([, timestamp]) => now - Number(timestamp || 0) < RECENT_EVENT_TTL_MS)
+      .slice(-500)
+  );
+  await chrome.storage.local.set({ [RECENT_EVENT_KEYS_KEY]: pruned }).catch(() => {});
+}
+
+async function readRecentEventKeys() {
+  const local = await chrome.storage.local.get([RECENT_EVENT_KEYS_KEY]).catch(() => ({}));
+  return local[RECENT_EVENT_KEYS_KEY] && typeof local[RECENT_EVENT_KEYS_KEY] === "object"
+    ? local[RECENT_EVENT_KEYS_KEY]
+    : {};
+}
+
+function eventKey(event) {
+  return [
+    event.videoId || "",
+    event.channelId || "",
+    normalizeEventKeyText(event.rawText || event.text || ""),
+    event.notificationAge?.label || event.notificationAge || ""
+  ].join("|").slice(0, 420);
+}
+
+function normalizeEventKeyText(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 260);
 }
 
 async function openWatcherTabs(requestedTargets = [], options = {}) {
@@ -692,6 +849,7 @@ async function deepScanActiveVideos() {
 async function sendHeartbeat(extraPayload = {}) {
   const settings = await getSettings();
   requireConfigured(settings);
+  const pendingFlush = await flushPendingEvents(settings).catch((error) => ({ ok: false, error: error.message }));
   const appBridge = await injectAppBridgeIntoAppTabs().catch(async (error) => {
     const payload = {
       ok: false,
@@ -714,19 +872,34 @@ async function sendHeartbeat(extraPayload = {}) {
     return payload;
   });
   const studioTabs = await chrome.tabs.query({ url: "https://studio.youtube.com/*" });
+  const youtubeTabs = await chrome.tabs.query({ url: "https://www.youtube.com/*" });
   const notificationWatcherTab = await getNotificationWatcherTab();
   const studioTabDetails = await collectStudioTabDetails(studioTabs);
+  const pendingState = await pendingQueueState();
+  const selfTest = buildQuietSelfTest({
+    settings,
+    studioTabs,
+    youtubeTabs,
+    notificationWatcherTab,
+    appBridge,
+    pendingState,
+    pendingFlush
+  });
   const lastStudioScan = extraPayload.lastStudioScan === undefined
     ? await buildLastStudioScanPayload()
     : extraPayload.lastStudioScan;
   const heartbeatPayload = {
     location: "chrome-extension",
     openStudioTabs: studioTabs.length,
+    openYoutubeTabs: youtubeTabs.length,
     studioTabUrls: studioTabs.map((tab) => tab.url || "").filter(Boolean).slice(0, 10),
     notificationWatcherOpen: Boolean(notificationWatcherTab),
     notificationWatcherUrl: notificationWatcherTab?.url || "",
     studioTabs: studioTabDetails.slice(0, 10),
     appBridge,
+    pendingQueue: pendingState,
+    pendingFlush,
+    selfTest,
     userAgent: navigator.userAgent,
     observedAt: new Date().toISOString(),
     diagnosticLog: await readDiagnosticLog(),
@@ -766,31 +939,63 @@ async function sendHeartbeat(extraPayload = {}) {
   return responsePayload;
 }
 
+async function pendingQueueState() {
+  const local = await chrome.storage.local.get([PENDING_EVENT_QUEUE_KEY]).catch(() => ({}));
+  const queue = Array.isArray(local[PENDING_EVENT_QUEUE_KEY]) ? local[PENDING_EVENT_QUEUE_KEY] : [];
+  return {
+    count: queue.length,
+    oldestQueuedAt: queue[0]?.queuedAt || "",
+    newestQueuedAt: queue[queue.length - 1]?.queuedAt || "",
+    maxAttempts: queue.reduce((max, item) => Math.max(max, Number(item.attempts || 0)), 0)
+  };
+}
+
+function buildQuietSelfTest({ settings, studioTabs, youtubeTabs, notificationWatcherTab, appBridge, pendingState, pendingFlush }) {
+  const issues = [];
+  if (!settings.appUrl) issues.push("missing_app_url");
+  if (!settings.connectorToken) issues.push("missing_connector_token");
+  if (!studioTabs.length) issues.push("no_studio_tabs");
+  if (!youtubeTabs.length) issues.push("no_youtube_tabs");
+  if (!notificationWatcherTab) issues.push("no_youtube_watcher");
+  if (appBridge?.ok === false || Number(appBridge?.failed || 0) > 0) issues.push("dashboard_bridge_failed");
+  if (Number(pendingState?.count || 0) > 0) issues.push("pending_events");
+  if (pendingFlush?.ok === false) issues.push("pending_retry_failed");
+  return {
+    ok: issues.length === 0,
+    issues,
+    checkedAt: new Date().toISOString()
+  };
+}
+
 async function collectStudioTabDetails(studioTabs) {
   const details = [];
   for (const tab of studioTabs.slice(0, 10)) {
     const base = {
       tabId: tab.id,
       tabTitle: tab.title || "",
-        tabUrl: tab.url || "",
-        channel: "",
-        channelId: "",
-        notificationButtonFound: false,
+      tabUrl: tab.url || "",
+      channel: "",
+      channelId: "",
+      notificationButtonFound: false,
       visibleNotificationContainers: 0,
       bodySnippetCount: 0,
+      rawWindowCount: 0,
+      finishHintCount: 0,
       ok: true,
       error: ""
     };
     try {
       await ensureContentScript(tab.id);
       const status = await chrome.tabs.sendMessage(tab.id, { type: "studio-tab-status" });
-        details.push({
-          ...base,
-          channel: status?.channel || "",
-          channelId: status?.channelId || "",
-          notificationButtonFound: Boolean(status?.notificationButtonFound),
+      details.push({
+        ...base,
+        channel: status?.channel || "",
+        channelId: status?.channelId || "",
+        notificationButtonFound: Boolean(status?.notificationButtonFound),
         visibleNotificationContainers: Number(status?.visibleNotificationContainers || 0),
-        bodySnippetCount: Number(status?.bodySnippetCount || 0)
+        bodySnippetCount: Number(status?.bodySnippetCount || 0),
+        rawWindowCount: Number(status?.rawWindowCount || 0),
+        finishHintCount: Number(status?.finishHintCount || 0)
       });
     } catch (error) {
       details.push({ ...base, ok: false, error: error.message });
@@ -815,9 +1020,15 @@ async function buildLastStudioScanPayload() {
           received: Number(tab.received || 0),
           matched: Number(tab.matched || 0),
           unmatched: Number(tab.unmatched || 0),
+          ignored: Number(tab.ignored || 0),
           candidates: Number(tab.candidates || 0),
+          queued: Number(tab.queued || 0),
+          duplicate: Number(tab.duplicate || 0),
           menuOpened: Boolean(tab.diagnostics?.menuOpened),
           channel: tab.diagnostics?.channel || "",
+          rawWindowCount: Number(tab.diagnostics?.rawWindowCount || 0),
+          finishHintCount: Number(tab.diagnostics?.finishHintCount || 0),
+          debugSample: tab.diagnostics?.debugSample || "",
           previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 3) : []
         }))
       : [],

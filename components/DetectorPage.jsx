@@ -68,7 +68,7 @@ const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
-const REQUIRED_EXTENSION_VERSION = "0.1.26";
+const REQUIRED_EXTENSION_VERSION = "0.1.27";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);

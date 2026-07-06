@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.26";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.27";
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
@@ -159,6 +159,8 @@ async function scrapeStudioNotifications({ includeSeen = false } = {}) {
 
 function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
   const bodyText = currentPageText();
+  const rawWindows = rawFinishTextWindows(bodyText);
+  const bodySnippets = finishNotificationSnippets(bodyText);
   return {
     url: location.href,
     channel: detectChannelName(),
@@ -166,7 +168,10 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
     menuOpened,
     notificationButtonFound: Boolean(findNotificationButton()),
     visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
-    bodySnippetCount: finishNotificationSnippets(bodyText).length,
+    bodySnippetCount: bodySnippets.length,
+    rawWindowCount: rawWindows.length,
+    finishHintCount: countFinishHints(bodyText),
+    debugSample: events.length ? "" : debugTextSample(bodyText, rawWindows),
     bodyTextLength: bodyText.length,
     beforeCount: before.length,
     afterCount: after.length,
@@ -178,6 +183,7 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
 
 function studioTabStatus() {
   const bodyText = currentPageText();
+  const rawWindows = rawFinishTextWindows(bodyText);
   return {
     url: location.href,
     channel: detectChannelName(),
@@ -185,6 +191,8 @@ function studioTabStatus() {
     notificationButtonFound: Boolean(findNotificationButton()),
     visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
     bodySnippetCount: finishNotificationSnippets(bodyText).length,
+    rawWindowCount: rawWindows.length,
+    finishHintCount: countFinishHints(bodyText),
     checkedAt: new Date().toISOString()
   };
 }
@@ -315,6 +323,25 @@ function rawFinishTextWindows(rawText) {
     if (windows.length >= 12) break;
   }
   return Array.from(new Set(windows));
+}
+
+function countFinishHints(rawText) {
+  const text = collapseLongText(rawText);
+  if (!text) return 0;
+  return Array.from(text.matchAll(new RegExp(FINISH_TEXT_HINT.source, "gi"))).length;
+}
+
+function debugTextSample(rawText, rawWindows = []) {
+  const text = rawWindows[0] || collapseLongText(rawText).slice(0, 700);
+  return redactDebugText(text);
+}
+
+function redactDebugText(value) {
+  return String(value || "")
+    .replace(/https?:\/\/\S+/g, "[url]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .replace(/\b(?:ya29|ghp|github_pat|xox[baprs])-[-A-Za-z0-9_]+/gi, "[token]")
+    .slice(0, 700);
 }
 
 function extractNotificationVideoTitle(rawText) {
