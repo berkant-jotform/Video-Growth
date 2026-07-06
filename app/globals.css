@@ -1398,11 +1398,89 @@ select {
 }
 
 .section-title {
+  align-items: center;
+  background: transparent;
+  border-radius: 8px;
   justify-content: space-between;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+  min-height: 30px;
+  padding: 0 2px;
   text-transform: uppercase;
+}
+
+.status-section-confirmed_finished .section-title,
+.status-section-action_conflict .section-title,
+.status-section-applied_change_observed .section-title {
+  background: color-mix(in srgb, var(--green) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--green) 20%, transparent);
+  color: color-mix(in srgb, var(--green) 74%, var(--text));
+  padding: 7px 10px;
+}
+
+.status-section-action_conflict .section-title {
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  border-color: color-mix(in srgb, var(--red) 22%, transparent);
+  color: color-mix(in srgb, var(--red) 72%, var(--text));
+}
+
+.status-section-applied_change_observed .section-title {
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+  border-color: color-mix(in srgb, var(--blue) 20%, transparent);
+  color: color-mix(in srgb, var(--blue) 72%, var(--text));
+}
+
+.workflow-divider {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  gap: 12px;
+  margin: 10px 0 0;
+}
+
+.workflow-divider::before,
+.workflow-divider::after {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--border) 82%, transparent));
+  content: "";
+  flex: 1;
+  height: 1px;
+}
+
+.workflow-divider::after {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--border) 82%, transparent), transparent);
+}
+
+.workflow-divider span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.workflow-divider em {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.status-section-watching {
+  margin-top: 8px;
+}
+
+.status-section-watching .section-title {
+  background: color-mix(in srgb, var(--muted) 7%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--muted) 22%, transparent);
+  color: color-mix(in srgb, var(--muted) 82%, var(--text));
+  padding: 7px 10px;
+}
+
+.status-section-watching .test-card {
+  opacity: 0.88;
+}
+
+.status-section-watching .test-card:hover {
+  opacity: 1;
 }
 
 .card-grid {

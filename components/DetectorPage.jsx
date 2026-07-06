@@ -1569,7 +1569,13 @@ function ChannelGroup({
         const runs = group.sections[section] || [];
         if (!runs.length) return null;
         return (
-          <div className="status-section" key={section}>
+          <div className={`status-section status-section-${section}`} key={section}>
+            {section === "watching" ? (
+              <div className="workflow-divider">
+                <span>Still watching</span>
+                <em>No confirmed finish signal yet</em>
+              </div>
+            ) : null}
             <div className="section-title">
               <span>{SECTION_LABELS[section]}</span>
               <span>{runs.length}</span>
