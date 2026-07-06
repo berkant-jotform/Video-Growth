@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.25";
+const EXTENSION_VERSION = "0.1.26";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -135,6 +135,7 @@ function openWatcherTabsGuarded(requestedTargets = [], options = {}) {
 }
 
 async function requestStudioScrape() {
+  await ensureNotificationWatcherForScan();
   const tabs = await collectScrapeTabs();
   let results = await scrapeTabs(tabs);
   if (shouldRetryWithNotificationWatcher(results, tabs)) {
@@ -149,10 +150,16 @@ async function requestStudioScrape() {
   return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results) };
 }
 
+async function ensureNotificationWatcherForScan() {
+  const tab = await openNotificationPage({ active: false }).catch(() => null);
+  if (tab?.tabId) await waitForTabReady(tab.tabId, 6000).catch(() => {});
+}
+
 async function scrapeTabs(tabs) {
   const results = [];
   for (const tab of tabs) {
     try {
+      await waitForTabReady(tab.id, 3000).catch(() => {});
       await ensureContentScript(tab.id);
       const response = await chrome.tabs.sendMessage(tab.id, { type: "scrape-studio-notifications" });
       results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ...response });
@@ -214,6 +221,9 @@ async function collectScrapeTabs() {
   ]);
   const watcherTab = await getNotificationWatcherTab();
   const notificationTabs = youtubeTabs.filter((tab) => isLikelyNotificationTab(tab));
+  const youtubeFallbackTabs = youtubeTabs
+    .filter((tab) => tab.id && tab.id !== watcherTab?.id && !notificationTabs.some((item) => item.id === tab.id))
+    .slice(0, 2);
   const enrichedStudioTabs = [];
   for (const tab of studioTabs) {
     enrichedStudioTabs.push(await enrichStudioTab(tab));
@@ -221,6 +231,7 @@ async function collectScrapeTabs() {
   const ranked = [
     ...(watcherTab ? [{ ...watcherTab, scanKind: "youtube_bell_watcher", scanRank: 0 }] : []),
     ...notificationTabs.map((tab) => ({ ...tab, scanKind: "youtube_notifications", scanRank: 1 })),
+    ...youtubeFallbackTabs.map((tab) => ({ ...tab, scanKind: "youtube_fallback", scanRank: 2 })),
     ...enrichedStudioTabs.map((tab) => ({ ...tab, scanKind: classifyStudioTab(tab), scanRank: rankStudioTab(tab) }))
   ].sort((a, b) => a.scanRank - b.scanRank || String(a.title || "").localeCompare(String(b.title || "")));
 
@@ -266,6 +277,7 @@ function rankStudioTab(tab) {
 function scrapeTabKey(tab) {
   if (tab.scanKind === "youtube_bell_watcher") return `youtube_bell_watcher:${tab.id}`;
   if (tab.scanKind === "youtube_notifications" || isLikelyNotificationTab(tab)) return `youtube_notifications:${new URL(tab.url || "https://www.youtube.com").origin}`;
+  if (tab.scanKind === "youtube_fallback") return `youtube_fallback:${tab.id}`;
   const url = String(tab.url || "");
   const videoId = url.match(/\/video\/([A-Za-z0-9_-]{6,})/)?.[1] || "";
   if (videoId) return `studio_video:${videoId}`;
@@ -405,6 +417,17 @@ async function ensureContentScript(tabId) {
     files: ["content.js"]
   });
   await delay(100);
+}
+
+async function waitForTabReady(tabId, timeoutMs = 5000) {
+  if (!tabId) return;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab) return;
+    if (tab.status === "complete") return;
+    await delay(250);
+  }
 }
 
 async function ensureAppBridge(tabId) {
