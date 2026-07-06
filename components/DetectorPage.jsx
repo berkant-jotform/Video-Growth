@@ -68,7 +68,7 @@ const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
-const REQUIRED_EXTENSION_VERSION = "0.1.22";
+const REQUIRED_EXTENSION_VERSION = "0.1.23";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -2610,7 +2610,10 @@ function exactDaysAgo(value) {
 }
 
 function normalizeNotificationAgeLabel(value) {
-  const text = String(value || "").trim().toLowerCase();
+  const rawValue = typeof value === "object" && value
+    ? value.label || (Number.isFinite(Number(value.days)) ? `${Number(value.days)} days ago` : "")
+    : value;
+  const text = String(rawValue || "").trim().toLowerCase();
   const match = text.match(/^(\d+)\s+(minute|hour|day|week|month)s?\s+ago$/);
   if (!match) return text || "";
   const amount = Number(match[1]);

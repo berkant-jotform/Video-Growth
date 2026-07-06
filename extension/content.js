@@ -2,17 +2,24 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.22";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.23";
+const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
+  "ytcp-notification *",
+  "ytcp-notification-item",
+  "ytcp-notification-item *",
   "tp-yt-paper-toast",
   "ytd-notification-renderer",
   "ytd-notification-renderer *",
   "ytd-multi-page-menu-renderer",
+  "ytd-multi-page-menu-renderer *",
   "ytd-popup-container",
   "tp-yt-iron-dropdown",
   "ytcp-notifications-dialog",
+  "ytcp-notifications-dialog *",
   "ytcp-notification-menu",
+  "ytcp-notification-menu *",
   "[role='alert']",
   "[aria-live]"
 ];
@@ -54,6 +61,7 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
   const channel = detectChannelName();
   const channelId = detectChannelId();
   const candidates = queryAllDeep(NOTIFICATION_SELECTORS.join(","));
+  const pageText = currentPageText();
 
   const events = collectStudioPageStatusEvents(channel);
   for (const element of candidates) {
@@ -73,7 +81,7 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
         channel,
         channelId,
         videoTitle: extractNotificationVideoTitle(text),
-        notificationAge: extractAgeAfterSnippet(rawText, text),
+        notificationAge: extractAgeAfterSnippet(`${rawText} ${pageText}`, text),
         observedAt: new Date().toISOString()
       };
       if (!rememberEvent(event, includeSeen)) continue;
@@ -82,7 +90,7 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
     }
     if (events.length >= MAX_EVENTS) break;
   }
-  const bodySnippets = finishNotificationSnippets(document.body?.innerText || "");
+  const bodySnippets = finishNotificationSnippets(pageText);
   for (const text of bodySnippets) {
     const event = {
       rawText: text,
@@ -91,7 +99,7 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
       channel,
       channelId,
       videoTitle: extractNotificationVideoTitle(text),
-      notificationAge: extractAgeAfterSnippet(document.body?.innerText || "", text),
+      notificationAge: extractAgeAfterSnippet(pageText, text),
       observedAt: new Date().toISOString()
     };
     if (!rememberEvent(event, includeSeen)) continue;
@@ -134,7 +142,7 @@ async function scrapeStudioNotifications({ includeSeen = false } = {}) {
 }
 
 function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
-  const bodyText = document.body?.innerText || "";
+  const bodyText = currentPageText();
   return {
     url: location.href,
     channel: detectChannelName(),
@@ -153,13 +161,14 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
 }
 
 function studioTabStatus() {
+  const bodyText = currentPageText();
   return {
     url: location.href,
     channel: detectChannelName(),
     channelId: detectChannelId(),
     notificationButtonFound: Boolean(findNotificationButton()),
     visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
-    bodySnippetCount: finishNotificationSnippets(document.body?.innerText || "").length,
+    bodySnippetCount: finishNotificationSnippets(bodyText).length,
     checkedAt: new Date().toISOString()
   };
 }
@@ -322,6 +331,32 @@ function collapseLongText(value) {
     .slice(0, 16000);
 }
 
+function currentPageText() {
+  return collapseLongText([
+    document.body?.innerText || "",
+    deepVisibleFinishText()
+  ].filter(Boolean).join(" "));
+}
+
+function deepVisibleFinishText() {
+  const chunks = [];
+  const seenText = new Set();
+  let length = 0;
+  for (const node of walkDeep(document.body || document.documentElement)) {
+    if (node?.nodeType !== Node.ELEMENT_NODE) continue;
+    if (!isVisible(node)) continue;
+    const rawText = node.innerText || node.textContent || "";
+    if (!FINISH_TEXT_HINT.test(rawText)) continue;
+    const text = collapseText(rawText);
+    if (!text || seenText.has(text)) continue;
+    seenText.add(text);
+    chunks.push(text);
+    length += text.length;
+    if (length > 30000) break;
+  }
+  return collapseLongText(chunks.join(" "));
+}
+
 function findTestFinishedSnippet(value) {
   const text = collapseText(value);
   const exact = text.match(/(?:Title|Thumbnail|A\/B)?\s*Test finished\.\s*Ran from .{8,180}? to .{8,180}?\./i);
@@ -395,9 +430,13 @@ function findNotificationButton() {
   const selectors = [
     "#notification-button",
     "ytcp-notification-button",
+    "ytcp-notifications-button",
+    "ytcp-notifications-button button",
+    "ytcp-notifications-button tp-yt-paper-icon-button",
     "ytd-notification-topbar-button-renderer",
     "ytd-notification-topbar-button-renderer button",
     "ytd-notification-topbar-button-renderer #button",
+    "button[aria-label*='Notification' i]",
     "button[aria-label*='Notifications' i]",
     "tp-yt-paper-icon-button[aria-label*='Notifications' i]",
     "ytcp-icon-button[aria-label*='Notifications' i]",

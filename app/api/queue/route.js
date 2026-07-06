@@ -129,7 +129,7 @@ function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandid
     finishEventUrl: event.notificationUrl || "",
     finishEventOutcome: event.detectedOutcome || "",
     finishEventAt: event.observedAt || "",
-    finishEventNotificationAge: event.notificationAge || "",
+    finishEventNotificationAge: notificationAgeLabel(event.notificationAge),
     matchedConfidence: "unregistered",
     connectorCovered: true,
     connectorLastSeenAt: event.observedAt || "",
@@ -142,6 +142,19 @@ function isStrongYoutubeCandidate(event, candidate) {
   if (score >= 0.95) return true;
   if (score >= 0.84 && relatedChannelName(event.channel, candidate.channel)) return true;
   return false;
+}
+
+function notificationAgeLabel(value) {
+  if (!value) return "";
+  if (typeof value === "object") {
+    if (value.label) return String(value.label);
+    if (Number.isFinite(Number(value.days))) {
+      const days = Number(value.days);
+      return `${days} day${days === 1 ? "" : "s"} ago`;
+    }
+    return "";
+  }
+  return String(value);
 }
 
 function relatedChannelName(left, right) {
