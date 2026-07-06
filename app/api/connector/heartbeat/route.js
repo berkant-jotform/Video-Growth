@@ -9,6 +9,7 @@ export async function POST(request) {
   try {
     await requireConnector(request);
     const body = await request.json();
+    const lastStudioScan = sanitizeLastStudioScan(body.lastStudioScan);
     const status = await recordConnectorHeartbeat({
       connectorId: body.connectorId || "",
       actorName: body.actorName || body.reviewerInitials || "",
@@ -29,12 +30,12 @@ export async function POST(request) {
         selfTest: sanitizeSelfTest(body.selfTest),
         userAgent: body.userAgent || "",
         observedAt: body.observedAt || new Date().toISOString(),
-        lastStudioScan: sanitizeLastStudioScan(body.lastStudioScan),
+        lastStudioScan,
         diagnosticLog: sanitizeExtensionDiagnosticLog(body.diagnosticLog)
       }
     });
-    const diagnosis = body.lastStudioScan?.diagnosis || null;
-    const totals = body.lastStudioScan?.totals || {};
+    const diagnosis = lastStudioScan?.diagnosis || null;
+    const totals = lastStudioScan?.totals || {};
     if (diagnosis?.severity && diagnosis.severity !== "ok") {
       await recordDiagnosticLog({
         category: "extension_scan",
@@ -46,7 +47,7 @@ export async function POST(request) {
           version: body.version || "",
           channels: parseConnectorChannels(body.channels || []),
           openStudioTabs: Number(body.openStudioTabs || 0),
-          scanCheckedAt: body.lastStudioScan?.checkedAt || "",
+          scanCheckedAt: lastStudioScan?.checkedAt || "",
           totals,
           diagnosis,
           diagnosticLog: Array.isArray(body.diagnosticLog) ? body.diagnosticLog.slice(-10) : []
@@ -138,20 +139,21 @@ function sanitizePlainContext(value) {
 function sanitizeLastStudioScan(value) {
   if (!value || typeof value !== "object") return null;
   const totals = value.totals && typeof value.totals === "object" ? value.totals : {};
+  const sanitizedTotals = {
+    tabs: Number(totals.tabs || 0),
+    failed: Number(totals.failed || 0),
+    received: Number(totals.received || 0),
+    matched: Number(totals.matched || 0),
+    unmatched: Number(totals.unmatched || 0),
+    ignored: Number(totals.ignored || 0),
+    youtubeResolved: Number(totals.youtubeResolved || 0),
+    queued: Number(totals.queued || 0),
+    duplicate: Number(totals.duplicate || 0),
+    candidates: Number(totals.candidates || 0)
+  };
   return {
     checkedAt: value.checkedAt || new Date().toISOString(),
-    totals: {
-      tabs: Number(totals.tabs || 0),
-      failed: Number(totals.failed || 0),
-      received: Number(totals.received || 0),
-      matched: Number(totals.matched || 0),
-      unmatched: Number(totals.unmatched || 0),
-      ignored: Number(totals.ignored || 0),
-      youtubeResolved: Number(totals.youtubeResolved || 0),
-      queued: Number(totals.queued || 0),
-      duplicate: Number(totals.duplicate || 0),
-      candidates: Number(totals.candidates || 0)
-    },
+    totals: sanitizedTotals,
     tabs: Array.isArray(value.tabs)
       ? value.tabs.slice(0, 8).map((tab) => ({
           tabTitle: String(tab.tabTitle || "").slice(0, 160),
@@ -180,8 +182,27 @@ function sanitizeLastStudioScan(value) {
             : []
         }))
       : [],
-    diagnosis: sanitizeScanDiagnosis(value.diagnosis)
+    diagnosis: normalizeScanDiagnosis(value.diagnosis, sanitizedTotals)
   };
+}
+
+function normalizeScanDiagnosis(value, totals) {
+  if (
+    Number(totals.candidates || 0) > 0 &&
+    Number(totals.received || 0) === 0 &&
+    Number(totals.unmatched || 0) === 0 &&
+    Number(totals.matched || 0) === 0 &&
+    Number(totals.queued || 0) === 0 &&
+    Number(totals.duplicate || 0) >= Number(totals.candidates || 0)
+  ) {
+    return {
+      severity: "ok",
+      code: "already_processed",
+      message: "The extension saw A/B finish text that was already processed.",
+      action: ""
+    };
+  }
+  return sanitizeScanDiagnosis(value);
 }
 
 function sanitizeScanDiagnosis(value) {

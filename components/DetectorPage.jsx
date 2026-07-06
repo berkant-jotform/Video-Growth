@@ -1005,14 +1005,25 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
   const found = Number(totals.candidates || 0);
   const matched = Number(totals.matched || 0);
   const unmatched = Number(totals.unmatched || 0);
+  const duplicate = Number(totals.duplicate || 0);
+  const queued = Number(totals.queued || 0);
   const failed = Number(totals.failed || 0);
-  const diagnosis = receipt.scan.diagnosis || null;
+  const duplicateOnly = found > 0 && duplicate >= found && !matched && !unmatched && !queued && !Number(totals.received || 0);
+  const diagnosis = duplicateOnly
+    ? {
+        severity: "ok",
+        code: "already_processed",
+        message: "The extension saw A/B finish text that was already processed.",
+        action: ""
+      }
+    : receipt.scan.diagnosis || null;
   const diagnosisWarn = diagnosis?.severity === "warn" || diagnosis?.severity === "error";
-  const tone = failed || diagnosisWarn ? "warn" : found ? "ok" : "neutral";
+  const received = Number(totals.received || 0);
+  const processed = received + duplicate + queued;
+  const tone = failed || diagnosisWarn ? "warn" : found || duplicate ? "ok" : "neutral";
   const stages = extensionScanStages(tabs, totals);
   const tabCount = Number(totals.tabs || tabs.length);
-  const received = Number(totals.received || 0);
-  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Sent ${received} signal${received === 1 ? "" : "s"}: ${matched} matched, ${unmatched} unregistered.`;
+  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} new, ${duplicate} already seen, ${queued} queued for retry. ${matched} matched, ${unmatched} unregistered.`;
   if (compact) {
     return (
       <details className={`extension-scan-receipt compact ${tone}`} open={Boolean(found || failed || diagnosisWarn)}>
@@ -1024,6 +1035,7 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
           <span className="extension-scan-mini-stats">
             <em>{matched} matched</em>
             <em>{unmatched} unregistered</em>
+            {duplicate ? <em>{duplicate} already seen</em> : null}
           </span>
           <ChevronDown size={16} />
         </summary>
@@ -1083,6 +1095,16 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
         <span>
           Needs matching <strong>{unmatched}</strong>
         </span>
+        {duplicate ? (
+          <span>
+            Already seen <strong>{duplicate}</strong>
+          </span>
+        ) : null}
+        {queued ? (
+          <span>
+            Queued retry <strong>{queued}</strong>
+          </span>
+        ) : null}
         {failed ? (
           <span>
             Failed tabs <strong>{failed}</strong>
@@ -1134,6 +1156,8 @@ function extensionScanStages(tabs, totals) {
   const matched = Number(totals.matched || 0);
   const unregistered = Number(totals.unmatched || 0);
   const youtubeResolved = Number(totals.youtubeResolved || 0);
+  const duplicate = Number(totals.duplicate || 0);
+  const queued = Number(totals.queued || 0);
   return [
     {
       key: "tabs",
@@ -1155,9 +1179,21 @@ function extensionScanStages(tabs, totals) {
     },
     {
       key: "sent",
-      label: "Signals sent",
+      label: "New signals",
       value: `${sent}`,
-      state: sent ? "ok" : "neutral"
+      state: sent ? "ok" : duplicate || queued ? "neutral" : "warn"
+    },
+    {
+      key: "duplicate",
+      label: "Already seen",
+      value: `${duplicate}`,
+      state: duplicate ? "ok" : "neutral"
+    },
+    {
+      key: "queued",
+      label: "Queued retry",
+      value: `${queued}`,
+      state: queued ? "warn" : "neutral"
     },
     {
       key: "matched",
