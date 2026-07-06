@@ -2130,10 +2130,11 @@ function outcomeLabel(run) {
 function cardResult(run) {
   if (run.unregistered) {
     const detected = detectedOutcomeLabel(run.finishEventOutcome || run.detectedOutcome);
+    const noClearReason = noClearReasonLabel(run);
     return {
       key: detected.key === "no_clear" ? "no_clear" : detected.key === "winner" ? "winner" : "unregistered",
       label: detected.label || "Unregistered",
-      value: "Not in A/B sheet",
+      value: detected.key === "no_clear" ? noClearReason : "Not in A/B sheet",
       tone: detected.tone || "warning"
     };
   }
@@ -2145,10 +2146,11 @@ function cardResult(run) {
   }
   if (run.queueStatus === "confirmed_finished") {
     const detected = detectedOutcomeLabel(run.finishEventOutcome || run.detectedOutcome);
+    const noClearReason = noClearReasonLabel(run);
     return {
       key: detected.key === "winner" ? "winner" : detected.key === "no_clear" ? "no_clear" : "confirmed",
       label: detected.label || "Confirmed",
-      value: signalSourceLabel(run),
+      value: detected.key === "no_clear" ? noClearReason : signalSourceLabel(run),
       tone: detected.tone || "success"
     };
   }
@@ -2177,7 +2179,7 @@ function cardResult(run) {
     return { key: "winner", label: `Winner ${run.suggestedWinner}`, value: `Option ${run.suggestedWinner}`, tone: "success" };
   }
   if (run.detectedOutcome === "no_clear" || run.suggestedWinner === "No clear winner") {
-    return { key: "no_clear", label: "No clear", value: "Not enough impressions", tone: "warning" };
+    return { key: "no_clear", label: "No clear", value: noClearReasonLabel(run), tone: "warning" };
   }
   if (run.status === "result_logged") {
     return { key: "logged", label: "Logged", value: "Already in sheet", tone: "neutral" };
@@ -2206,6 +2208,23 @@ function detectedOutcomeLabel(outcome) {
   if (text === "no_clear") return { key: "no_clear", label: "No clear", tone: "warning" };
   if (text === "finished_unknown") return { key: "confirmed", label: "Confirmed", tone: "success" };
   return { key: "", label: "", tone: "" };
+}
+
+function noClearReasonLabel(run) {
+  const text = [
+    run.finishEventText,
+    run.winnerReason,
+    run.suggestedWinner,
+    run.detectedOutcome,
+    run.finishEventOutcome
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (text.includes("not enough views")) return "Not enough views";
+  if (text.includes("not enough impressions")) return "Not enough impressions";
+  if (text.includes("not enough data")) return "Not enough data";
+  if (text.includes("not enough traffic")) return "Not enough traffic";
+  if (text.includes("similar performance") || text.includes("performed well for all")) return "Similar performance";
+  if (text.includes("no winner") || text.includes("no clear") || text.includes("inconclusive")) return "No winner";
+  return "No clear result";
 }
 
 function quickActionOptions(run) {

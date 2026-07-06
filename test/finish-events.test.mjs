@@ -128,6 +128,14 @@ test("recognizes current YouTube Studio A/B notification wording", () => {
     detectNotificationOutcome("A/B test inconclusive How to Share a PowerPoint or Google Slides Presentation in Zoom: The test completed with no winner"),
     "no_clear"
   );
+  assert.equal(
+    isLikelyFinishNotification("A/B test inconclusive Excel Tutorial for Beginners: Not enough views to determine a winner"),
+    true
+  );
+  assert.equal(
+    detectNotificationOutcome("A/B test inconclusive Excel Tutorial for Beginners: Not enough views to determine a winner"),
+    "no_clear"
+  );
 });
 
 test("filters Studio edit-page noise from finish notifications", () => {
