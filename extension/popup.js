@@ -14,8 +14,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("scan").addEventListener("click", async () => {
     await withBusy(async () => {
       await repairDashboardBridge({ force: true });
-      setSummary("Scanning open Studio tabs and the YouTube bell menu...");
-      const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
+      setSummary("Opening YouTube bell notifications and scanning Studio tabs...");
+      const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab", interactive: true });
       setSummary(scanResultText(response));
       await render();
       setSummary(scanResultText(response));
@@ -23,9 +23,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   document.getElementById("openNotifications").addEventListener("click", async () => {
     await withBusy(async () => {
-      setSummary("Opening or reusing YouTube home for a bell check...");
+      setSummary("Opening or reusing YouTube home for automatic bell checks...");
       const response = await chrome.runtime.sendMessage({ type: "open-notification-page" });
-      setSummary(response?.ok ? (response.reused ? "YouTube home is already open for bell checks." : "YouTube home opened. Open the bell menu if needed, then run Check now.") : response?.error || "Could not open YouTube home.");
+      setSummary(response?.ok ? (response.reused ? "YouTube home is already open for bell checks." : "YouTube home opened for automatic bell checks.") : response?.error || "Could not open YouTube home.");
       await render();
     });
   });
@@ -107,8 +107,8 @@ async function runPrimaryAction() {
   }
   if (action === "scan") {
     await repairDashboardBridge({ force: true });
-    setSummary("Scanning open Studio tabs and the YouTube bell menu...");
-    const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab" });
+    setSummary("Opening YouTube bell notifications and scanning Studio tabs...");
+    const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab", interactive: true });
     setSummary(scanResultText(response));
     await render();
     setSummary(scanResultText(response));

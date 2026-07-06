@@ -68,7 +68,7 @@ const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
-const REQUIRED_EXTENSION_VERSION = "0.1.27";
+const REQUIRED_EXTENSION_VERSION = "0.1.28";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -324,7 +324,7 @@ export default function DetectorPage({ session }) {
           : type === "open-notification-page"
             ? response.reused
               ? "YouTube home is already open for bell checks."
-              : "YouTube home opened. Open the bell menu if needed, then click Check now."
+              : "YouTube home opened for automatic bell checks."
             : "Miss report sent with the latest scan diagnostics.";
       setExtensionRequest({ status: "ok", message });
       window.setTimeout(() => refresh(), 800);
@@ -1225,9 +1225,9 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
     <section className={`extension-quick-check ${tone}`}>
       <div className="extension-quick-copy">
         <span className="eyebrow">Real signal scan</span>
-        <h3>Check visible Studio notifications</h3>
+        <h3>Check YouTube bell automatically</h3>
         <p>
-          Reads open Studio tabs and the YouTube bell menu in this Chrome profile. It never edits YouTube.
+          Opens or reuses YouTube, opens the bell menu, then reads visible Studio test notifications. It never edits YouTube.
         </p>
         <div className={`extension-bridge-status ${bridgeTone}`}>
           <strong>
@@ -2712,9 +2712,9 @@ function requestExtension(type, { timeoutMs = 12000 } = {}) {
 }
 
 function extensionCommandLoadingText(type) {
-  if (type === "open-notification-page") return "Opening or reusing YouTube home for a bell check...";
+  if (type === "open-notification-page") return "Opening or reusing YouTube home for automatic bell checks...";
   if (type === "report-missed-notification") return "Sending a debug snapshot from the extension...";
-  return "Asking the Chrome extension to scan open Studio tabs and the YouTube bell menu...";
+  return "Asking the Chrome extension to open YouTube bell notifications and scan Studio tabs...";
 }
 
 function extensionScanSummary(response) {

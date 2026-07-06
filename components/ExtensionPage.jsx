@@ -100,7 +100,7 @@ export default function ExtensionPage({ session }) {
             />
             <StatusTile
               label="Latest version"
-              value={config?.latestExtensionVersion || "0.1.27"}
+              value={config?.latestExtensionVersion || "0.1.28"}
               tone="neutral"
             />
             <StatusTile

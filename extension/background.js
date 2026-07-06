@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.27";
+const EXTENSION_VERSION = "0.1.28";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -61,7 +61,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === "scan-studio-tab") {
-    requestStudioScrapeGuarded()
+    requestStudioScrapeGuarded({ interactive: Boolean(message.interactive) })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -122,9 +122,9 @@ function scheduleHourlyAlarm() {
   });
 }
 
-function requestStudioScrapeGuarded() {
+function requestStudioScrapeGuarded(options = {}) {
   if (studioScrapePromise) return studioScrapePromise;
-  studioScrapePromise = requestStudioScrape().finally(() => {
+  studioScrapePromise = requestStudioScrape(options).finally(() => {
     studioScrapePromise = null;
   });
   return studioScrapePromise;
@@ -138,8 +138,8 @@ function openWatcherTabsGuarded(requestedTargets = [], options = {}) {
   return watcherOpenPromise;
 }
 
-async function requestStudioScrape() {
-  await ensureNotificationWatcherForScan();
+async function requestStudioScrape(options = {}) {
+  await ensureNotificationWatcherForScan(options);
   const tabs = await collectScrapeTabs();
   let results = await scrapeTabs(tabs);
   if (shouldRetryWithNotificationWatcher(results, tabs)) {
@@ -154,9 +154,13 @@ async function requestStudioScrape() {
   return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results) };
 }
 
-async function ensureNotificationWatcherForScan() {
-  const tab = await openNotificationPage({ active: false }).catch(() => null);
+async function ensureNotificationWatcherForScan(options = {}) {
+  const tab = await openNotificationPage({ active: Boolean(options.interactive) }).catch(() => null);
   if (tab?.tabId) await waitForTabReady(tab.tabId, 6000).catch(() => {});
+  if (options.interactive && tab?.tabId) {
+    await chrome.tabs.update(tab.tabId, { active: true }).catch(() => {});
+    await delay(800);
+  }
 }
 
 async function scrapeTabs(tabs) {
@@ -417,7 +421,7 @@ function buildScanDiagnosis(results) {
     severity: "info",
     code: "no_finish_text_seen",
     message: "The extension scanned Studio successfully, but no A/B finish text was visible.",
-    action: "If YouTube notifications are visible, open the bell panel and run Check now again."
+    action: "Run Check now again; it will open the YouTube bell automatically. If it still misses visible text, use I see a missed notification."
   };
 }
 

@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.27";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.28";
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
@@ -480,12 +480,17 @@ function findStudioVideoUrl(element) {
 async function openNotificationMenu() {
   const button = findNotificationButton();
   if (!button) return false;
-  const expandedBefore = button.getAttribute("aria-expanded") === "true";
-  if (!expandedBefore) {
-    button.click();
+  if (notificationSurfaceVisible()) return true;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const expanded = button.getAttribute("aria-expanded") === "true";
+    if (!expanded || attempt > 0) {
+      clickLikeUser(button);
+    }
+    await delay(500 + attempt * 300);
+    if (notificationSurfaceVisible()) return true;
+    if (finishNotificationSnippets(currentPageText()).length) return true;
   }
-  await delay(250);
-  return true;
+  return notificationSurfaceVisible();
 }
 
 function findNotificationButton() {
@@ -562,6 +567,31 @@ function findClickable(element) {
   if (!element) return null;
   if (typeof element.click === "function") return element;
   return queryOneDeep("button, ytcp-icon-button, tp-yt-paper-icon-button", element) || null;
+}
+
+function notificationSurfaceVisible() {
+  return queryAllDeep(
+    [
+      "ytd-multi-page-menu-renderer",
+      "ytd-notification-renderer",
+      "tp-yt-iron-dropdown",
+      "ytcp-notifications-dialog",
+      "ytcp-notification-menu",
+      "[role='menu']",
+      "[role='dialog']"
+    ].join(",")
+  ).some(isVisible);
+}
+
+function clickLikeUser(element) {
+  try {
+    element.scrollIntoView?.({ block: "center", inline: "center" });
+    element.focus?.();
+  } catch {}
+  for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
+    element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+  }
+  element.click?.();
 }
 
 function queryOneDeep(selector, root = document) {
