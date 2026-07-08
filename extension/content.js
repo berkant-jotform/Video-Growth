@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.28";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.29";
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
@@ -25,6 +25,7 @@ const NOTIFICATION_SELECTORS = [
 ];
 const seen = new Set();
 let currentUrl = location.href;
+let lastNotificationOpenResult = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "studio-tab-status") {
@@ -177,6 +178,7 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
     afterCount: after.length,
     eventCount: events.length,
     notificationScrolls: Number(extra.scrolls || 0),
+    notificationOpenResult: lastNotificationOpenResult || null,
     checkedAt: new Date().toISOString()
   };
 }
@@ -479,18 +481,34 @@ function findStudioVideoUrl(element) {
 
 async function openNotificationMenu() {
   const button = findNotificationButton();
+  lastNotificationOpenResult = {
+    foundButton: Boolean(button),
+    buttonLabel: button ? notificationButtonLabel(button) : "",
+    opened: false,
+    attempts: 0,
+    surfaceVisible: notificationSurfaceVisible()
+  };
   if (!button) return false;
-  if (notificationSurfaceVisible()) return true;
+  if (lastNotificationOpenResult.surfaceVisible) {
+    lastNotificationOpenResult.opened = true;
+    return true;
+  }
   for (let attempt = 0; attempt < 4; attempt += 1) {
+    lastNotificationOpenResult.attempts = attempt + 1;
     const expanded = button.getAttribute("aria-expanded") === "true";
     if (!expanded || attempt > 0) {
       clickLikeUser(button);
     }
     await delay(500 + attempt * 300);
-    if (notificationSurfaceVisible()) return true;
-    if (finishNotificationSnippets(currentPageText()).length) return true;
+    lastNotificationOpenResult.surfaceVisible = notificationSurfaceVisible();
+    if (lastNotificationOpenResult.surfaceVisible || finishNotificationSnippets(currentPageText()).length) {
+      lastNotificationOpenResult.opened = true;
+      return true;
+    }
   }
-  return notificationSurfaceVisible();
+  lastNotificationOpenResult.surfaceVisible = notificationSurfaceVisible();
+  lastNotificationOpenResult.opened = lastNotificationOpenResult.surfaceVisible;
+  return lastNotificationOpenResult.opened;
 }
 
 function findNotificationButton() {
@@ -565,8 +583,15 @@ async function scrollNotificationSurfaces() {
 
 function findClickable(element) {
   if (!element) return null;
-  if (typeof element.click === "function") return element;
-  return queryOneDeep("button, ytcp-icon-button, tp-yt-paper-icon-button", element) || null;
+  const inner = queryOneDeep(
+    "button, #button, [role='button'], ytcp-icon-button, tp-yt-paper-icon-button, yt-icon-button",
+    element
+  );
+  if (inner && inner !== element && isVisible(inner)) return inner;
+  if (element.matches?.("button, [role='button'], ytcp-icon-button, tp-yt-paper-icon-button, yt-icon-button")) {
+    return element;
+  }
+  return inner || null;
 }
 
 function notificationSurfaceVisible() {
@@ -592,6 +617,21 @@ function clickLikeUser(element) {
     element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
   }
   element.click?.();
+}
+
+function notificationButtonLabel(element) {
+  if (!element) return "";
+  return [
+    element.getAttribute("aria-label"),
+    element.getAttribute("title"),
+    element.getAttribute("tooltip-label"),
+    element.textContent
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
 }
 
 function queryOneDeep(selector, root = document) {

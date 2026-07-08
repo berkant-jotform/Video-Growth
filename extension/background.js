@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.28";
+const EXTENSION_VERSION = "0.1.29";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -344,6 +344,11 @@ function buildScanDiagnosis(results) {
   const bodySnippetCount = tabs.reduce((sum, item) => sum + Number(item.diagnostics.bodySnippetCount || 0), 0);
   const rawWindowCount = tabs.reduce((sum, item) => sum + Number(item.diagnostics.rawWindowCount || 0), 0);
   const finishHintCount = tabs.reduce((sum, item) => sum + Number(item.diagnostics.finishHintCount || 0), 0);
+  const buttonFoundButNotOpened = tabs.some((item) =>
+    item.diagnostics.notificationButtonFound &&
+    item.diagnostics.notificationOpenResult &&
+    item.diagnostics.notificationOpenResult.opened === false
+  );
 
   if (!totals.tabs) {
     return {
@@ -405,8 +410,12 @@ function buildScanDiagnosis(results) {
     return {
       severity: "warn",
       code: "notification_surface_missing",
-      message: "Studio was open, but the extension could not open or see the notification list.",
-      action: "Open the bell notifications panel manually, keep it visible, then scan again."
+      message: buttonFoundButNotOpened
+        ? "The extension found the YouTube bell button but could not open the notification list."
+        : "Studio was open, but the extension could not open or see the notification list.",
+      action: buttonFoundButNotOpened
+        ? "Update to the newest extension and run Check now again. If it still misses, use I see a missed notification."
+        : "Run Check now again. If it still misses visible text, use I see a missed notification."
     };
   }
   if (bodySnippetCount > 0 || rawWindowCount > 0 || finishHintCount > 0) {
@@ -1033,6 +1042,7 @@ async function buildLastStudioScanPayload() {
           rawWindowCount: Number(tab.diagnostics?.rawWindowCount || 0),
           finishHintCount: Number(tab.diagnostics?.finishHintCount || 0),
           debugSample: tab.diagnostics?.debugSample || "",
+          notificationOpenResult: tab.diagnostics?.notificationOpenResult || null,
           previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 3) : []
         }))
       : [],

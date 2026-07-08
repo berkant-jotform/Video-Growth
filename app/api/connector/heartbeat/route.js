@@ -173,6 +173,7 @@ function sanitizeLastStudioScan(value) {
           rawWindowCount: Number(tab.rawWindowCount || 0),
           finishHintCount: Number(tab.finishHintCount || 0),
           debugSample: String(tab.debugSample || "").slice(0, 700),
+          notificationOpenResult: sanitizeNotificationOpenResult(tab.notificationOpenResult),
           previews: Array.isArray(tab.previews)
             ? tab.previews.slice(0, 3).map((preview) => ({
                 title: String(preview.title || "").slice(0, 180),
@@ -183,6 +184,17 @@ function sanitizeLastStudioScan(value) {
         }))
       : [],
     diagnosis: normalizeScanDiagnosis(value.diagnosis, sanitizedTotals)
+  };
+}
+
+function sanitizeNotificationOpenResult(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    foundButton: Boolean(value.foundButton),
+    buttonLabel: String(value.buttonLabel || "").slice(0, 120),
+    opened: Boolean(value.opened),
+    attempts: Number(value.attempts || 0),
+    surfaceVisible: Boolean(value.surfaceVisible)
   };
 }
 
