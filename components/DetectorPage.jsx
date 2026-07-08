@@ -69,7 +69,7 @@ const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
-const REQUIRED_EXTENSION_VERSION = "0.1.31";
+const REQUIRED_EXTENSION_VERSION = "0.1.32";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -2787,13 +2787,30 @@ function extensionScanSummary(response) {
       summary.received += Number(tab.received || 0);
       summary.matched += Number(tab.matched || 0);
       summary.unmatched += Number(tab.unmatched || 0);
+      summary.duplicate += Number(tab.duplicate || 0);
+      summary.queued += Number(tab.queued || 0);
+      summary.failed += tab.ok === false ? 1 : 0;
       return summary;
     },
-    { tabs: 0, candidates: 0, received: 0, matched: 0, unmatched: 0 }
+    { tabs: 0, candidates: 0, received: 0, matched: 0, unmatched: 0, duplicate: 0, queued: 0, failed: 0 }
   );
   if (!totals.tabs) return "No Studio or YouTube bell tabs were open.";
-  if (!totals.received) return `Checked ${totals.tabs} tab${totals.tabs === 1 ? "" : "s"}; no finish notification text was captured.`;
-  return `Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered.`;
+  if (totals.received) {
+    return `Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered.`;
+  }
+  if (totals.candidates) {
+    if (totals.duplicate) {
+      return `Found ${totals.candidates} A/B candidate${totals.candidates === 1 ? "" : "s"}; ${totals.duplicate} were already seen. Update to extension ${REQUIRED_EXTENSION_VERSION} and check again so the app can reconcile them.`;
+    }
+    if (totals.queued) {
+      return `Found ${totals.candidates} A/B candidate${totals.candidates === 1 ? "" : "s"}; ${totals.queued} queued for retry.`;
+    }
+    return `Found ${totals.candidates} A/B candidate${totals.candidates === 1 ? "" : "s"}, but none were accepted by the app. Open Extension for troubleshooting.`;
+  }
+  if (totals.failed) {
+    return `Checked ${totals.tabs} tab${totals.tabs === 1 ? "" : "s"}; ${totals.failed} scan failed. Open Extension for troubleshooting.`;
+  }
+  return `Checked ${totals.tabs} tab${totals.tabs === 1 ? "" : "s"}; no finish notification text was captured.`;
 }
 
 function clampPercent(value) {

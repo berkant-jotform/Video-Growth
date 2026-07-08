@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.31";
+const EXTENSION_VERSION = "0.1.32";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -49,7 +49,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "studio-notifications") {
-    postEvents(message.events || [], sender.tab?.url || "")
+    postEvents(message.events || [], sender.tab?.url || "", { forcePost: Boolean(message.forcePost) })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -150,12 +150,12 @@ async function requestStudioScrape(options = {}) {
   const tabs = initialTabs.length
     ? initialTabs
     : await collectScrapeTabs({ preferStudio: Boolean(options.userInitiated), includeYoutube: true });
-  let results = await scrapeTabs(tabs);
+  let results = await scrapeTabs(tabs, options);
   if (shouldRetryWithNotificationWatcher(results, tabs, options)) {
     await openNotificationPage({ active: false }).catch(() => null);
     await delay(3200);
     const retryTabs = await collectScrapeTabs({ preferStudio: Boolean(options.userInitiated), includeYoutube: true });
-    const retryResults = await scrapeTabs(retryTabs);
+    const retryResults = await scrapeTabs(retryTabs, options);
     results = mergeScanResults(results, retryResults);
   }
   if (shouldDeepScanFallback(results, options)) {
@@ -187,13 +187,16 @@ async function ensureNotificationWatcherForScan(options = {}) {
   }
 }
 
-async function scrapeTabs(tabs) {
+async function scrapeTabs(tabs, options = {}) {
   const results = [];
   for (const tab of tabs) {
     try {
       await waitForTabReady(tab.id, 3000).catch(() => {});
       await ensureContentScript(tab.id);
-      const response = await chrome.tabs.sendMessage(tab.id, { type: "scrape-studio-notifications" });
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        type: "scrape-studio-notifications",
+        forcePost: Boolean(options.userInitiated)
+      });
       results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ...response });
     } catch (error) {
       results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ok: false, error: error.message });
@@ -565,12 +568,13 @@ async function injectAppBridgeIntoAppTabs() {
   return payload;
 }
 
-async function postEvents(events, tabUrl) {
+async function postEvents(events, tabUrl, options = {}) {
   if (!events.length) return { ok: true, received: 0 };
   const settings = await getSettings();
   requireConfigured(settings);
   await flushPendingEvents(settings).catch(() => null);
-  const freshEvents = await filterDuplicateEvents(events);
+  const forcePost = Boolean(options.forcePost);
+  const freshEvents = forcePost ? events : await filterDuplicateEvents(events);
   if (!freshEvents.length) {
     return { ok: true, received: 0, matched: 0, unmatched: 0, ignored: 0, duplicate: events.length };
   }
@@ -614,10 +618,11 @@ async function postEvents(events, tabUrl) {
       ignored: payload.ignored || 0,
       youtubeResolved: payload.youtubeResolved || 0,
       queued: payload.queued || 0,
-      duplicate: events.length - freshEvents.length
+      duplicate: forcePost ? 0 : events.length - freshEvents.length,
+      forcePost
       }
   });
-  return { ...payload, duplicate: events.length - freshEvents.length };
+  return { ...payload, duplicate: forcePost ? 0 : events.length - freshEvents.length };
 }
 
 async function sendEventsBatch(settings, events, tabUrl) {
