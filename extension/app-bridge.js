@@ -32,7 +32,7 @@
           bridgeReady: true
         };
       } else if (message.type === "check-studio-now") {
-        response = await chrome.runtime.sendMessage({ type: "scan-studio-tab", interactive: true });
+        response = await chrome.runtime.sendMessage({ type: "scan-studio-tab", userInitiated: true, avoidTabSwitch: true });
       } else if (message.type === "open-notification-page") {
         response = await chrome.runtime.sendMessage({ type: "open-notification-page" });
       } else if (message.type === "report-missed-notification") {

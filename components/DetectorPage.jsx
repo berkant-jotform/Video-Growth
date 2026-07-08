@@ -68,7 +68,7 @@ const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
-const REQUIRED_EXTENSION_VERSION = "0.1.29";
+const REQUIRED_EXTENSION_VERSION = "0.1.30";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -1225,9 +1225,9 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
     <section className={`extension-quick-check ${tone}`}>
       <div className="extension-quick-copy">
         <span className="eyebrow">Real signal scan</span>
-        <h3>Check YouTube bell automatically</h3>
+        <h3>Check open Studio tabs</h3>
         <p>
-          Opens or reuses YouTube, opens the bell menu, then reads visible Studio test notifications. It never edits YouTube.
+          Reads the bell menu from open Studio tabs in the background first. You can stay on this dashboard.
         </p>
         <div className={`extension-bridge-status ${bridgeTone}`}>
           <strong>
@@ -2720,7 +2720,7 @@ function requestExtension(type, { timeoutMs = 12000 } = {}) {
 function extensionCommandLoadingText(type) {
   if (type === "open-notification-page") return "Opening or reusing YouTube home for automatic bell checks...";
   if (type === "report-missed-notification") return "Sending a debug snapshot from the extension...";
-  return "Asking the Chrome extension to open YouTube bell notifications and scan Studio tabs...";
+  return "Asking the Chrome extension to scan open Studio tabs in the background...";
 }
 
 function extensionScanSummary(response) {

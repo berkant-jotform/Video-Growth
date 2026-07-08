@@ -14,8 +14,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("scan").addEventListener("click", async () => {
     await withBusy(async () => {
       await repairDashboardBridge({ force: true });
-      setSummary("Opening YouTube bell notifications and scanning Studio tabs...");
-      const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab", interactive: true });
+      setSummary("Scanning open Studio tabs in the background...");
+      const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab", userInitiated: true, avoidTabSwitch: true });
       setSummary(scanResultText(response));
       await render();
       setSummary(scanResultText(response));
@@ -107,8 +107,8 @@ async function runPrimaryAction() {
   }
   if (action === "scan") {
     await repairDashboardBridge({ force: true });
-    setSummary("Opening YouTube bell notifications and scanning Studio tabs...");
-    const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab", interactive: true });
+    setSummary("Scanning open Studio tabs in the background...");
+    const response = await chrome.runtime.sendMessage({ type: "scan-studio-tab", userInitiated: true, avoidTabSwitch: true });
     setSummary(scanResultText(response));
     await render();
     setSummary(scanResultText(response));

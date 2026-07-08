@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.29";
+const EXTENSION_VERSION = "0.1.30";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -61,7 +61,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === "scan-studio-tab") {
-    requestStudioScrapeGuarded({ interactive: Boolean(message.interactive) })
+    requestStudioScrapeGuarded({
+      userInitiated: Boolean(message.interactive || message.userInitiated),
+      avoidTabSwitch: message.avoidTabSwitch !== false
+    })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -139,13 +142,19 @@ function openWatcherTabsGuarded(requestedTargets = [], options = {}) {
 }
 
 async function requestStudioScrape(options = {}) {
-  await ensureNotificationWatcherForScan(options);
-  const tabs = await collectScrapeTabs();
+  const initialTabs = await collectScrapeTabs({
+    preferStudio: Boolean(options.userInitiated),
+    includeYoutube: !options.userInitiated
+  });
+  if (!initialTabs.length) await ensureNotificationWatcherForScan(options);
+  const tabs = initialTabs.length
+    ? initialTabs
+    : await collectScrapeTabs({ preferStudio: Boolean(options.userInitiated), includeYoutube: true });
   let results = await scrapeTabs(tabs);
-  if (shouldRetryWithNotificationWatcher(results, tabs)) {
+  if (shouldRetryWithNotificationWatcher(results, tabs, options)) {
     await openNotificationPage({ active: false }).catch(() => null);
     await delay(2600);
-    const retryTabs = await collectScrapeTabs();
+    const retryTabs = await collectScrapeTabs({ preferStudio: Boolean(options.userInitiated), includeYoutube: true });
     const retryResults = await scrapeTabs(retryTabs);
     results = mergeScanResults(results, retryResults);
   }
@@ -155,9 +164,9 @@ async function requestStudioScrape(options = {}) {
 }
 
 async function ensureNotificationWatcherForScan(options = {}) {
-  const tab = await openNotificationPage({ active: Boolean(options.interactive) }).catch(() => null);
+  const tab = await openNotificationPage({ active: Boolean(options.userInitiated && options.avoidTabSwitch === false) }).catch(() => null);
   if (tab?.tabId) await waitForTabReady(tab.tabId, 6000).catch(() => {});
-  if (options.interactive && tab?.tabId) {
+  if (options.userInitiated && options.avoidTabSwitch === false && tab?.tabId) {
     await chrome.tabs.update(tab.tabId, { active: true }).catch(() => {});
     await delay(800);
   }
@@ -178,11 +187,11 @@ async function scrapeTabs(tabs) {
   return results;
 }
 
-function shouldRetryWithNotificationWatcher(results, tabs) {
+function shouldRetryWithNotificationWatcher(results, tabs, options = {}) {
   const totals = summarizeScanResults(results);
   if (totals.candidates || totals.received) return false;
   const hasYoutubeTab = tabs.some((tab) => /^https:\/\/www\.youtube\.com\//i.test(tab.url || ""));
-  return !hasYoutubeTab;
+  return Boolean(options.userInitiated || !hasYoutubeTab);
 }
 
 function mergeScanResults(first, second) {
@@ -222,12 +231,14 @@ async function saveStudioScanResults(results) {
   });
 }
 
-async function collectScrapeTabs() {
+async function collectScrapeTabs(options = {}) {
+  const includeYoutube = options.includeYoutube !== false;
+  const preferStudio = Boolean(options.preferStudio);
   const [studioTabs, youtubeTabs] = await Promise.all([
     chrome.tabs.query({ url: "https://studio.youtube.com/*" }),
-    chrome.tabs.query({ url: "https://www.youtube.com/*" })
+    includeYoutube ? chrome.tabs.query({ url: "https://www.youtube.com/*" }) : Promise.resolve([])
   ]);
-  const watcherTab = await getNotificationWatcherTab();
+  const watcherTab = includeYoutube ? await getNotificationWatcherTab() : null;
   const notificationTabs = youtubeTabs.filter((tab) => isLikelyNotificationTab(tab));
   const youtubeFallbackTabs = youtubeTabs
     .filter((tab) => tab.id && tab.id !== watcherTab?.id && !notificationTabs.some((item) => item.id === tab.id))
@@ -237,10 +248,14 @@ async function collectScrapeTabs() {
     enrichedStudioTabs.push(await enrichStudioTab(tab));
   }
   const ranked = [
-    ...(watcherTab ? [{ ...watcherTab, scanKind: "youtube_bell_watcher", scanRank: 0 }] : []),
-    ...notificationTabs.map((tab) => ({ ...tab, scanKind: "youtube_notifications", scanRank: 1 })),
-    ...youtubeFallbackTabs.map((tab) => ({ ...tab, scanKind: "youtube_fallback", scanRank: 2 })),
-    ...enrichedStudioTabs.map((tab) => ({ ...tab, scanKind: classifyStudioTab(tab), scanRank: rankStudioTab(tab) }))
+    ...enrichedStudioTabs.map((tab) => ({
+      ...tab,
+      scanKind: classifyStudioTab(tab),
+      scanRank: (preferStudio ? 0 : 10) + rankStudioTab(tab)
+    })),
+    ...(watcherTab ? [{ ...watcherTab, scanKind: "youtube_bell_watcher", scanRank: preferStudio ? 80 : 0 }] : []),
+    ...notificationTabs.map((tab) => ({ ...tab, scanKind: "youtube_notifications", scanRank: preferStudio ? 81 : 1 })),
+    ...youtubeFallbackTabs.map((tab) => ({ ...tab, scanKind: "youtube_fallback", scanRank: preferStudio ? 82 : 2 }))
   ].sort((a, b) => a.scanRank - b.scanRank || String(a.title || "").localeCompare(String(b.title || "")));
 
   const map = new Map();
@@ -430,7 +445,7 @@ function buildScanDiagnosis(results) {
     severity: "info",
     code: "no_finish_text_seen",
     message: "The extension scanned Studio successfully, but no A/B finish text was visible.",
-    action: "Run Check now again; it will open the YouTube bell automatically. If it still misses visible text, use I see a missed notification."
+    action: "Keep a Studio tab open and run Check now again. If it still misses visible text, use I see a missed notification."
   };
 }
 
