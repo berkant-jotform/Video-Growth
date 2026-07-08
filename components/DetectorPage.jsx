@@ -68,6 +68,7 @@ const DEFAULT_CHANNEL_ACCENTS = ["#697386", "#596d7a", "#6f6a5c", "#70607a", "#5
 const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
+const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
 const REQUIRED_EXTENSION_VERSION = "0.1.31";
 
 export default function DetectorPage({ session }) {
@@ -123,6 +124,9 @@ export default function DetectorPage({ session }) {
         version,
         message: version ? `Dashboard bridge ready (v${version}).` : "Dashboard bridge ready."
       });
+      try {
+        window.sessionStorage.removeItem(EXTENSION_RECONNECT_STORAGE_KEY);
+      } catch {}
       setExtensionRequest((current) =>
         current.status === "warn" && (!current.message || isBridgeOfflineMessage(current.message))
           ? { status: "idle", message: "" }
@@ -140,20 +144,12 @@ export default function DetectorPage({ session }) {
       .then((response) => {
         if (response?.ok) markReady(response.version || "");
         if (response?.ok === false && isExtensionContextInvalidated(response.error)) {
-          setExtensionBridge({
-            status: "missing",
-            version: "",
-            message: "The extension was updated or reloaded. Reload this dashboard page to reconnect the buttons."
-          });
+          recoverInvalidatedExtensionContext();
         }
       })
       .catch((error) => {
         if (isExtensionContextInvalidated(error.message)) {
-          setExtensionBridge({
-            status: "missing",
-            version: "",
-            message: "The extension was updated or reloaded. Reload this dashboard page to reconnect the buttons."
-          });
+          recoverInvalidatedExtensionContext();
           return;
         }
         missingTimer = window.setTimeout(() => {
@@ -345,15 +341,7 @@ export default function DetectorPage({ session }) {
       window.setTimeout(() => refresh(), 800);
     } catch (err) {
       if (isExtensionContextInvalidated(err.message)) {
-        setExtensionBridge({
-          status: "missing",
-          version: "",
-          message: "The extension was updated or reloaded. Reload this dashboard page to reconnect the buttons."
-        });
-        setExtensionRequest({
-          status: "warn",
-          message: "Reload this dashboard page once. Your extension update invalidated the old page bridge."
-        });
+        recoverInvalidatedExtensionContext();
         return;
       }
       if (isBridgeOfflineMessage(err.message)) {
@@ -370,6 +358,36 @@ export default function DetectorPage({ session }) {
         });
       }
     }
+  }
+
+  function recoverInvalidatedExtensionContext() {
+    const message = "Extension was updated or reloaded. Reconnecting this dashboard automatically...";
+    setExtensionBridge({
+      status: "missing",
+      version: "",
+      message
+    });
+    setExtensionRequest({ status: "warn", message });
+    let alreadyTried = false;
+    try {
+      alreadyTried = window.sessionStorage.getItem(EXTENSION_RECONNECT_STORAGE_KEY) === "1";
+      if (!alreadyTried) window.sessionStorage.setItem(EXTENSION_RECONNECT_STORAGE_KEY, "1");
+    } catch {}
+    if (alreadyTried) {
+      setExtensionBridge({
+        status: "missing",
+        version: "",
+        message: "Automatic reconnect already ran. Open the extension popup once, then reload this dashboard if needed."
+      });
+      setExtensionRequest({
+        status: "warn",
+        message: "Automatic reconnect already ran. Open the extension popup once, then reload this dashboard if needed."
+      });
+      return;
+    }
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 1200);
   }
 
   function toggleScanChannel(channel) {
