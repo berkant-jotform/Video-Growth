@@ -139,8 +139,23 @@ export default function DetectorPage({ session }) {
     requestExtension("ping-extension", { timeoutMs: 1600 })
       .then((response) => {
         if (response?.ok) markReady(response.version || "");
+        if (response?.ok === false && isExtensionContextInvalidated(response.error)) {
+          setExtensionBridge({
+            status: "missing",
+            version: "",
+            message: "The extension was updated or reloaded. Reload this dashboard page to reconnect the buttons."
+          });
+        }
       })
-      .catch(() => {
+      .catch((error) => {
+        if (isExtensionContextInvalidated(error.message)) {
+          setExtensionBridge({
+            status: "missing",
+            version: "",
+            message: "The extension was updated or reloaded. Reload this dashboard page to reconnect the buttons."
+          });
+          return;
+        }
         missingTimer = window.setTimeout(() => {
           if (!bridgeReady && !cancelled) {
             setExtensionBridge({
@@ -329,6 +344,18 @@ export default function DetectorPage({ session }) {
       setExtensionRequest({ status: "ok", message });
       window.setTimeout(() => refresh(), 800);
     } catch (err) {
+      if (isExtensionContextInvalidated(err.message)) {
+        setExtensionBridge({
+          status: "missing",
+          version: "",
+          message: "The extension was updated or reloaded. Reload this dashboard page to reconnect the buttons."
+        });
+        setExtensionRequest({
+          status: "warn",
+          message: "Reload this dashboard page once. Your extension update invalidated the old page bridge."
+        });
+        return;
+      }
       if (isBridgeOfflineMessage(err.message)) {
         setExtensionBridge({
           status: "missing",
@@ -1241,7 +1268,7 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
             {bridge?.status === "ready"
               ? "Website buttons can talk to the extension."
               : bridge?.status === "missing"
-                ? "Open the extension popup once; reload this page if it stays offline."
+                ? bridge.message || "Open the extension popup once; reload this page if it stays offline."
                 : "This should only take a moment."}
           </span>
         </div>
@@ -2693,7 +2720,17 @@ function normalizeNotificationAgeLabel(value) {
 
 function isBridgeOfflineMessage(value) {
   const text = String(value || "").toLowerCase();
-  return text.includes("bridge offline") || text.includes("did not respond from this dashboard page");
+  return text.includes("bridge offline") ||
+    text.includes("did not respond from this dashboard page") ||
+    isExtensionContextInvalidated(text);
+}
+
+function isExtensionContextInvalidated(value) {
+  const text = String(value || "").toLowerCase();
+  return text.includes("extension context invalidated") ||
+    text.includes("context invalidated") ||
+    text.includes("extension was reloaded") ||
+    text.includes("receiving end does not exist");
 }
 
 function requestExtension(type, { timeoutMs = 12000 } = {}) {
