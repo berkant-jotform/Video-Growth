@@ -174,6 +174,7 @@ function sanitizeLastStudioScan(value) {
           finishHintCount: Number(tab.finishHintCount || 0),
           debugSample: String(tab.debugSample || "").slice(0, 700),
           notificationOpenResult: sanitizeNotificationOpenResult(tab.notificationOpenResult),
+          pageIdentity: sanitizePageIdentity(tab.pageIdentity),
           previews: Array.isArray(tab.previews)
             ? tab.previews.slice(0, 3).map((preview) => ({
                 title: String(preview.title || "").slice(0, 180),
@@ -195,6 +196,19 @@ function sanitizeNotificationOpenResult(value) {
     opened: Boolean(value.opened),
     attempts: Number(value.attempts || 0),
     surfaceVisible: Boolean(value.surfaceVisible)
+  };
+}
+
+function sanitizePageIdentity(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    title: String(value.title || "").slice(0, 160),
+    url: String(value.url || "").slice(0, 300),
+    accountHints: Array.isArray(value.accountHints)
+      ? value.accountHints.map((item) => String(item || "").slice(0, 140)).slice(0, 8)
+      : [],
+    hasStudioText: Boolean(value.hasStudioText),
+    hasYoutubeNotificationsText: Boolean(value.hasYoutubeNotificationsText)
   };
 }
 

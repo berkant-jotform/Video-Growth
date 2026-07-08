@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.30";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.31";
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
@@ -142,17 +142,15 @@ async function scrapeStudioNotifications({ includeSeen = false } = {}) {
     };
   }
   await delay(1200);
-  const after = collectNotificationEvents({ includeSeen });
-  const scrolls = await scrollNotificationSurfaces();
-  await delay(scrolls ? 900 : 300);
-  const afterScroll = scrolls ? collectNotificationEvents({ includeSeen }) : [];
-  const events = compactEvents([...before, ...after, ...afterScroll]);
+  const after = await waitForNotificationEvents({ includeSeen, timeoutMs: 4500 });
+  const { scrolls, events: scrolledEvents } = await collectWithScrolling({ includeSeen });
+  const events = compactEvents([...before, ...after, ...scrolledEvents]);
   return {
     events,
     diagnostics: scanDiagnostics({
       menuOpened: true,
       before,
-      after: [...after, ...afterScroll],
+      after: [...after, ...scrolledEvents],
       events
     }, { scrolls })
   };
@@ -168,6 +166,7 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
     channelId: detectChannelId(),
     menuOpened,
     notificationButtonFound: Boolean(findNotificationButton()),
+    pageIdentity: detectPageIdentity(),
     visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
     bodySnippetCount: bodySnippets.length,
     rawWindowCount: rawWindows.length,
@@ -191,6 +190,7 @@ function studioTabStatus() {
     channel: detectChannelName(),
     channelId: detectChannelId(),
     notificationButtonFound: Boolean(findNotificationButton()),
+    pageIdentity: detectPageIdentity(),
     visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
     bodySnippetCount: finishNotificationSnippets(bodyText).length,
     rawWindowCount: rawWindows.length,
@@ -553,7 +553,28 @@ function findNotificationButton() {
   );
 }
 
-async function scrollNotificationSurfaces() {
+async function waitForNotificationEvents({ includeSeen, timeoutMs = 4000 } = {}) {
+  const startedAt = Date.now();
+  let latest = collectNotificationEvents({ includeSeen });
+  while (!latest.length && Date.now() - startedAt < timeoutMs) {
+    await delay(500);
+    latest = collectNotificationEvents({ includeSeen });
+  }
+  return latest;
+}
+
+async function collectWithScrolling({ includeSeen } = {}) {
+  const events = [];
+  let scrolls = 0;
+  for (let round = 0; round < 3; round += 1) {
+    scrolls += await scrollNotificationSurfaces(round);
+    await delay(650);
+    events.push(...collectNotificationEvents({ includeSeen }));
+  }
+  return { scrolls, events: compactEvents(events) };
+}
+
+async function scrollNotificationSurfaces(round = 0) {
   const surfaces = queryAllDeep(
     [
       "ytd-multi-page-menu-renderer",
@@ -574,9 +595,14 @@ async function scrollNotificationSurfaces() {
   }
   let count = 0;
   for (const container of containers) {
-    container.scrollTop = container.scrollHeight;
-    container.dispatchEvent(new Event("scroll", { bubbles: true }));
-    count += 1;
+    const targets = round % 2 === 0
+      ? [container.scrollHeight, Math.floor(container.scrollHeight * 0.55)]
+      : [0, container.scrollHeight];
+    for (const target of targets) {
+      container.scrollTop = target;
+      container.dispatchEvent(new Event("scroll", { bubbles: true }));
+      count += 1;
+    }
   }
   return count;
 }
@@ -632,6 +658,24 @@ function notificationButtonLabel(element) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120);
+}
+
+function detectPageIdentity() {
+  const text = collapseText(document.body?.innerText || "").slice(0, 5000);
+  const accountLabels = queryAllDeep("[aria-label], [title]")
+    .map((element) => [
+      element.getAttribute("aria-label"),
+      element.getAttribute("title")
+    ].filter(Boolean).join(" "))
+    .filter((value) => /account|hesap|channel|kanal|jotform|ai agents/i.test(value))
+    .slice(0, 8);
+  return {
+    title: document.title || "",
+    url: location.href,
+    accountHints: accountLabels.map((value) => collapseText(value).slice(0, 140)),
+    hasStudioText: /youtube studio|dashboard|content|analytics/i.test(text),
+    hasYoutubeNotificationsText: /notifications|bildirimler|a\/b test/i.test(text)
+  };
 }
 
 function queryOneDeep(selector, root = document) {

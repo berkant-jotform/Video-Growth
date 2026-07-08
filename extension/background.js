@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.30";
+const EXTENSION_VERSION = "0.1.31";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -153,10 +153,25 @@ async function requestStudioScrape(options = {}) {
   let results = await scrapeTabs(tabs);
   if (shouldRetryWithNotificationWatcher(results, tabs, options)) {
     await openNotificationPage({ active: false }).catch(() => null);
-    await delay(2600);
+    await delay(3200);
     const retryTabs = await collectScrapeTabs({ preferStudio: Boolean(options.userInitiated), includeYoutube: true });
     const retryResults = await scrapeTabs(retryTabs);
     results = mergeScanResults(results, retryResults);
+  }
+  if (shouldDeepScanFallback(results, options)) {
+    const deepScan = await deepScanActiveVideos({ limit: 4, reason: "finish-signal-fallback" }).catch((error) => ({ ok: false, error: error.message }));
+    if (Array.isArray(deepScan.results) && deepScan.results.length) {
+      results = mergeScanResults(results, deepScan.results.map((item) => ({
+        ...item,
+        tabTitle: item.tabTitle || item.videoTitle || "Deep scan",
+        tabUrl: item.tabUrl || item.studioUrl || "",
+        diagnostics: {
+          ...(item.diagnostics || {}),
+          deepScanFallback: true,
+          deepScanReason: deepScan.error || ""
+        }
+      })));
+    }
   }
   await saveStudioScanResults(results);
   await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
@@ -192,6 +207,13 @@ function shouldRetryWithNotificationWatcher(results, tabs, options = {}) {
   if (totals.candidates || totals.received) return false;
   const hasYoutubeTab = tabs.some((tab) => /^https:\/\/www\.youtube\.com\//i.test(tab.url || ""));
   return Boolean(options.userInitiated || !hasYoutubeTab);
+}
+
+function shouldDeepScanFallback(results, options = {}) {
+  if (!options.userInitiated) return false;
+  const totals = summarizeScanResults(results);
+  if (totals.candidates || totals.received || totals.duplicate || totals.queued) return false;
+  return results.some((item) => /^https:\/\/studio\.youtube\.com\//i.test(item.tabUrl || ""));
 }
 
 function mergeScanResults(first, second) {
@@ -382,6 +404,14 @@ function buildScanDiagnosis(results) {
     };
   }
   if (totals.candidates > 0 && totals.received === 0 && totals.ignored === 0) {
+    if (totals.duplicate >= totals.candidates) {
+      return {
+        severity: "ok",
+        code: "already_processed",
+        message: "The extension saw A/B finish text that was already processed.",
+        action: ""
+      };
+    }
     if (totals.queued > 0) {
       return {
         severity: "warn",
@@ -450,14 +480,30 @@ function buildScanDiagnosis(results) {
 }
 
 async function ensureContentScript(tabId) {
-  const loaded = await chrome.scripting
+  const status = await chrome.scripting
     .executeScript({
       target: { tabId },
-      func: () => Boolean(globalThis.__youtubeAbTestsConnectorLoaded)
+      func: () => ({
+        loaded: Boolean(globalThis.__youtubeAbTestsConnectorLoaded),
+        version: String(globalThis.__youtubeAbTestsConnectorVersion || "")
+      })
     })
-    .then((results) => Boolean(results?.[0]?.result))
-    .catch(() => false);
-  if (loaded) return;
+    .then((results) => results?.[0]?.result || { loaded: false, version: "" })
+    .catch(() => ({ loaded: false, version: "" }));
+  if (status.loaded && status.version === EXTENSION_VERSION) return;
+  if (status.loaded && status.version && status.version !== EXTENSION_VERSION) {
+    await chrome.tabs.reload(tabId).catch(() => {});
+    await waitForTabReady(tabId, 8000).catch(() => {});
+    await delay(700);
+    const reloaded = await chrome.scripting
+      .executeScript({
+        target: { tabId },
+        func: () => String(globalThis.__youtubeAbTestsConnectorVersion || "")
+      })
+      .then((results) => results?.[0]?.result || "")
+      .catch(() => "");
+    if (reloaded === EXTENSION_VERSION) return;
+  }
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["content.js"]
@@ -799,7 +845,8 @@ async function reportMissedNotification() {
     message: "User reported a visible A/B finish notification that was not captured",
     context: { reportedAt: new Date().toISOString() }
   });
-  const scan = await requestStudioScrapeGuarded().catch((error) => ({ ok: false, error: error.message }));
+  const scan = await requestStudioScrapeGuarded({ userInitiated: true, avoidTabSwitch: true })
+    .catch((error) => ({ ok: false, error: error.message }));
   const heartbeat = await sendHeartbeat({ userReportedMiss: true, lastStudioScan: await buildLastStudioScanPayload() })
     .catch((error) => ({ ok: false, error: error.message }));
   return { ok: scan.ok !== false, scan, heartbeat };
@@ -820,12 +867,13 @@ async function fetchConnectorConfig(settings) {
   return payload;
 }
 
-async function deepScanActiveVideos() {
+async function deepScanActiveVideos(options = {}) {
   const settings = await getSettings();
   requireConfigured(settings);
   const config = await fetchConnectorConfig(settings);
   const activeTests = Array.isArray(config.activeTests) ? config.activeTests : [];
-  const targets = uniqueStudioTargets(activeTests).slice(0, DEEP_SCAN_LIMIT);
+  const limit = Math.max(1, Math.min(DEEP_SCAN_LIMIT, Number(options.limit || DEEP_SCAN_LIMIT)));
+  const targets = uniqueStudioTargets(activeTests).slice(0, limit);
   const opened = [];
   const results = [];
 
@@ -865,7 +913,8 @@ async function deepScanActiveVideos() {
 
   return {
     ok: true,
-    limit: DEEP_SCAN_LIMIT,
+    limit,
+    reason: options.reason || "",
     candidates: activeTests.length,
     opened: opened.length,
     scanned: results.length,
@@ -1017,10 +1066,11 @@ async function collectStudioTabDetails(studioTabs) {
       const status = await chrome.tabs.sendMessage(tab.id, { type: "studio-tab-status" });
       details.push({
         ...base,
-        channel: status?.channel || "",
-        channelId: status?.channelId || "",
-        notificationButtonFound: Boolean(status?.notificationButtonFound),
-        visibleNotificationContainers: Number(status?.visibleNotificationContainers || 0),
+      channel: status?.channel || "",
+      channelId: status?.channelId || "",
+      notificationButtonFound: Boolean(status?.notificationButtonFound),
+      pageIdentity: status?.pageIdentity || null,
+      visibleNotificationContainers: Number(status?.visibleNotificationContainers || 0),
         bodySnippetCount: Number(status?.bodySnippetCount || 0),
         rawWindowCount: Number(status?.rawWindowCount || 0),
         finishHintCount: Number(status?.finishHintCount || 0)
@@ -1058,6 +1108,7 @@ async function buildLastStudioScanPayload() {
           finishHintCount: Number(tab.diagnostics?.finishHintCount || 0),
           debugSample: tab.diagnostics?.debugSample || "",
           notificationOpenResult: tab.diagnostics?.notificationOpenResult || null,
+          pageIdentity: tab.diagnostics?.pageIdentity || null,
           previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 3) : []
         }))
       : [],
