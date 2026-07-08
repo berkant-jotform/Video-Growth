@@ -69,6 +69,7 @@ const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
+const EXTENSION_MISSING_RELOAD_STORAGE_KEY = "youtube-ab-extension-missing-reload-attempted";
 const REQUIRED_EXTENSION_VERSION = "0.1.32";
 
 export default function DetectorPage({ session }) {
@@ -126,6 +127,7 @@ export default function DetectorPage({ session }) {
       });
       try {
         window.sessionStorage.removeItem(EXTENSION_RECONNECT_STORAGE_KEY);
+        window.sessionStorage.removeItem(EXTENSION_MISSING_RELOAD_STORAGE_KEY);
       } catch {}
       setExtensionRequest((current) =>
         current.status === "warn" && (!current.message || isBridgeOfflineMessage(current.message))
@@ -154,10 +156,18 @@ export default function DetectorPage({ session }) {
         }
         missingTimer = window.setTimeout(() => {
           if (!bridgeReady && !cancelled) {
+            if (tryAutoReloadMissingBridge()) {
+              setExtensionBridge({
+                status: "missing",
+                version: "",
+                message: "Dashboard bridge did not connect. Reloading this page once automatically..."
+              });
+              return;
+            }
             setExtensionBridge({
               status: "missing",
               version: "",
-              message: "The extension popup is separate; this dashboard page has not connected to the extension bridge yet."
+              message: "This dashboard cannot reach the Chrome extension. Reload the page; if it stays offline, open the extension popup once and reload again."
             });
           }
         }, 150);
@@ -388,6 +398,20 @@ export default function DetectorPage({ session }) {
     window.setTimeout(() => {
       window.location.reload();
     }, 1200);
+  }
+
+  function tryAutoReloadMissingBridge() {
+    try {
+      const alreadyTried = window.sessionStorage.getItem(EXTENSION_MISSING_RELOAD_STORAGE_KEY) === "1";
+      if (alreadyTried) return false;
+      window.sessionStorage.setItem(EXTENSION_MISSING_RELOAD_STORAGE_KEY, "1");
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 900);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function toggleScanChannel(channel) {
@@ -1266,6 +1290,7 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
   const tone = request.status === "ok" ? "ok" : request.status === "warn" ? "warn" : "neutral";
   const bridgeTone = bridge?.status === "ready" ? "ok" : bridge?.status === "missing" ? "warn" : "neutral";
   const requestMessage = isBridgeOfflineMessage(request.message) ? "" : request.message;
+  const bridgeMissing = bridge?.status === "missing";
   return (
     <section className={`extension-quick-check ${tone}`}>
       <div className="extension-quick-copy">
@@ -1293,16 +1318,29 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
         {requestMessage ? <em>{requestMessage}</em> : null}
       </div>
       <div className="extension-quick-actions">
-        <button className="primary-button" type="button" onClick={onCheck} disabled={running}>
-          <BellRing size={17} />
-          {running ? "Checking" : "Check now"}
-        </button>
-        <button className="secondary-button" type="button" onClick={onOpenNotifications} disabled={running}>
-          Open YouTube home
-        </button>
-        <button className="quiet-button" type="button" onClick={onReportMiss} disabled={running}>
-          I see a missed notification
-        </button>
+        {bridgeMissing ? (
+          <>
+            <button className="primary-button" type="button" onClick={() => window.location.reload()}>
+              Reload dashboard
+            </button>
+            <a className="secondary-button" href="/extension">
+              Extension setup
+            </a>
+          </>
+        ) : (
+          <>
+            <button className="primary-button" type="button" onClick={onCheck} disabled={running}>
+              <BellRing size={17} />
+              {running ? "Checking" : "Check now"}
+            </button>
+            <button className="secondary-button" type="button" onClick={onOpenNotifications} disabled={running}>
+              Open YouTube home
+            </button>
+            <button className="quiet-button" type="button" onClick={onReportMiss} disabled={running}>
+              I see a missed notification
+            </button>
+          </>
+        )}
       </div>
     </section>
   );
