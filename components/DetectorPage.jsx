@@ -87,6 +87,7 @@ export default function DetectorPage({ session }) {
   const [selected, setSelected] = useState(null);
   const [modalRun, setModalRun] = useState(null);
   const [modalInitialAction, setModalInitialAction] = useState("");
+  const [missedTextModalOpen, setMissedTextModalOpen] = useState(false);
   const [quickSaving, setQuickSaving] = useState("");
   const [scanChannels, setScanChannels] = useState([]);
   const [scanType, setScanType] = useState("all");
@@ -529,6 +530,27 @@ export default function DetectorPage({ session }) {
     }
   }
 
+  async function importMissedNotificationText(text) {
+    const scopedChannels = scanChannels.length
+      ? scanChannels
+      : viewChannel !== "all"
+        ? [viewChannel]
+        : [];
+    const response = await fetch("/api/finish-signals/import-text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        channelScope: scopedChannels,
+        testTypeScope: scanType
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not import notification text.");
+    await refresh();
+    return payload;
+  }
+
   async function quickComplete(run, action) {
     if (requiresRetestConfirmation(run)) {
       setModalInitialAction(action);
@@ -717,7 +739,7 @@ export default function DetectorPage({ session }) {
                 bridge={extensionBridge}
                 onCheck={() => sendExtensionCommand("check-studio-now")}
                 onOpenNotifications={() => sendExtensionCommand("open-notification-page")}
-                onReportMiss={() => sendExtensionCommand("report-missed-notification")}
+                onPasteMiss={() => setMissedTextModalOpen(true)}
               />
             </div>
             <div className="scan-action-row">
@@ -939,6 +961,15 @@ export default function DetectorPage({ session }) {
             setModalInitialAction("");
             await refresh();
           }}
+        />
+      ) : null}
+      {missedTextModalOpen ? (
+        <MissedNotificationModal
+          scanChannels={scanChannels}
+          viewChannel={viewChannel}
+          scanType={scanType}
+          onClose={() => setMissedTextModalOpen(false)}
+          onImport={importMissedNotificationText}
         />
       ) : null}
     </AppShell>
@@ -1317,7 +1348,7 @@ function extensionScanStages(tabs, totals) {
   ];
 }
 
-function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, onReportMiss }) {
+function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, onPasteMiss }) {
   const running = request.status === "running";
   const tone = request.status === "ok" ? "ok" : request.status === "warn" ? "warn" : "neutral";
   const bridgeTone = bridge?.status === "ready" ? "ok" : bridge?.status === "missing" ? "warn" : "neutral";
@@ -1368,8 +1399,8 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
             <button className="secondary-button" type="button" onClick={onOpenNotifications} disabled={running}>
               Open YouTube home
             </button>
-            <button className="quiet-button" type="button" onClick={onReportMiss} disabled={running}>
-              I see a missed notification
+            <button className="quiet-button" type="button" onClick={onPasteMiss} disabled={running}>
+              Paste missed notifications
             </button>
           </>
         )}
@@ -2057,6 +2088,81 @@ function DoneModal({ run, initialAction = "", onClose, onDone }) {
         <button className="primary-button wide" onClick={submit} disabled={busy}>
           {busy ? "Saving" : "Save Done"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function MissedNotificationModal({ scanChannels, viewChannel, scanType, onClose, onImport }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null);
+  const scopedChannels = scanChannels.length ? scanChannels : viewChannel !== "all" ? [viewChannel] : [];
+  const scopeLabel = [
+    scopedChannels.length ? scopedChannels.join(", ") : "all channels",
+    scanType !== "all" ? `${titleCase(scanType)} tests` : "all tests"
+  ].join(" · ");
+
+  async function submit() {
+    setError("");
+    setResult(null);
+    if (text.trim().length < 20) {
+      setError("Paste the visible YouTube notification text first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload = await onImport(text);
+      setResult(payload);
+    } catch (err) {
+      setError(err.message || "Could not import notification text.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal missed-notification-modal">
+        <button className="icon-button modal-close" onClick={onClose} title="Close modal">
+          <X size={18} />
+        </button>
+        <p className="eyebrow">Missed finish signals</p>
+        <h2>Paste YouTube bell text</h2>
+        <p className="muted">
+          Use this when the bell shows finished A/B tests but the extension scan captures zero candidates. The app parses all A/B lines and auto-matches them to sheet rows.
+        </p>
+        <div className="scope-note">
+          <span>Import scope</span>
+          <strong>{scopeLabel}</strong>
+        </div>
+        <textarea
+          value={text}
+          rows={10}
+          spellCheck={false}
+          placeholder="Paste the visible YouTube notifications here..."
+          onChange={(event) => setText(event.target.value)}
+        />
+        {result ? (
+          <div className="import-result-grid">
+            <span><strong>{result.received || 0}</strong> found</span>
+            <span><strong>{result.matched || 0}</strong> matched</span>
+            <span><strong>{result.unmatched || 0}</strong> unregistered</span>
+            <span><strong>{result.ignored || 0}</strong> ignored</span>
+          </div>
+        ) : null}
+        {error ? <p className="form-error">{error}</p> : null}
+        <div className="modal-actions">
+          <button className="primary-button" onClick={submit} disabled={busy}>
+            {busy ? "Importing" : "Import finish signals"}
+          </button>
+          {result ? (
+            <button className="secondary-button" onClick={onClose}>
+              Done
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );
