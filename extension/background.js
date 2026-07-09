@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.34";
+const EXTENSION_VERSION = "0.2.0";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -6,6 +6,21 @@ const PENDING_EVENT_QUEUE_KEY = "pendingConnectorEvents";
 const RECENT_EVENT_KEYS_KEY = "recentConnectorEventKeys";
 const MAX_PENDING_EVENTS = 200;
 const RECENT_EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const RUNTIME_CONFIG_STORAGE_KEY = "extensionRuntimeConfig";
+const DEFAULT_RUNTIME_CONFIG = {
+  version: "2026-07-09.1",
+  waitAfterOpenMs: 1200,
+  waitForRowsMs: 4500,
+  scrollRounds: 3,
+  scrollDelayMs: 650,
+  scanOrder: "youtube_first",
+  includeSeenOnManualScan: true,
+  minTextLength: 18,
+  maxTextLength: 700,
+  maxEvents: 60,
+  finishPhrases: [],
+  ignorePhrases: []
+};
 const DEFAULT_SETTINGS = {
   appUrl: "https://video-growth.vercel.app",
   connectorToken: "",
@@ -148,26 +163,28 @@ function openWatcherTabsGuarded(requestedTargets = [], options = {}) {
 }
 
 async function requestStudioScrape(options = {}) {
-  if (options.userInitiated) {
-    await ensureNotificationWatcherForScan({ ...options, active: false }).catch(() => null);
+  const runtimeConfig = await runtimeConfigForScan();
+  const scanOptions = { ...options, runtimeConfig };
+  if (scanOptions.userInitiated && runtimeConfig.scanOrder !== "studio_first") {
+    await ensureNotificationWatcherForScan({ ...scanOptions, active: false }).catch(() => null);
   }
   const initialTabs = await collectScrapeTabs({
-    preferStudio: !options.userInitiated,
+    preferStudio: runtimeConfig.scanOrder === "studio_first" || !scanOptions.userInitiated,
     includeYoutube: true
   });
-  if (!initialTabs.length) await ensureNotificationWatcherForScan(options);
+  if (!initialTabs.length) await ensureNotificationWatcherForScan(scanOptions);
   const tabs = initialTabs.length
     ? initialTabs
-    : await collectScrapeTabs({ preferStudio: !options.userInitiated, includeYoutube: true });
-  let results = await scrapeTabs(tabs, options);
-  if (shouldRetryWithNotificationWatcher(results, tabs, options)) {
+    : await collectScrapeTabs({ preferStudio: runtimeConfig.scanOrder === "studio_first" || !scanOptions.userInitiated, includeYoutube: true });
+  let results = await scrapeTabs(tabs, scanOptions);
+  if (shouldRetryWithNotificationWatcher(results, tabs, scanOptions)) {
     await openNotificationPage({ active: false }).catch(() => null);
-    await delay(3200);
-    const retryTabs = await collectScrapeTabs({ preferStudio: Boolean(options.userInitiated), includeYoutube: true });
-    const retryResults = await scrapeTabs(retryTabs, options);
+    await delay(Math.max(1200, Number(runtimeConfig.waitAfterOpenMs || 1200) + 2000));
+    const retryTabs = await collectScrapeTabs({ preferStudio: Boolean(scanOptions.userInitiated), includeYoutube: true });
+    const retryResults = await scrapeTabs(retryTabs, scanOptions);
     results = mergeScanResults(results, retryResults);
   }
-  if (shouldDeepScanFallback(results, options)) {
+  if (shouldDeepScanFallback(results, scanOptions)) {
     const deepScan = await deepScanActiveVideos({ limit: 4, reason: "finish-signal-fallback" }).catch((error) => ({ ok: false, error: error.message }));
     if (Array.isArray(deepScan.results) && deepScan.results.length) {
       results = mergeScanResults(results, deepScan.results.map((item) => ({
@@ -182,9 +199,9 @@ async function requestStudioScrape(options = {}) {
       })));
     }
   }
-  await saveStudioScanResults(results, options);
+  await saveStudioScanResults(results, scanOptions);
   await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
-  return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results), scope: scanScopeSummary(options) };
+  return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results), scope: scanScopeSummary(scanOptions), runtimeConfigVersion: runtimeConfig.version || "" };
 }
 
 async function ensureNotificationWatcherForScan(options = {}) {
@@ -206,7 +223,8 @@ async function scrapeTabs(tabs, options = {}) {
         type: "scrape-studio-notifications",
         forcePost: Boolean(options.userInitiated),
         channelScope: options.channelScope || [],
-        testTypeScope: options.testTypeScope || "all"
+        testTypeScope: options.testTypeScope || "all",
+        runtimeConfig: options.runtimeConfig || DEFAULT_RUNTIME_CONFIG
       });
       results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ...response });
     } catch (error) {
@@ -246,6 +264,7 @@ async function saveStudioScanResults(results, options = {}) {
       tabs: results.map(summarizeTabScanResult),
       totals: summarizeScanResults(results),
       scope: scanScopeSummary(options),
+      runtimeConfigVersion: options.runtimeConfig?.version || "",
       diagnosis: buildScanDiagnosis(results)
     }
   });
@@ -1153,8 +1172,75 @@ async function buildLastStudioScanPayload() {
         }))
       : [],
     scope: result.scope || null,
+    runtimeConfigVersion: result.runtimeConfigVersion || "",
     diagnosis: sanitizeDiagnosis(result.diagnosis)
   };
+}
+
+async function runtimeConfigForScan() {
+  const settings = await getSettings().catch(() => null);
+  if (!settings?.appUrl || !settings?.connectorToken) {
+    return normalizeRuntimeConfig((await cachedRuntimeConfig()) || DEFAULT_RUNTIME_CONFIG);
+  }
+  try {
+    const payload = await fetchRuntimeConfig(settings);
+    const runtimeConfig = normalizeRuntimeConfig(payload.runtimeConfig || {});
+    await chrome.storage.local.set({
+      [RUNTIME_CONFIG_STORAGE_KEY]: runtimeConfig,
+      lastRuntimeConfigAt: new Date().toISOString(),
+      lastRuntimeConfigOk: true,
+      lastRuntimeConfigError: ""
+    });
+    return runtimeConfig;
+  } catch (error) {
+    await chrome.storage.local.set({
+      lastRuntimeConfigAt: new Date().toISOString(),
+      lastRuntimeConfigOk: false,
+      lastRuntimeConfigError: error.message || "Runtime config fetch failed"
+    }).catch(() => {});
+    return normalizeRuntimeConfig((await cachedRuntimeConfig()) || DEFAULT_RUNTIME_CONFIG);
+  }
+}
+
+async function fetchRuntimeConfig(settings) {
+  const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/runtime-config`, {
+    headers: {
+      "Authorization": `Bearer ${settings.connectorToken}`
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Runtime config failed: ${response.status}`);
+  return payload;
+}
+
+async function cachedRuntimeConfig() {
+  const local = await chrome.storage.local.get([RUNTIME_CONFIG_STORAGE_KEY]).catch(() => ({}));
+  return local[RUNTIME_CONFIG_STORAGE_KEY] || null;
+}
+
+function normalizeRuntimeConfig(value = {}) {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return {
+    ...DEFAULT_RUNTIME_CONFIG,
+    ...input,
+    waitAfterOpenMs: clampRuntimeNumber(input.waitAfterOpenMs, 300, 6000, DEFAULT_RUNTIME_CONFIG.waitAfterOpenMs),
+    waitForRowsMs: clampRuntimeNumber(input.waitForRowsMs, 1000, 12000, DEFAULT_RUNTIME_CONFIG.waitForRowsMs),
+    scrollRounds: clampRuntimeNumber(input.scrollRounds, 0, 8, DEFAULT_RUNTIME_CONFIG.scrollRounds),
+    scrollDelayMs: clampRuntimeNumber(input.scrollDelayMs, 150, 3000, DEFAULT_RUNTIME_CONFIG.scrollDelayMs),
+    minTextLength: clampRuntimeNumber(input.minTextLength, 8, 120, DEFAULT_RUNTIME_CONFIG.minTextLength),
+    maxTextLength: clampRuntimeNumber(input.maxTextLength, 140, 2000, DEFAULT_RUNTIME_CONFIG.maxTextLength),
+    maxEvents: clampRuntimeNumber(input.maxEvents, 5, 120, DEFAULT_RUNTIME_CONFIG.maxEvents),
+    scanOrder: input.scanOrder === "studio_first" ? "studio_first" : "youtube_first",
+    includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
+    finishPhrases: Array.isArray(input.finishPhrases) ? input.finishPhrases.slice(0, 80) : [],
+    ignorePhrases: Array.isArray(input.ignorePhrases) ? input.ignorePhrases.slice(0, 100) : []
+  };
+}
+
+function clampRuntimeNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
 }
 
 function sanitizeDiagnosis(value) {

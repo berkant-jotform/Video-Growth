@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clipboard, Download, ExternalLink, KeyRound, Plus, Save, ShieldCheck } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
+import { defaultExtensionRuntimeConfigJson } from "@/lib/extension-runtime-config.mjs";
 
 const DEFAULT_WATCHER_ROWS = [
   { label: "Jotform", target: "" },
@@ -68,6 +69,7 @@ export default function ExtensionPage({ session }) {
   const usableToken = generatedToken || (connectorToken && connectorToken !== "********" ? connectorToken : "");
   const channels = form.CONNECTOR_CHANNELS || "Jotform, AI Agents Podcast, AI Agents";
   const watcherTabs = form.CONNECTOR_WATCHER_TABS || "";
+  const runtimeConfigJson = form.EXTENSION_RUNTIME_CONFIG_JSON || defaultExtensionRuntimeConfigJson();
   const watcherRows = useMemo(() => parseWatcherRows(watcherTabs), [watcherTabs]);
   const openUrls = connectorStatus.flatMap((item) => item?.payload?.studioTabUrls || []).filter(Boolean);
   const copyValues = [
@@ -100,7 +102,7 @@ export default function ExtensionPage({ session }) {
             />
             <StatusTile
               label="Latest version"
-              value={config?.latestExtensionVersion || "0.1.34"}
+              value={config?.latestExtensionVersion || "0.2.0"}
               tone="neutral"
             />
             <StatusTile
@@ -210,7 +212,40 @@ export default function ExtensionPage({ session }) {
         </section>
 
         <section className="settings-panel full-width">
-          <p className="eyebrow">4. Confirm</p>
+          <p className="eyebrow">4. Detection rules</p>
+          <h2>Runtime rules from the app</h2>
+          <p className="muted">
+            These rules are pulled by the extension before scans. Tune phrases, delays, scroll depth, and limits here without rebuilding the extension.
+          </p>
+          <label className="setting-field">
+            <span>
+              Runtime config JSON
+              <em>{sourceLabel(config?.sources?.EXTENSION_RUNTIME_CONFIG_JSON)}</em>
+            </span>
+            <textarea
+              value={runtimeConfigJson}
+              rows={16}
+              spellCheck={false}
+              onChange={(event) => setForm((current) => ({ ...current, EXTENSION_RUNTIME_CONFIG_JSON: event.target.value }))}
+            />
+          </label>
+          <div className="install-actions compact">
+            <button type="button" className="primary-button" onClick={() => save()}>
+              <Save size={16} />
+              Save Runtime Rules
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setForm((current) => ({ ...current, EXTENSION_RUNTIME_CONFIG_JSON: defaultExtensionRuntimeConfigJson() }))}
+            >
+              Reset Safe Defaults
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-panel full-width">
+          <p className="eyebrow">5. Confirm</p>
           <h2>Check coverage</h2>
           <div className="extension-check-grid">
             {connectorStatus.length ? (

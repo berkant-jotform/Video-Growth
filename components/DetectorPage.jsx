@@ -70,7 +70,7 @@ const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
 const EXTENSION_MISSING_RELOAD_STORAGE_KEY = "youtube-ab-extension-missing-reload-attempted";
-const REQUIRED_EXTENSION_VERSION = "0.1.34";
+const REQUIRED_EXTENSION_VERSION = "0.2.0";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -1098,7 +1098,8 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
   const stages = extensionScanStages(tabs, totals);
   const tabCount = Number(totals.tabs || tabs.length);
   const scopeText = extensionScanScopeText(receipt.scan.scope);
-  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${scopeText ? ` for ${scopeText}` : ""}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} new, ${duplicate} already seen, ${queued} queued for retry, ${ignored} ignored. ${matched} matched, ${unmatched} unregistered.`;
+  const rulesText = receipt.scan.runtimeConfigVersion ? ` Rules ${receipt.scan.runtimeConfigVersion}.` : "";
+  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${scopeText ? ` for ${scopeText}` : ""}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}.${rulesText} Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} new, ${duplicate} already seen, ${queued} queued for retry, ${ignored} ignored. ${matched} matched, ${unmatched} unregistered.`;
   if (compact) {
     return (
       <details className={`extension-scan-receipt compact ${tone}`} open={Boolean(found || failed || diagnosisWarn)}>
