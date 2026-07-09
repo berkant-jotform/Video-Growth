@@ -98,6 +98,7 @@ const DEFAULT_WATCHER_ROWS = [
   { label: "AI Agents Podcast", target: "" },
   { label: "AI Agents", target: "" }
 ];
+const QUICK_WATCHER_CHANNELS = ["Apps", "Sign", "Boards", "PDF Editor", "Workflow", "Noupe"];
 
 export default function SettingsPage({ session }) {
   const [config, setConfig] = useState(null);
@@ -566,22 +567,31 @@ function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWat
 }
 
 function WatcherTabManager({ value, connectorStatus = [], onChange }) {
-  const rows = parseWatcherRows(value);
+  const [rows, setRows] = useState(() => parseWatcherRows(value));
   const openUrls = connectorStatus
     .flatMap((item) => item?.payload?.studioTabUrls || [])
     .filter(Boolean);
 
-  function updateRow(index, patch) {
-    const next = rows.map((row, idx) => (idx === index ? { ...row, ...patch } : row));
+  useEffect(() => {
+    setRows(parseWatcherRows(value));
+  }, [value]);
+
+  function commitRows(next) {
+    setRows(next);
     onChange(serializeWatcherRows(next));
   }
 
-  function addRow() {
-    onChange(serializeWatcherRows([...rows, { label: "", target: "" }]));
+  function updateRow(index, patch) {
+    const next = rows.map((row, idx) => (idx === index ? { ...row, ...patch } : row));
+    commitRows(next);
+  }
+
+  function addRow(label = "") {
+    commitRows([...rows, { label, target: "" }]);
   }
 
   function removeRow(index) {
-    onChange(serializeWatcherRows(rows.filter((_, idx) => idx !== index)));
+    commitRows(rows.filter((_, idx) => idx !== index));
   }
 
   return (
@@ -603,17 +613,30 @@ function WatcherTabManager({ value, connectorStatus = [], onChange }) {
             placeholder="UC... or https://studio.youtube.com/channel/UC..."
             onChange={(event) => updateRow(index, { target: event.target.value })}
           />
-          <span className={`watcher-status ${isWatcherOpen(row, openUrls) ? "open" : "closed"}`}>
-            {isWatcherOpen(row, openUrls) ? "Watching" : "Open tab needed"}
+          <span className={`watcher-status ${watcherStatus(row, openUrls).state}`}>
+            {watcherStatus(row, openUrls).label}
           </span>
           <button type="button" className="mini-remove-button" onClick={() => removeRow(index)}>
             Remove
           </button>
         </div>
       ))}
-      <button type="button" className="secondary-button add-watcher-button" onClick={addRow}>
-        Add Studio Watcher
-      </button>
+      <div className="watcher-actions">
+        <button type="button" className="secondary-button add-watcher-button" onClick={() => addRow()}>
+          Add Studio Watcher
+        </button>
+        {QUICK_WATCHER_CHANNELS.map((channel) => (
+          <button
+            type="button"
+            className="quiet-button"
+            key={channel}
+            onClick={() => addRow(channel)}
+            disabled={rows.some((row) => sameText(row.label, channel))}
+          >
+            Add {channel}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -725,11 +748,19 @@ function serializeWatcherRows(rows) {
     .map((row) => {
       const label = String(row.label || "").trim();
       const target = String(row.target || "").trim();
-      if (!label && !target) return "";
+      if (!target) return "";
       return label ? `${label} | ${target}` : target;
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function watcherStatus(row, openUrls) {
+  const target = String(row?.target || "").trim();
+  if (!target) return { state: "missing", label: "Missing URL/ID" };
+  return isWatcherOpen(row, openUrls)
+    ? { state: "open", label: "Watching" }
+    : { state: "closed", label: "Open tab needed" };
 }
 
 function isWatcherOpen(row, openUrls) {
@@ -744,6 +775,10 @@ function isWatcherOpen(row, openUrls) {
     return openUrls.some((url) => String(url).replace(/\/+$/, "").startsWith(normalized));
   }
   return false;
+}
+
+function sameText(left, right) {
+  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
 }
 
 function generateConnectorToken() {

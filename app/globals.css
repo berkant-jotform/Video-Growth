@@ -3068,6 +3068,12 @@ select {
   color: var(--amber);
 }
 
+.watcher-status.missing {
+  background: color-mix(in srgb, var(--red) 7%, var(--surface));
+  border-color: color-mix(in srgb, var(--red) 22%, var(--border));
+  color: var(--red);
+}
+
 .mini-remove-button {
   background: transparent;
   border: 1px solid var(--border);
@@ -3082,6 +3088,13 @@ select {
 .add-watcher-button,
 .save-inline-button {
   justify-self: start;
+}
+
+.watcher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
 }
 
 .notifications-workspace {

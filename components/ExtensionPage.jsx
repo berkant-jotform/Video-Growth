@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, Clipboard, Download, ExternalLink, KeyRound, Plus, Save, ShieldCheck } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 import { defaultExtensionRuntimeConfigJson } from "@/lib/extension-runtime-config.mjs";
@@ -10,10 +10,12 @@ const DEFAULT_WATCHER_ROWS = [
   { label: "AI Agents Podcast", target: "" },
   { label: "AI Agents", target: "" }
 ];
+const QUICK_WATCHER_CHANNELS = ["Apps", "Sign", "Boards", "PDF Editor", "Workflow", "Noupe"];
 
 export default function ExtensionPage({ session }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({});
+  const [watcherDraftRows, setWatcherDraftRows] = useState(DEFAULT_WATCHER_ROWS);
   const [generatedToken, setGeneratedToken] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -31,7 +33,9 @@ export default function ExtensionPage({ session }) {
       return;
     }
     setConfig(payload.config);
-    setForm(payload.config.values || {});
+    const values = payload.config.values || {};
+    setForm(values);
+    setWatcherDraftRows(parseWatcherRows(values.CONNECTOR_WATCHER_TABS || ""));
   }
 
   async function save(nextForm = form, successMessage = "Extension settings saved.") {
@@ -68,9 +72,8 @@ export default function ExtensionPage({ session }) {
   const connectorToken = form.CONNECTOR_TOKEN || "";
   const usableToken = generatedToken || (connectorToken && connectorToken !== "********" ? connectorToken : "");
   const channels = form.CONNECTOR_CHANNELS || "Jotform, AI Agents Podcast, AI Agents";
-  const watcherTabs = form.CONNECTOR_WATCHER_TABS || "";
+  const watcherTabs = serializeWatcherRows(watcherDraftRows);
   const runtimeConfigJson = form.EXTENSION_RUNTIME_CONFIG_JSON || defaultExtensionRuntimeConfigJson();
-  const watcherRows = useMemo(() => parseWatcherRows(watcherTabs), [watcherTabs]);
   const openUrls = connectorStatus.flatMap((item) => item?.payload?.studioTabUrls || []).filter(Boolean);
   const copyValues = [
     `App URL: ${appUrl}`,
@@ -78,6 +81,34 @@ export default function ExtensionPage({ session }) {
     `Channels: ${channels}`,
     `Studio watchers:\n${watcherTabs || "Add watcher rows in this page"}`
   ].join("\n");
+
+  function updateWatcherRows(rows, { announce = "" } = {}) {
+    setWatcherDraftRows(rows);
+    setForm((current) => ({
+      ...current,
+      CONNECTOR_WATCHER_TABS: serializeWatcherRows(rows),
+      CONNECTOR_CHANNELS: mergeConnectorChannels(current.CONNECTOR_CHANNELS || channels, rows)
+    }));
+    if (announce) setMessage(announce);
+  }
+
+  async function saveExtensionSetup() {
+    const missingTargets = watcherDraftRows.filter((row) => String(row.label || row.target || "").trim() && !String(row.target || "").trim());
+    if (missingTargets.length) {
+      setMessage("");
+      setError(
+        `${missingTargets.length} watcher ${missingTargets.length === 1 ? "row needs" : "rows need"} a Studio URL or UC channel ID before it can be opened.`
+      );
+      return;
+    }
+    const next = {
+      ...form,
+      CONNECTOR_WATCHER_TABS: serializeWatcherRows(watcherDraftRows),
+      CONNECTOR_CHANNELS: mergeConnectorChannels(form.CONNECTOR_CHANNELS || channels, watcherDraftRows)
+    };
+    const saved = await save(next, "Extension setup saved. Open the extension popup and click Open missing watcher tabs.");
+    if (saved) setWatcherDraftRows(parseWatcherRows(next.CONNECTOR_WATCHER_TABS || ""));
+  }
 
   return (
     <AppShell session={session} active="extension">
@@ -182,11 +213,10 @@ export default function ExtensionPage({ session }) {
           <h2>Studio watcher tabs</h2>
           <p className="muted">Add the channels the extension should keep open. Use a YouTube channel ID or direct Studio channel URL so the friendly channel name is backed by a stable ID.</p>
           <WatcherRows
-            rows={watcherRows}
+            rows={watcherDraftRows}
             openUrls={openUrls}
-            onChange={(rows) =>
-              setForm((current) => ({ ...current, CONNECTOR_WATCHER_TABS: serializeWatcherRows(rows) }))
-            }
+            quickChannels={QUICK_WATCHER_CHANNELS}
+            onChange={updateWatcherRows}
           />
           <label className="setting-field extension-channel-field">
             <span>
@@ -200,7 +230,7 @@ export default function ExtensionPage({ session }) {
             />
           </label>
           <div className="install-actions compact">
-            <button type="button" className="primary-button" onClick={() => save()}>
+            <button type="button" className="primary-button" onClick={saveExtensionSetup}>
               <Save size={16} />
               Save Extension Setup
             </button>
@@ -296,13 +326,21 @@ function StatusTile({ label, value, tone }) {
   );
 }
 
-function WatcherRows({ rows, openUrls, onChange }) {
+function WatcherRows({ rows, openUrls, quickChannels = [], onChange }) {
   function update(index, patch) {
     onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
   }
 
-  function add() {
-    onChange([...rows, { label: "", target: "" }]);
+  function add(label = "") {
+    if (label && rows.some((row) => sameText(row.label, label))) {
+      onChange(rows, { announce: `${label} is already in the watcher list.` });
+      return;
+    }
+    onChange([...rows, { label, target: "" }], {
+      announce: label
+        ? `${label} watcher row added. Paste its Studio channel URL or UC channel ID, then save.`
+        : "Watcher row added. Add a channel name and Studio URL or UC channel ID, then save."
+    });
   }
 
   function remove(index) {
@@ -320,16 +358,29 @@ function WatcherRows({ rows, openUrls, onChange }) {
         <div className="watcher-row" key={`${index}-${row.label}`}>
           <input value={row.label} placeholder="Jotform" onChange={(event) => update(index, { label: event.target.value })} />
           <input value={row.target} placeholder="UC... or https://studio.youtube.com/channel/UC..." onChange={(event) => update(index, { target: event.target.value })} />
-          <span className={`watcher-status ${isWatcherOpen(row, openUrls) ? "open" : "closed"}`}>
-            {isWatcherOpen(row, openUrls) ? "Watching" : "Open tab needed"}
+          <span className={`watcher-status ${watcherStatus(row, openUrls).state}`}>
+            {watcherStatus(row, openUrls).label}
           </span>
           <button type="button" className="mini-remove-button" onClick={() => remove(index)}>Remove</button>
         </div>
       ))}
-      <button type="button" className="secondary-button add-watcher-button" onClick={add}>
-        <Plus size={16} />
-        Add watcher
-      </button>
+      <div className="watcher-actions">
+        <button type="button" className="secondary-button add-watcher-button" onClick={() => add()}>
+          <Plus size={16} />
+          Add watcher
+        </button>
+        {quickChannels.map((channel) => (
+          <button
+            type="button"
+            className="quiet-button"
+            key={channel}
+            onClick={() => add(channel)}
+            disabled={rows.some((row) => sameText(row.label, channel))}
+          >
+            Add {channel}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -371,11 +422,30 @@ function serializeWatcherRows(rows) {
     .map((row) => {
       const label = String(row.label || "").trim();
       const target = String(row.target || "").trim();
-      if (!label && !target) return "";
+      if (!target) return "";
       return label ? `${label} | ${target}` : target;
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function mergeConnectorChannels(value, rows = []) {
+  const current = String(value || "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const labels = rows
+    .map((row) => String(row.label || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set([...current, ...labels])).join(", ");
+}
+
+function watcherStatus(row, openUrls) {
+  const target = String(row?.target || "").trim();
+  if (!target) return { state: "missing", label: "Missing URL/ID" };
+  return isWatcherOpen(row, openUrls)
+    ? { state: "open", label: "Watching" }
+    : { state: "closed", label: "Open tab needed" };
 }
 
 function isWatcherOpen(row, openUrls) {
@@ -390,6 +460,10 @@ function isWatcherOpen(row, openUrls) {
     return openUrls.some((url) => String(url).replace(/\/+$/, "").startsWith(normalized));
   }
   return false;
+}
+
+function sameText(left, right) {
+  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
 }
 
 function generateConnectorToken() {
