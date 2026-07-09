@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.33";
+const EXTENSION_VERSION = "0.1.34";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -49,7 +49,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "studio-notifications") {
-    postEvents(message.events || [], sender.tab?.url || "", { forcePost: Boolean(message.forcePost) })
+    postEvents(message.events || [], sender.tab?.url || "", {
+      forcePost: Boolean(message.forcePost),
+      channelScope: message.channelScope || [],
+      testTypeScope: message.testTypeScope || "all"
+    })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -63,7 +67,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "scan-studio-tab") {
     requestStudioScrapeGuarded({
       userInitiated: Boolean(message.interactive || message.userInitiated),
-      avoidTabSwitch: message.avoidTabSwitch !== false
+      avoidTabSwitch: message.avoidTabSwitch !== false,
+      channelScope: message.channelScope || [],
+      testTypeScope: message.testTypeScope || "all"
     })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
@@ -176,9 +182,9 @@ async function requestStudioScrape(options = {}) {
       })));
     }
   }
-  await saveStudioScanResults(results);
+  await saveStudioScanResults(results, options);
   await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
-  return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results) };
+  return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results), scope: scanScopeSummary(options) };
 }
 
 async function ensureNotificationWatcherForScan(options = {}) {
@@ -198,7 +204,9 @@ async function scrapeTabs(tabs, options = {}) {
       await ensureContentScript(tab.id);
       const response = await chrome.tabs.sendMessage(tab.id, {
         type: "scrape-studio-notifications",
-        forcePost: Boolean(options.userInitiated)
+        forcePost: Boolean(options.userInitiated),
+        channelScope: options.channelScope || [],
+        testTypeScope: options.testTypeScope || "all"
       });
       results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ...response });
     } catch (error) {
@@ -231,12 +239,13 @@ function mergeScanResults(first, second) {
   return Array.from(map.values());
 }
 
-async function saveStudioScanResults(results) {
+async function saveStudioScanResults(results, options = {}) {
   await chrome.storage.local.set({
     lastStudioScanAt: new Date().toISOString(),
     lastStudioScanResult: {
       tabs: results.map(summarizeTabScanResult),
       totals: summarizeScanResults(results),
+      scope: scanScopeSummary(options),
       diagnosis: buildScanDiagnosis(results)
     }
   });
@@ -257,6 +266,16 @@ async function saveStudioScanResults(results) {
       }))
     }
   });
+}
+
+function scanScopeSummary(options = {}) {
+  const channels = Array.isArray(options.channelScope)
+    ? options.channelScope.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const testType = ["title", "thumbnail"].includes(String(options.testTypeScope || "").toLowerCase())
+    ? String(options.testTypeScope).toLowerCase()
+    : "all";
+  return { channels, testType };
 }
 
 async function collectScrapeTabs(options = {}) {
@@ -589,7 +608,10 @@ async function postEvents(events, tabUrl, options = {}) {
   if (!freshEvents.length) {
     return { ok: true, received: 0, matched: 0, unmatched: 0, ignored: 0, duplicate: events.length };
   }
-  const { response, payload } = await sendEventsBatch(settings, freshEvents, tabUrl).catch(async (error) => {
+  const { response, payload } = await sendEventsBatch(settings, freshEvents, tabUrl, {
+    channelScope: options.channelScope || [],
+    testTypeScope: options.testTypeScope || "all"
+  }).catch(async (error) => {
     await enqueuePendingEvents(freshEvents, tabUrl, error.message);
     await appendDiagnosticLog({
       category: "connector_events",
@@ -636,7 +658,7 @@ async function postEvents(events, tabUrl, options = {}) {
   return { ...payload, duplicate: forcePost ? 0 : events.length - freshEvents.length };
 }
 
-async function sendEventsBatch(settings, events, tabUrl) {
+async function sendEventsBatch(settings, events, tabUrl, options = {}) {
   const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/events`, {
     method: "POST",
     headers: {
@@ -649,6 +671,8 @@ async function sendEventsBatch(settings, events, tabUrl) {
       version: EXTENSION_VERSION,
       source: "studio_bell",
       location: tabUrl,
+      channelScope: Array.isArray(options.channelScope) ? options.channelScope : [],
+      testTypeScope: options.testTypeScope || "all",
       events
     })
   });
@@ -1105,8 +1129,8 @@ async function buildLastStudioScanPayload() {
   return {
     checkedAt: local.lastStudioScanAt,
     totals: result.totals || {},
-    tabs: Array.isArray(result.tabs)
-      ? result.tabs.slice(0, 8).map((tab) => ({
+      tabs: Array.isArray(result.tabs)
+        ? result.tabs.slice(0, 8).map((tab) => ({
           tabTitle: tab.tabTitle || "",
           tabUrl: tab.tabUrl || "",
           ok: tab.ok !== false,
@@ -1128,6 +1152,7 @@ async function buildLastStudioScanPayload() {
           previews: Array.isArray(tab.previews) ? tab.previews.slice(0, 3) : []
         }))
       : [],
+    scope: result.scope || null,
     diagnosis: sanitizeDiagnosis(result.diagnosis)
   };
 }

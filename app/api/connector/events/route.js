@@ -23,7 +23,9 @@ export async function POST(request) {
       actorName: body.actorName || body.reviewerInitials || "",
       connectorId: body.connectorId || "",
       source: body.source || "studio_bell",
-      youtubeApiKey: config.youtubeApiKey
+      youtubeApiKey: config.youtubeApiKey,
+      channelScope: body.channelScope || [],
+      testTypeScope: body.testTypeScope || "all"
     });
     await recordDiagnosticLog({
       category: "connector_events",

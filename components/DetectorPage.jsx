@@ -70,7 +70,7 @@ const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
 const EXTENSION_MISSING_RELOAD_STORAGE_KEY = "youtube-ab-extension-missing-reload-attempted";
-const REQUIRED_EXTENSION_VERSION = "0.1.33";
+const REQUIRED_EXTENSION_VERSION = "0.1.34";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -337,7 +337,11 @@ export default function DetectorPage({ session }) {
   async function sendExtensionCommand(type) {
     setExtensionRequest({ status: "running", message: extensionCommandLoadingText(type) });
     try {
-      const response = await requestExtension(type);
+      const scopeChannels = type === "check-studio-now" ? scanChannels : [];
+      if (type === "check-studio-now" && scopeChannels.length === 1) {
+        setViewChannel(scopeChannels[0]);
+      }
+      const response = await requestExtension(type, { payload: { channels: scopeChannels, testType: scanType } });
       if (!response?.ok) throw new Error(response?.error || "Extension did not complete the request.");
       const message =
         type === "check-studio-now"
@@ -1093,7 +1097,8 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
   const tone = failed || diagnosisWarn || (ignored && ignored >= found && !matched && !unmatched) ? "warn" : found || duplicate ? "ok" : "neutral";
   const stages = extensionScanStages(tabs, totals);
   const tabCount = Number(totals.tabs || tabs.length);
-  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} new, ${duplicate} already seen, ${queued} queued for retry, ${ignored} ignored. ${matched} matched, ${unmatched} unregistered.`;
+  const scopeText = extensionScanScopeText(receipt.scan.scope);
+  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${scopeText ? ` for ${scopeText}` : ""}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} new, ${duplicate} already seen, ${queued} queued for retry, ${ignored} ignored. ${matched} matched, ${unmatched} unregistered.`;
   if (compact) {
     return (
       <details className={`extension-scan-receipt compact ${tone}`} open={Boolean(found || failed || diagnosisWarn)}>
@@ -1223,6 +1228,18 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
       ) : null}
     </section>
   );
+}
+
+function extensionScanScopeText(scope) {
+  if (!scope || typeof scope !== "object") return "";
+  const channels = Array.isArray(scope.channels) ? scope.channels.filter(Boolean) : [];
+  const testType = ["title", "thumbnail"].includes(String(scope.testType || "").toLowerCase())
+    ? String(scope.testType).toLowerCase()
+    : "";
+  const parts = [];
+  if (channels.length) parts.push(channels.join(", "));
+  if (testType) parts.push(`${titleCase(testType)} tests`);
+  return parts.join(" · ");
 }
 
 function extensionScanStages(tabs, totals) {
@@ -2804,7 +2821,7 @@ function isExtensionContextInvalidated(value) {
     text.includes("receiving end does not exist");
 }
 
-function requestExtension(type, { timeoutMs = 12000 } = {}) {
+function requestExtension(type, { timeoutMs = 12000, payload = {} } = {}) {
   if (typeof window === "undefined") return Promise.reject(new Error("Browser extension bridge is unavailable."));
   const requestId = `ytab_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   return new Promise((resolve, reject) => {
@@ -2821,7 +2838,7 @@ function requestExtension(type, { timeoutMs = 12000 } = {}) {
       resolve(message.response || {});
     }
     window.addEventListener("message", onMessage);
-    window.postMessage({ source: "youtube-ab-tests-app", type, requestId }, window.location.origin);
+    window.postMessage({ source: "youtube-ab-tests-app", type, requestId, payload }, window.location.origin);
   });
 }
 
@@ -2849,8 +2866,10 @@ function extensionScanSummary(response) {
     { tabs: 0, candidates: 0, received: 0, matched: 0, unmatched: 0, ignored: 0, duplicate: 0, queued: 0, failed: 0 }
   );
   if (!totals.tabs) return "No Studio or YouTube bell tabs were open.";
+  const scopeText = extensionScanScopeText(response.scope);
+  const prefix = scopeText ? `${scopeText}: ` : "";
   if (totals.received) {
-    return `Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered, ${totals.ignored} ignored.`;
+    return `${prefix}Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered, ${totals.ignored} ignored.`;
   }
   if (totals.candidates) {
     if (totals.ignored >= totals.candidates) {

@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.33";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.34";
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
@@ -35,7 +35,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "scrape-studio-notifications") return false;
   scrapeStudioNotifications({ includeSeen: true })
     .then(async ({ events, diagnostics }) => {
-      const response = await sendEvents(events, { forcePost: Boolean(message.forcePost) });
+      const response = await sendEvents(events, {
+        forcePost: Boolean(message.forcePost),
+        channelScope: message.channelScope || [],
+        testTypeScope: message.testTypeScope || "all"
+      });
       sendResponse({
         ...response,
         diagnostics,
@@ -235,7 +239,9 @@ async function sendEvents(events, options = {}) {
   return chrome.runtime.sendMessage({
     type: "studio-notifications",
     events,
-    forcePost: Boolean(options.forcePost)
+    forcePost: Boolean(options.forcePost),
+    channelScope: options.channelScope || [],
+    testTypeScope: options.testTypeScope || "all"
   });
 }
 
