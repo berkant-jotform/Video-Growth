@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.32";
+globalThis.__youtubeAbTestsConnectorVersion = "0.1.33";
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
@@ -324,8 +324,8 @@ function rawFinishTextWindows(rawText) {
     const end = Math.min(text.length, center + 900);
     if (seenRanges.some((range) => start >= range.start && end <= range.end)) continue;
     seenRanges.push({ start, end });
-    const value = text.slice(start, end).trim();
-    if (value.length >= MIN_TEXT_LENGTH) windows.push(value);
+    const value = trimNotificationTail(text.slice(start, end).trim());
+    if (value.length >= MIN_TEXT_LENGTH && isRelevant(value)) windows.push(value);
     if (windows.length >= 12) break;
   }
   return Array.from(new Set(windows));
@@ -352,6 +352,10 @@ function redactDebugText(value) {
 
 function extractNotificationVideoTitle(rawText) {
   const text = collapseText(rawText);
+  const partial = text.match(
+    /\bA\/B test (?:won|performed well for all|inconclusive)\s+(.+?)(?::\s*(?:We\b|Results?\b|The test\b|Not enough\b|No winner\b)|$)/i
+  );
+  if (partial?.[1]) return partial[1].trim();
   const current = text.match(
     /\bA\/B test (?:won|performed well for all|inconclusive)\s+(.+?)(?::\s*(?:We updated your video to use the winner|Results with very similar performance|The test completed with no winner)\b|$)/i
   );

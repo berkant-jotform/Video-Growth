@@ -50,7 +50,7 @@ const ACTIONS = [
   { value: "A", label: "A" },
   { value: "B", label: "B" },
   { value: "C", label: "C" },
-  { value: "NO_CLEAR", label: "Not Enough Impressions", description: "No clear winner" },
+  { value: "NO_CLEAR", label: "No Clear / Not Enough Views", description: "No clear winner or not enough impressions" },
   { value: "KEPT_CURRENT", label: "Kept Current" },
   { value: "RETEST_LATER", label: "Retest Later" },
   { value: "SKIP", label: "Skip" }
@@ -70,7 +70,7 @@ const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
 const EXTENSION_MISSING_RELOAD_STORAGE_KEY = "youtube-ab-extension-missing-reload-attempted";
-const REQUIRED_EXTENSION_VERSION = "0.1.32";
+const REQUIRED_EXTENSION_VERSION = "0.1.33";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -1074,6 +1074,7 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
   const found = Number(totals.candidates || 0);
   const matched = Number(totals.matched || 0);
   const unmatched = Number(totals.unmatched || 0);
+  const ignored = Number(totals.ignored || 0);
   const duplicate = Number(totals.duplicate || 0);
   const queued = Number(totals.queued || 0);
   const failed = Number(totals.failed || 0);
@@ -1089,10 +1090,10 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
   const diagnosisWarn = diagnosis?.severity === "warn" || diagnosis?.severity === "error";
   const received = Number(totals.received || 0);
   const processed = received + duplicate + queued;
-  const tone = failed || diagnosisWarn ? "warn" : found || duplicate ? "ok" : "neutral";
+  const tone = failed || diagnosisWarn || (ignored && ignored >= found && !matched && !unmatched) ? "warn" : found || duplicate ? "ok" : "neutral";
   const stages = extensionScanStages(tabs, totals);
   const tabCount = Number(totals.tabs || tabs.length);
-  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} new, ${duplicate} already seen, ${queued} queued for retry. ${matched} matched, ${unmatched} unregistered.`;
+  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}. Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} new, ${duplicate} already seen, ${queued} queued for retry, ${ignored} ignored. ${matched} matched, ${unmatched} unregistered.`;
   if (compact) {
     return (
       <details className={`extension-scan-receipt compact ${tone}`} open={Boolean(found || failed || diagnosisWarn)}>
@@ -1104,6 +1105,7 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
           <span className="extension-scan-mini-stats">
             <em>{matched} matched</em>
             <em>{unmatched} unregistered</em>
+            {ignored ? <em>{ignored} ignored</em> : null}
             {duplicate ? <em>{duplicate} already seen</em> : null}
           </span>
           <ChevronDown size={16} />
@@ -1164,6 +1166,11 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
         <span>
           Needs matching <strong>{unmatched}</strong>
         </span>
+        {ignored ? (
+          <span>
+            Ignored text <strong>{ignored}</strong>
+          </span>
+        ) : null}
         {duplicate ? (
           <span>
             Already seen <strong>{duplicate}</strong>
@@ -1225,6 +1232,7 @@ function extensionScanStages(tabs, totals) {
   const matched = Number(totals.matched || 0);
   const unregistered = Number(totals.unmatched || 0);
   const youtubeResolved = Number(totals.youtubeResolved || 0);
+  const ignored = Number(totals.ignored || 0);
   const duplicate = Number(totals.duplicate || 0);
   const queued = Number(totals.queued || 0);
   return [
@@ -1265,6 +1273,12 @@ function extensionScanStages(tabs, totals) {
       state: queued ? "warn" : "neutral"
     },
     {
+      key: "ignored",
+      label: "Ignored text",
+      value: `${ignored}`,
+      state: ignored ? "warn" : "neutral"
+    },
+    {
       key: "matched",
       label: "Auto-matched",
       value: `${matched}`,
@@ -1295,9 +1309,9 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
     <section className={`extension-quick-check ${tone}`}>
       <div className="extension-quick-copy">
         <span className="eyebrow">Real signal scan</span>
-        <h3>Check open Studio tabs</h3>
+        <h3>Check YouTube bell</h3>
         <p>
-          Reads the bell menu from open Studio tabs in the background first. You can stay on this dashboard.
+          Opens or reuses YouTube in the background, reads the bell menu, then checks open Studio tabs.
         </p>
         <div className={`extension-bridge-status ${bridgeTone}`}>
           <strong>
@@ -2814,7 +2828,7 @@ function requestExtension(type, { timeoutMs = 12000 } = {}) {
 function extensionCommandLoadingText(type) {
   if (type === "open-notification-page") return "Opening or reusing YouTube home for automatic bell checks...";
   if (type === "report-missed-notification") return "Sending a debug snapshot from the extension...";
-  return "Asking the Chrome extension to scan open Studio tabs in the background...";
+  return "Asking the Chrome extension to check the YouTube bell and open Studio tabs in the background...";
 }
 
 function extensionScanSummary(response) {
@@ -2826,18 +2840,22 @@ function extensionScanSummary(response) {
       summary.received += Number(tab.received || 0);
       summary.matched += Number(tab.matched || 0);
       summary.unmatched += Number(tab.unmatched || 0);
+      summary.ignored += Number(tab.ignored || 0);
       summary.duplicate += Number(tab.duplicate || 0);
       summary.queued += Number(tab.queued || 0);
       summary.failed += tab.ok === false ? 1 : 0;
       return summary;
     },
-    { tabs: 0, candidates: 0, received: 0, matched: 0, unmatched: 0, duplicate: 0, queued: 0, failed: 0 }
+    { tabs: 0, candidates: 0, received: 0, matched: 0, unmatched: 0, ignored: 0, duplicate: 0, queued: 0, failed: 0 }
   );
   if (!totals.tabs) return "No Studio or YouTube bell tabs were open.";
   if (totals.received) {
-    return `Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered.`;
+    return `Sent ${totals.received} signal${totals.received === 1 ? "" : "s"}: ${totals.matched} matched, ${totals.unmatched} unregistered, ${totals.ignored} ignored.`;
   }
   if (totals.candidates) {
+    if (totals.ignored >= totals.candidates) {
+      return `Found ${totals.candidates} A/B-looking text block${totals.candidates === 1 ? "" : "s"}, but ${totals.ignored} were running/non-finish text. Open YouTube home and check the bell again.`;
+    }
     if (totals.duplicate) {
       return `Found ${totals.candidates} A/B candidate${totals.candidates === 1 ? "" : "s"}; ${totals.duplicate} were already seen. Update to extension ${REQUIRED_EXTENSION_VERSION} and check again so the app can reconcile them.`;
     }

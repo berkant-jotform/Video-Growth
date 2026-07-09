@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.1.32";
+const EXTENSION_VERSION = "0.1.33";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -142,14 +142,17 @@ function openWatcherTabsGuarded(requestedTargets = [], options = {}) {
 }
 
 async function requestStudioScrape(options = {}) {
+  if (options.userInitiated) {
+    await ensureNotificationWatcherForScan({ ...options, active: false }).catch(() => null);
+  }
   const initialTabs = await collectScrapeTabs({
-    preferStudio: Boolean(options.userInitiated),
-    includeYoutube: !options.userInitiated
+    preferStudio: !options.userInitiated,
+    includeYoutube: true
   });
   if (!initialTabs.length) await ensureNotificationWatcherForScan(options);
   const tabs = initialTabs.length
     ? initialTabs
-    : await collectScrapeTabs({ preferStudio: Boolean(options.userInitiated), includeYoutube: true });
+    : await collectScrapeTabs({ preferStudio: !options.userInitiated, includeYoutube: true });
   let results = await scrapeTabs(tabs, options);
   if (shouldRetryWithNotificationWatcher(results, tabs, options)) {
     await openNotificationPage({ active: false }).catch(() => null);
@@ -402,8 +405,8 @@ function buildScanDiagnosis(results) {
     return {
       severity: "warn",
       code: "all_tabs_failed",
-      message: "The extension could not read any open Studio tab.",
-      action: "Reload the Studio tabs, confirm Chrome extension permissions, then scan again."
+      message: "The extension could not read any open Studio or YouTube tab.",
+      action: "Reload the Studio or YouTube tabs, confirm Chrome extension permissions, then scan again."
     };
   }
   if (totals.candidates > 0 && totals.received === 0 && totals.ignored === 0) {
@@ -436,6 +439,14 @@ function buildScanDiagnosis(results) {
       code: "needs_matching",
       message: "Finish signals were captured, but none matched a known sheet row.",
       action: "The dashboard will show them as unregistered if automatic matching cannot resolve them."
+    };
+  }
+  if (totals.candidates > 0 && totals.ignored >= totals.candidates && totals.matched === 0 && totals.unmatched === 0) {
+    return {
+      severity: "warn",
+      code: "only_non_finish_text",
+      message: "The extension only found running-table or non-finish A/B text.",
+      action: "Use Check now again after the YouTube bell opens, or keep YouTube home open so the bell menu can be read."
     };
   }
   if (totals.candidates > 0) {

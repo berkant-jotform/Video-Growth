@@ -138,6 +138,21 @@ test("recognizes current YouTube Studio A/B notification wording", () => {
   );
 });
 
+test("extracts titles from truncated Studio notification tails", () => {
+  assert.equal(
+    parseStudioNotification({
+      rawText: "A/B test performed well for all How to Take Payment with Klarna: Results with very si"
+    }).videoTitle,
+    "How to Take Payment with Klarna"
+  );
+  assert.equal(
+    parseStudioNotification({
+      rawText: "A/B test won How to Build Custom Online Forms Faster with ChatGPT: We up"
+    }).videoTitle,
+    "How to Build Custom Online Forms Faster with ChatGPT"
+  );
+});
+
 test("filters Studio edit-page noise from finish notifications", () => {
   assert.equal(
     isLikelyFinishNotification("Set a thumbnail that stands out and draws viewers' attention. Learn more"),
