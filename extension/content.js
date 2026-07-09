@@ -2,7 +2,46 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.1.34";
+globalThis.__youtubeAbTestsConnectorVersion = "0.2.0";
+const DEFAULT_RUNTIME_CONFIG = {
+  minTextLength: MIN_TEXT_LENGTH,
+  maxTextLength: MAX_TEXT_LENGTH,
+  maxEvents: MAX_EVENTS,
+  waitAfterOpenMs: 1200,
+  waitForRowsMs: 4500,
+  scrollRounds: 3,
+  scrollDelayMs: 650,
+  includeSeenOnManualScan: true,
+  finishPhrases: [
+    "A/B test won",
+    "A/B test performed well for all",
+    "A/B test inconclusive",
+    "Test finished",
+    "test completed",
+    "performed well for all",
+    "we updated your video",
+    "similar performance",
+    "not enough views",
+    "not enough impressions",
+    "not enough data",
+    "not enough traffic",
+    "no winner",
+    "no clear",
+    "inconclusive"
+  ],
+  ignorePhrases: [
+    "A/B Test running",
+    "Set a thumbnail that stands out",
+    "made for kids",
+    "COPPA",
+    "age restriction",
+    "personalized ads and notifications",
+    "running... get suggestions",
+    "running… get suggestions",
+    "Video can't be monetized",
+    "Claimed content found"
+  ]
+};
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
 const NOTIFICATION_SELECTORS = [
   "ytcp-notification",
@@ -33,7 +72,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   if (message?.type !== "scrape-studio-notifications") return false;
-  scrapeStudioNotifications({ includeSeen: true })
+  const runtimeConfig = normalizeRuntimeConfig(message.runtimeConfig);
+  scrapeStudioNotifications({
+    includeSeen: message.forcePost ? runtimeConfig.includeSeenOnManualScan : true,
+    runtimeConfig
+  })
     .then(async ({ events, diagnostics }) => {
       const response = await sendEvents(events, {
         forcePost: Boolean(message.forcePost),
@@ -42,7 +85,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       sendResponse({
         ...response,
-        diagnostics,
+        diagnostics: { ...diagnostics, runtimeConfigVersion: runtimeConfig.version || "" },
         candidates: events.length,
         previews: events.slice(0, 5).map((event) => ({
           title: event.videoTitle || "",
@@ -62,7 +105,8 @@ window.setInterval(() => {
   schedulePageStatusScans();
 }, 2000);
 
-function collectNotificationEvents({ includeSeen = false } = {}) {
+function collectNotificationEvents({ includeSeen = false, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
   const channel = detectChannelName();
   const channelId = detectChannelId();
   const candidates = queryAllDeep(NOTIFICATION_SELECTORS.join(","));
@@ -72,8 +116,8 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
   for (const element of candidates) {
     if (!isVisible(element)) continue;
     const rawText = collapseText(element.innerText || element.textContent || "");
-    const snippets = finishNotificationSnippets(rawText);
-    if (!snippets.length && !isRelevant(rawText)) continue;
+    const snippets = finishNotificationSnippets(rawText, config);
+    if (!snippets.length && !isRelevant(rawText, config)) continue;
     const link = element.closest("a[href]") || element.querySelector?.("a[href]");
     const linkedUrl = link?.href || findStudioVideoUrl(element);
     const url = linkedUrl || location.href;
@@ -91,11 +135,11 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
       };
       if (!rememberEvent(event, includeSeen)) continue;
       events.push(event);
-      if (events.length >= MAX_EVENTS) break;
+      if (events.length >= config.maxEvents) break;
     }
-    if (events.length >= MAX_EVENTS) break;
+    if (events.length >= config.maxEvents) break;
   }
-  const bodySnippets = finishNotificationSnippets(pageText);
+  const bodySnippets = finishNotificationSnippets(pageText, config);
   for (const text of bodySnippets) {
     const event = {
       rawText: text,
@@ -109,9 +153,9 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
     };
     if (!rememberEvent(event, includeSeen)) continue;
     events.push(event);
-    if (events.length >= MAX_EVENTS) break;
+    if (events.length >= config.maxEvents) break;
   }
-  for (const text of rawFinishTextWindows(pageText)) {
+  for (const text of rawFinishTextWindows(pageText, config)) {
     const event = {
       source: "visible_text_block",
       rawText: text,
@@ -125,13 +169,14 @@ function collectNotificationEvents({ includeSeen = false } = {}) {
     };
     if (!rememberEvent(event, includeSeen)) continue;
     events.push(event);
-    if (events.length >= MAX_EVENTS) break;
+    if (events.length >= config.maxEvents) break;
   }
   return compactEvents(events);
 }
 
-async function scrapeStudioNotifications({ includeSeen = false } = {}) {
-  const before = collectNotificationEvents({ includeSeen });
+async function scrapeStudioNotifications({ includeSeen = false, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
+  const before = collectNotificationEvents({ includeSeen, runtimeConfig: config });
   const opened = await openNotificationMenu();
   if (!opened) {
     const events = compactEvents(before);
@@ -145,9 +190,9 @@ async function scrapeStudioNotifications({ includeSeen = false } = {}) {
       })
     };
   }
-  await delay(1200);
-  const after = await waitForNotificationEvents({ includeSeen, timeoutMs: 4500 });
-  const { scrolls, events: scrolledEvents } = await collectWithScrolling({ includeSeen });
+  await delay(config.waitAfterOpenMs);
+  const after = await waitForNotificationEvents({ includeSeen, timeoutMs: config.waitForRowsMs, runtimeConfig: config });
+  const { scrolls, events: scrolledEvents } = await collectWithScrolling({ includeSeen, runtimeConfig: config });
   const events = compactEvents([...before, ...after, ...scrolledEvents]);
   return {
     events,
@@ -156,14 +201,15 @@ async function scrapeStudioNotifications({ includeSeen = false } = {}) {
       before,
       after: [...after, ...scrolledEvents],
       events
-    }, { scrolls })
+    }, { scrolls, runtimeConfig: config })
   };
 }
 
 function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
+  const config = normalizeRuntimeConfig(extra.runtimeConfig);
   const bodyText = currentPageText();
-  const rawWindows = rawFinishTextWindows(bodyText);
-  const bodySnippets = finishNotificationSnippets(bodyText);
+  const rawWindows = rawFinishTextWindows(bodyText, config);
+  const bodySnippets = finishNotificationSnippets(bodyText, config);
   return {
     url: location.href,
     channel: detectChannelName(),
@@ -181,6 +227,7 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
     afterCount: after.length,
     eventCount: events.length,
     notificationScrolls: Number(extra.scrolls || 0),
+    runtimeConfigVersion: config.version || "",
     notificationOpenResult: lastNotificationOpenResult || null,
     checkedAt: new Date().toISOString()
   };
@@ -261,14 +308,11 @@ function rememberEvent(event, includeSeen) {
   return true;
 }
 
-function isRelevant(text) {
-  if (!text || text.length < MIN_TEXT_LENGTH) return false;
-  if (text.length > MAX_TEXT_LENGTH) return false;
-  if (
-    /set a thumbnail that stands out|made for kids|coppa|age restriction|personalized ads and notifications|description i tested|running… get suggestions/i.test(
-      text
-    )
-  ) {
+function isRelevant(text, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
+  if (!text || text.length < config.minTextLength) return false;
+  if (text.length > config.maxTextLength) return false;
+  if (runtimePhraseMatch(text, config.ignorePhrases)) {
     return false;
   }
   if (/^(?:a\/b|ab|thumbnail|title)?\s*test\s+(?:completed|ready)(?:\s+set\s+test)?$/i.test(text)) {
@@ -293,12 +337,14 @@ function isRelevant(text) {
     return false;
   }
   if (/not enough (?:impressions|data|traffic)|no clear|inconclusive/i.test(text)) return true;
+  if (runtimePhraseMatch(text, config.finishPhrases)) return true;
   const hasTestContext = /\b(test and compare|test & compare|a\/b|ab test|experiment|thumbnail test|title test)\b/i.test(text);
   const hasFinishContext = /\b(finished|complete|completed|ended|result|results|winner|won|selected|ready)\b/i.test(text);
   return hasTestContext && hasFinishContext;
 }
 
-function finishNotificationSnippets(rawText) {
+function finishNotificationSnippets(rawText, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
   const text = collapseLongText(rawText);
   if (!text) return [];
   const matches = [];
@@ -312,15 +358,16 @@ function finishNotificationSnippets(rawText) {
   for (const pattern of patterns) {
     for (const match of text.matchAll(pattern)) {
       const snippet = trimNotificationTail(match[0]);
-      if (snippet && isRelevant(snippet)) matches.push(snippet);
+      if (snippet && isRelevant(snippet, config)) matches.push(snippet);
     }
   }
   return Array.from(new Set(matches));
 }
 
-function rawFinishTextWindows(rawText) {
+function rawFinishTextWindows(rawText, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
   const text = collapseLongText(rawText);
-  if (!text || !FINISH_TEXT_HINT.test(text)) return [];
+  if (!text || (!FINISH_TEXT_HINT.test(text) && !runtimePhraseMatch(text, config.finishPhrases))) return [];
   const windows = [];
   const seenRanges = [];
   const pattern = new RegExp(FINISH_TEXT_HINT.source, "gi");
@@ -331,7 +378,7 @@ function rawFinishTextWindows(rawText) {
     if (seenRanges.some((range) => start >= range.start && end <= range.end)) continue;
     seenRanges.push({ start, end });
     const value = trimNotificationTail(text.slice(start, end).trim());
-    if (value.length >= MIN_TEXT_LENGTH && isRelevant(value)) windows.push(value);
+    if (value.length >= config.minTextLength && isRelevant(value, config)) windows.push(value);
     if (windows.length >= 12) break;
   }
   return Array.from(new Set(windows));
@@ -567,23 +614,25 @@ function findNotificationButton() {
   );
 }
 
-async function waitForNotificationEvents({ includeSeen, timeoutMs = 4000 } = {}) {
+async function waitForNotificationEvents({ includeSeen, timeoutMs = 4000, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
   const startedAt = Date.now();
-  let latest = collectNotificationEvents({ includeSeen });
+  const config = normalizeRuntimeConfig(runtimeConfig);
+  let latest = collectNotificationEvents({ includeSeen, runtimeConfig: config });
   while (!latest.length && Date.now() - startedAt < timeoutMs) {
     await delay(500);
-    latest = collectNotificationEvents({ includeSeen });
+    latest = collectNotificationEvents({ includeSeen, runtimeConfig: config });
   }
   return latest;
 }
 
-async function collectWithScrolling({ includeSeen } = {}) {
+async function collectWithScrolling({ includeSeen, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
   const events = [];
   let scrolls = 0;
-  for (let round = 0; round < 3; round += 1) {
+  for (let round = 0; round < config.scrollRounds; round += 1) {
     scrolls += await scrollNotificationSurfaces(round);
-    await delay(650);
-    events.push(...collectNotificationEvents({ includeSeen }));
+    await delay(config.scrollDelayMs);
+    events.push(...collectNotificationEvents({ includeSeen, runtimeConfig: config }));
   }
   return { scrolls, events: compactEvents(events) };
 }
@@ -746,6 +795,38 @@ function deepOuterHtml(root) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeRuntimeConfig(value = {}) {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return {
+    ...DEFAULT_RUNTIME_CONFIG,
+    ...input,
+    minTextLength: clampNumber(input.minTextLength, 8, 120, DEFAULT_RUNTIME_CONFIG.minTextLength),
+    maxTextLength: clampNumber(input.maxTextLength, 140, 2000, DEFAULT_RUNTIME_CONFIG.maxTextLength),
+    maxEvents: clampNumber(input.maxEvents, 5, 120, DEFAULT_RUNTIME_CONFIG.maxEvents),
+    waitAfterOpenMs: clampNumber(input.waitAfterOpenMs, 300, 6000, DEFAULT_RUNTIME_CONFIG.waitAfterOpenMs),
+    waitForRowsMs: clampNumber(input.waitForRowsMs, 1000, 12000, DEFAULT_RUNTIME_CONFIG.waitForRowsMs),
+    scrollRounds: clampNumber(input.scrollRounds, 0, 8, DEFAULT_RUNTIME_CONFIG.scrollRounds),
+    scrollDelayMs: clampNumber(input.scrollDelayMs, 150, 3000, DEFAULT_RUNTIME_CONFIG.scrollDelayMs),
+    includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
+    finishPhrases: Array.isArray(input.finishPhrases) ? input.finishPhrases : [],
+    ignorePhrases: Array.isArray(input.ignorePhrases) ? input.ignorePhrases : []
+  };
+}
+
+function runtimePhraseMatch(text, phrases = []) {
+  const source = String(text || "").toLowerCase();
+  return phrases.some((phrase) => {
+    const value = String(phrase || "").trim().toLowerCase();
+    return value.length >= 2 && source.includes(value);
+  });
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
 }
 
 function extractVideoId(value) {
