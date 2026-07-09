@@ -50,7 +50,7 @@ const ACTIONS = [
   { value: "A", label: "A" },
   { value: "B", label: "B" },
   { value: "C", label: "C" },
-  { value: "NO_CLEAR", label: "No Clear" },
+  { value: "NO_CLEAR", label: "Not Enough Impressions", description: "No clear winner" },
   { value: "KEPT_CURRENT", label: "Kept Current" },
   { value: "RETEST_LATER", label: "Retest Later" },
   { value: "SKIP", label: "Skip" }
@@ -2006,7 +2006,8 @@ function DoneModal({ run, initialAction = "", onClose, onDone }) {
               key={item.value}
               onClick={() => setAction(item.value)}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {item.description ? <em>{item.description}</em> : null}
             </button>
           ))}
         </div>

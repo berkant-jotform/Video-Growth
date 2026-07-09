@@ -2482,17 +2482,36 @@ select {
 }
 
 .action-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   min-height: 46px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   color: var(--text);
   font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.action-grid button em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
 }
 
 .action-grid button.active {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.action-grid button.active em {
+  color: var(--text);
 }
 
 .check-row {
