@@ -17,6 +17,7 @@ test("normalizes extension runtime config with safe guardrails", () => {
     scrollRounds: 99,
     scrollDelayMs: 1,
     scanOrder: "studio_first",
+    openYoutubeFallback: true,
     includeSeenOnManualScan: false,
     finishPhrases: ["custom finish"],
     ignorePhrases: ["custom ignore"]
@@ -31,6 +32,7 @@ test("normalizes extension runtime config with safe guardrails", () => {
   assert.equal(config.scrollRounds, 8);
   assert.equal(config.scrollDelayMs, 150);
   assert.equal(config.scanOrder, "studio_first");
+  assert.equal(config.openYoutubeFallback, true);
   assert.equal(config.includeSeenOnManualScan, false);
   assert.ok(config.finishPhrases.includes("A/B test won"));
   assert.ok(config.finishPhrases.includes("custom finish"));
@@ -49,5 +51,6 @@ test("safe parser falls back to defaults for invalid runtime config JSON", () =>
   const result = safeParseExtensionRuntimeConfigJson("{bad json");
   assert.match(result.error, /valid JSON/);
   assert.equal(result.config.scanOrder, "youtube_first");
+  assert.equal(result.config.openYoutubeFallback, false);
   assert.ok(result.config.finishPhrases.includes("A/B test won"));
 });

@@ -1,21 +1,23 @@
 (() => {
   const APP_MESSAGE_SOURCE = "youtube-ab-tests-app";
   const EXTENSION_MESSAGE_SOURCE = "youtube-ab-tests-extension";
+  const BRIDGE_VERSION = chrome.runtime.getManifest().version;
 
   function announceReady() {
     window.postMessage({
       source: EXTENSION_MESSAGE_SOURCE,
       type: "bridge-ready",
-      version: chrome.runtime.getManifest().version
+      version: BRIDGE_VERSION
     }, window.location.origin);
   }
 
-  if (globalThis.__youtubeAbTestsAppBridgeLoaded) {
+  if (globalThis.__youtubeAbTestsAppBridgeLoaded && globalThis.__youtubeAbTestsAppBridgeVersion === BRIDGE_VERSION) {
     announceReady();
     return;
   }
 
   globalThis.__youtubeAbTestsAppBridgeLoaded = true;
+  globalThis.__youtubeAbTestsAppBridgeVersion = BRIDGE_VERSION;
 
   window.addEventListener("message", async (event) => {
     if (event.source !== window) return;
@@ -63,4 +65,11 @@
   });
 
   announceReady();
+  window.setTimeout(announceReady, 400);
+  window.setTimeout(announceReady, 1400);
+  window.setTimeout(announceReady, 3200);
+  window.addEventListener("focus", announceReady);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) announceReady();
+  });
 })();

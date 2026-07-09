@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.2.0";
+const EXTENSION_VERSION = "0.2.1";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -14,6 +14,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   scrollRounds: 3,
   scrollDelayMs: 650,
   scanOrder: "youtube_first",
+  openYoutubeFallback: false,
   includeSeenOnManualScan: true,
   minTextLength: 18,
   maxTextLength: 700,
@@ -70,6 +71,12 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(() => {
   scheduleHourlyAlarm();
   injectAppBridgeIntoAppTabs().catch(() => {});
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  if (!isAppBridgeUrl(tab?.url || "")) return;
+  ensureAppBridge(tabId).catch(() => {});
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -192,19 +199,16 @@ function openWatcherTabsGuarded(requestedTargets = [], options = {}) {
 async function requestStudioScrape(options = {}) {
   const runtimeConfig = await runtimeConfigForScan();
   const scanOptions = { ...options, runtimeConfig };
-  if (scanOptions.userInitiated && runtimeConfig.scanOrder !== "studio_first") {
-    await ensureNotificationWatcherForScan({ ...scanOptions, active: false }).catch(() => null);
-  }
   const initialTabs = await collectScrapeTabs({
     preferStudio: runtimeConfig.scanOrder === "studio_first" || !scanOptions.userInitiated,
     includeYoutube: true
   });
-  if (!initialTabs.length) await ensureNotificationWatcherForScan(scanOptions);
+  if (!initialTabs.length && runtimeConfig.openYoutubeFallback) await ensureNotificationWatcherForScan(scanOptions);
   const tabs = initialTabs.length
     ? initialTabs
     : await collectScrapeTabs({ preferStudio: runtimeConfig.scanOrder === "studio_first" || !scanOptions.userInitiated, includeYoutube: true });
   let results = await scrapeTabs(tabs, scanOptions);
-  if (shouldRetryWithNotificationWatcher(results, tabs, scanOptions)) {
+  if (runtimeConfig.openYoutubeFallback && shouldRetryWithNotificationWatcher(results, tabs, scanOptions)) {
     await openNotificationPage({ active: false }).catch(() => null);
     await delay(Math.max(1200, Number(runtimeConfig.waitAfterOpenMs || 1200) + 2000));
     const retryTabs = await collectScrapeTabs({ preferStudio: Boolean(scanOptions.userInitiated), includeYoutube: true });
@@ -602,14 +606,17 @@ async function waitForTabReady(tabId, timeoutMs = 5000) {
 }
 
 async function ensureAppBridge(tabId) {
-  const loaded = await chrome.scripting
+  const status = await chrome.scripting
     .executeScript({
       target: { tabId },
-      func: () => Boolean(globalThis.__youtubeAbTestsAppBridgeLoaded)
+      func: () => ({
+        loaded: Boolean(globalThis.__youtubeAbTestsAppBridgeLoaded),
+        version: String(globalThis.__youtubeAbTestsAppBridgeVersion || "")
+      })
     })
-    .then((results) => Boolean(results?.[0]?.result))
-    .catch(() => false);
-  if (loaded) return { injected: false };
+    .then((results) => results?.[0]?.result || { loaded: false, version: "" })
+    .catch(() => ({ loaded: false, version: "" }));
+  if (status.loaded && status.version === EXTENSION_VERSION) return { injected: false };
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["app-bridge.js"]
@@ -642,6 +649,12 @@ async function injectAppBridgeIntoAppTabs() {
     lastAppBridgeRepairResult: payload
   }).catch(() => {});
   return payload;
+}
+
+function isAppBridgeUrl(url) {
+  const value = String(url || "");
+  return /^https:\/\/[^/]+\.vercel\.app(?:\/|$)/i.test(value) ||
+    /^http:\/\/127\.0\.0\.1:8770(?:\/|$)/i.test(value);
 }
 
 async function postEvents(events, tabUrl, options = {}) {
@@ -1258,6 +1271,7 @@ function normalizeRuntimeConfig(value = {}) {
     maxTextLength: clampRuntimeNumber(input.maxTextLength, 140, 2000, DEFAULT_RUNTIME_CONFIG.maxTextLength),
     maxEvents: clampRuntimeNumber(input.maxEvents, 5, 120, DEFAULT_RUNTIME_CONFIG.maxEvents),
     scanOrder: input.scanOrder === "studio_first" ? "studio_first" : "youtube_first",
+    openYoutubeFallback: input.openYoutubeFallback === true,
     includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
     finishPhrases: Array.isArray(input.finishPhrases) ? input.finishPhrases.slice(0, 80) : [],
     ignorePhrases: Array.isArray(input.ignorePhrases) ? input.ignorePhrases.slice(0, 100) : []
