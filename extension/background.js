@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.2.1";
+const EXTENSION_VERSION = "0.2.2";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -8,13 +8,14 @@ const MAX_PENDING_EVENTS = 200;
 const RECENT_EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RUNTIME_CONFIG_STORAGE_KEY = "extensionRuntimeConfig";
 const DEFAULT_RUNTIME_CONFIG = {
-  version: "2026-07-09.1",
+  version: "2026-07-09.2",
   waitAfterOpenMs: 1200,
   waitForRowsMs: 4500,
   scrollRounds: 3,
   scrollDelayMs: 650,
   scanOrder: "youtube_first",
   openYoutubeFallback: false,
+  deepScanFallbackEnabled: false,
   includeSeenOnManualScan: true,
   minTextLength: 18,
   maxTextLength: 700,
@@ -27,11 +28,17 @@ const DEFAULT_RUNTIME_CONFIG = {
     "test completed",
     "performed well for all",
     "we updated your video",
+    "updated your video to use the winner",
+    "The test completed with no winner",
     "similar performance",
+    "Results with very similar performance",
+    "Not enough views to determine a winner",
     "not enough views",
     "not enough impressions",
     "not enough data",
     "not enough traffic",
+    "could not determine a winner",
+    "couldn't determine a winner",
     "no winner",
     "no clear",
     "inconclusive"
@@ -46,7 +53,10 @@ const DEFAULT_RUNTIME_CONFIG = {
     "running... get suggestions",
     "running… get suggestions",
     "Video can't be monetized",
-    "Claimed content found"
+    "Video can’t be monetized",
+    "Claimed content found",
+    "claimed content",
+    "tap to resolve"
   ]
 };
 const DEFAULT_SETTINGS = {
@@ -273,6 +283,7 @@ function shouldRetryWithNotificationWatcher(results, tabs, options = {}) {
 }
 
 function shouldDeepScanFallback(results, options = {}) {
+  if (options.runtimeConfig?.deepScanFallbackEnabled !== true) return false;
   if (!options.userInitiated) return false;
   const totals = summarizeScanResults(results);
   if (totals.candidates || totals.received || totals.duplicate || totals.queued) return false;
@@ -1272,10 +1283,21 @@ function normalizeRuntimeConfig(value = {}) {
     maxEvents: clampRuntimeNumber(input.maxEvents, 5, 120, DEFAULT_RUNTIME_CONFIG.maxEvents),
     scanOrder: input.scanOrder === "studio_first" ? "studio_first" : "youtube_first",
     openYoutubeFallback: input.openYoutubeFallback === true,
+    deepScanFallbackEnabled: input.deepScanFallbackEnabled === true,
     includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
-    finishPhrases: Array.isArray(input.finishPhrases) ? input.finishPhrases.slice(0, 80) : [],
-    ignorePhrases: Array.isArray(input.ignorePhrases) ? input.ignorePhrases.slice(0, 100) : []
+    finishPhrases: mergeRuntimePhrases(DEFAULT_RUNTIME_CONFIG.finishPhrases, input.finishPhrases, 80),
+    ignorePhrases: mergeRuntimePhrases(DEFAULT_RUNTIME_CONFIG.ignorePhrases, input.ignorePhrases, 100)
   };
+}
+
+function mergeRuntimePhrases(required, custom, maxItems) {
+  const values = [
+    ...(Array.isArray(required) ? required : []),
+    ...(Array.isArray(custom) ? custom : [])
+  ]
+    .map((item) => String(item || "").trim())
+    .filter((item) => item.length >= 2 && item.length <= 140);
+  return Array.from(new Set(values)).slice(0, maxItems);
 }
 
 function clampRuntimeNumber(value, min, max, fallback) {

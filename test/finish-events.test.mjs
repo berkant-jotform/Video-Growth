@@ -315,6 +315,24 @@ test("keeps exact notification title matches lower confidence across channel nam
   assert.equal(match.matchedConfidence, "title_channel_variant");
 });
 
+test("matches exact titles across known Jotform family channel aliases", () => {
+  const activeRuns = [
+    {
+      testRunId: "pdf-editor-run",
+      videoId: "pdf123",
+      channel: "PDF Editor",
+      videoTitle: "How to Edit a PDF Form"
+    }
+  ];
+  const event = parseStudioNotification({
+    channel: "Jotform PDF Editor",
+    rawText: "A/B test performed well for all How to Edit a PDF Form: Results with very similar performance"
+  });
+  const match = matchFinishEventToRun(event, activeRuns);
+  assert.equal(match.run.testRunId, "pdf-editor-run");
+  assert.equal(match.matchedConfidence, "title_channel_alias");
+});
+
 test("does not title-match across different channel IDs", () => {
   const activeRuns = [
     {

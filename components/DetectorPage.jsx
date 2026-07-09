@@ -70,7 +70,7 @@ const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
 const EXTENSION_MISSING_RELOAD_STORAGE_KEY = "youtube-ab-extension-missing-reload-attempted";
-const REQUIRED_EXTENSION_VERSION = "0.2.1";
+const REQUIRED_EXTENSION_VERSION = "0.2.2";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);

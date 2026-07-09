@@ -261,8 +261,13 @@ test("canonicalizes channel names and applies priority order", () => {
   assert.equal(canonicalChannelName("Jotform Apps Channel"), "Apps");
   assert.equal(canonicalChannelName("Jotform App Channel"), "Apps");
   assert.equal(canonicalChannelName("Jotform Sign Channel"), "Sign");
+  assert.equal(canonicalChannelName("Jotform Boards Channel"), "Boards");
+  assert.equal(canonicalChannelName("Jotform PDF Editor Channel"), "PDF Editor");
+  assert.equal(canonicalChannelName("Workflow Channel"), "Workflow");
+  assert.equal(canonicalChannelName("With Podo"), "Podo");
+  assert.equal(canonicalChannelName("Noupe"), "Noupe");
   assert.deepEqual(
-    ["Sign", "Other", "AI Agents", "Jotform", "Apps", "AI Agents Podcast"].sort(compareChannels),
-    ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Sign", "Other"]
+    ["Sign", "Other", "AI Agents", "Jotform", "Apps", "AI Agents Podcast", "Boards", "PDF Editor", "Workflow", "Podo", "Noupe"].sort(compareChannels),
+    ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Sign", "Boards", "PDF Editor", "Workflow", "Podo", "Noupe", "Other"]
   );
 });

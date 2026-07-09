@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.2.1";
+globalThis.__youtubeAbTestsConnectorVersion = "0.2.2";
 const DEFAULT_RUNTIME_CONFIG = {
   minTextLength: MIN_TEXT_LENGTH,
   maxTextLength: MAX_TEXT_LENGTH,
@@ -20,11 +20,17 @@ const DEFAULT_RUNTIME_CONFIG = {
     "test completed",
     "performed well for all",
     "we updated your video",
+    "updated your video to use the winner",
+    "The test completed with no winner",
     "similar performance",
+    "Results with very similar performance",
+    "Not enough views to determine a winner",
     "not enough views",
     "not enough impressions",
     "not enough data",
     "not enough traffic",
+    "could not determine a winner",
+    "couldn't determine a winner",
     "no winner",
     "no clear",
     "inconclusive"
@@ -39,7 +45,10 @@ const DEFAULT_RUNTIME_CONFIG = {
     "running... get suggestions",
     "running… get suggestions",
     "Video can't be monetized",
-    "Claimed content found"
+    "Video can’t be monetized",
+    "Claimed content found",
+    "claimed content",
+    "tap to resolve"
   ]
 };
 const FINISH_TEXT_HINT = /\b(a\/b\s+test|test\s+finished|test\s+completed|performed\s+well\s+for\s+all|we\s+updated\s+your\s+video|similar\s+performance|not\s+enough\s+(?:views|impressions|data|traffic)|no\s+winner|inconclusive)\b/i;
@@ -312,7 +321,8 @@ function isRelevant(text, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
   const config = normalizeRuntimeConfig(runtimeConfig);
   if (!text || text.length < config.minTextLength) return false;
   if (text.length > config.maxTextLength) return false;
-  if (runtimePhraseMatch(text, config.ignorePhrases)) {
+  const hasConfiguredFinishHint = FINISH_TEXT_HINT.test(text) || runtimePhraseMatch(text, config.finishPhrases);
+  if (runtimePhraseMatch(text, config.ignorePhrases) && !hasConfiguredFinishHint) {
     return false;
   }
   if (/^(?:a\/b|ab|thumbnail|title)?\s*test\s+(?:completed|ready)(?:\s+set\s+test)?$/i.test(text)) {
@@ -336,7 +346,7 @@ function isRelevant(text, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
   if (/\brunning\b/i.test(text) && !/\b(finished|complete|completed|ended|result|results|winner|won|selected|ready|not enough|no clear)\b/i.test(text)) {
     return false;
   }
-  if (/not enough (?:impressions|data|traffic)|no clear|inconclusive/i.test(text)) return true;
+  if (/not enough (?:views|impressions|data|traffic)|no clear|inconclusive|could(?:\s+not|n't) determine/i.test(text)) return true;
   if (runtimePhraseMatch(text, config.finishPhrases)) return true;
   const hasTestContext = /\b(test and compare|test & compare|a\/b|ab test|experiment|thumbnail test|title test)\b/i.test(text);
   const hasFinishContext = /\b(finished|complete|completed|ended|result|results|winner|won|selected|ready)\b/i.test(text);
@@ -810,9 +820,19 @@ function normalizeRuntimeConfig(value = {}) {
     scrollRounds: clampNumber(input.scrollRounds, 0, 8, DEFAULT_RUNTIME_CONFIG.scrollRounds),
     scrollDelayMs: clampNumber(input.scrollDelayMs, 150, 3000, DEFAULT_RUNTIME_CONFIG.scrollDelayMs),
     includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
-    finishPhrases: Array.isArray(input.finishPhrases) ? input.finishPhrases : [],
-    ignorePhrases: Array.isArray(input.ignorePhrases) ? input.ignorePhrases : []
+    finishPhrases: mergeRuntimePhrases(DEFAULT_RUNTIME_CONFIG.finishPhrases, input.finishPhrases, 80),
+    ignorePhrases: mergeRuntimePhrases(DEFAULT_RUNTIME_CONFIG.ignorePhrases, input.ignorePhrases, 100)
   };
+}
+
+function mergeRuntimePhrases(required, custom, maxItems) {
+  const values = [
+    ...(Array.isArray(required) ? required : []),
+    ...(Array.isArray(custom) ? custom : [])
+  ]
+    .map((item) => String(item || "").trim())
+    .filter((item) => item.length >= 2 && item.length <= 140);
+  return Array.from(new Set(values)).slice(0, maxItems);
 }
 
 function runtimePhraseMatch(text, phrases = []) {

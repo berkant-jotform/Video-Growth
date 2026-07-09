@@ -18,6 +18,7 @@ test("normalizes extension runtime config with safe guardrails", () => {
     scrollDelayMs: 1,
     scanOrder: "studio_first",
     openYoutubeFallback: true,
+    deepScanFallbackEnabled: true,
     includeSeenOnManualScan: false,
     finishPhrases: ["custom finish"],
     ignorePhrases: ["custom ignore"]
@@ -33,6 +34,7 @@ test("normalizes extension runtime config with safe guardrails", () => {
   assert.equal(config.scrollDelayMs, 150);
   assert.equal(config.scanOrder, "studio_first");
   assert.equal(config.openYoutubeFallback, true);
+  assert.equal(config.deepScanFallbackEnabled, true);
   assert.equal(config.includeSeenOnManualScan, false);
   assert.ok(config.finishPhrases.includes("A/B test won"));
   assert.ok(config.finishPhrases.includes("custom finish"));
@@ -52,5 +54,14 @@ test("safe parser falls back to defaults for invalid runtime config JSON", () =>
   assert.match(result.error, /valid JSON/);
   assert.equal(result.config.scanOrder, "youtube_first");
   assert.equal(result.config.openYoutubeFallback, false);
+  assert.equal(result.config.deepScanFallbackEnabled, false);
   assert.ok(result.config.finishPhrases.includes("A/B test won"));
+});
+
+test("runtime config keeps current YouTube A/B wording in safe defaults", () => {
+  const config = normalizeExtensionRuntimeConfig({});
+  assert.ok(config.finishPhrases.includes("Not enough views to determine a winner"));
+  assert.ok(config.finishPhrases.includes("Results with very similar performance"));
+  assert.ok(config.finishPhrases.includes("updated your video to use the winner"));
+  assert.ok(config.ignorePhrases.includes("Video can’t be monetized"));
 });
