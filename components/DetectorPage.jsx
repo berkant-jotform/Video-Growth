@@ -729,84 +729,68 @@ export default function DetectorPage({ session }) {
   return (
     <AppShell session={session} active="detector">
       <main className="workspace detector-workspace">
-        <section className="hero-row detector-command-hero">
-          <div className="detector-heading">
-            <p className="eyebrow">Shared team queue</p>
-            <h2>Real finish tracker</h2>
-            <p className="muted">
-              Last successful scan: {lastSuccessfulScan?.completedAt ? formatDateTime(lastSuccessfulScan.completedAt) : "No successful scan yet"}.
-              Extension: {connectorSummary(connectorStatus)}
-            </p>
-            <div className="detector-view-toggle segmented" aria-label="Detector view">
-              <button
-                className={detectorView === "classic" ? "active" : ""}
-                onClick={() => setViewMode("classic")}
-                type="button"
-              >
-                Classic
-              </button>
-              <button
-                className={detectorView === "board" ? "active" : ""}
-                onClick={() => setViewMode("board")}
-                type="button"
-              >
-                Channel Board
-              </button>
+        <section className="detector-command-center">
+          <header className="detector-command-header">
+            <div className="detector-heading">
+              <p className="eyebrow">Shared team queue</p>
+              <h2>Real finish tracker</h2>
             </div>
-          </div>
-          <div className="scan-scope-panel daily-check-panel">
-            <div className="daily-check-heading">
-              <div>
-                <span className="eyebrow">Daily command</span>
-                <h3>Check for finished tests</h3>
+            <div className="detector-command-meta">
+              <span>
+                Last scan {lastSuccessfulScan?.completedAt ? formatDateTime(lastSuccessfulScan.completedAt) : "not completed"}
+                <em>·</em> {connectorSummary(connectorStatus)}
+              </span>
+              <div className="detector-view-toggle segmented" aria-label="Detector view">
+                <button className={detectorView === "classic" ? "active" : ""} onClick={() => setViewMode("classic")} type="button">Classic</button>
+                <button className={detectorView === "board" ? "active" : ""} onClick={() => setViewMode("board")} type="button">Channel Board</button>
               </div>
-              <span className="scope-summary">{scanScopeSummary(scanChannels, scanType)}</span>
             </div>
-            <div className="scan-scope-fields compact-scope-fields">
-              <div className="scan-channel-control">
-                <span className="filter-label">Channels</span>
+          </header>
+          <div className="daily-command-strip">
+            <div className="daily-command-title">
+              <span className="eyebrow">Daily check</span>
+              <strong>Find finished tests</strong>
+            </div>
+            <div className="scan-channel-control command-channel-control">
+              <span className="filter-label">Scan channels</span>
+              <div className="command-channel-row">
                 <div className="scan-channel-chips" aria-label="Scan channels">
                   {primaryScanChannels.map((item) => {
                     const active = item === "all" ? scanChannels.length === 0 : scanChannels.includes(item);
-                    return (
-                      <button key={item} type="button" className={active ? "active" : ""} style={scanChipStyle(item)} onClick={() => toggleScanChannel(item)}>
-                        {item === "all" ? "All" : item}
-                      </button>
-                    );
+                    return <button key={item} type="button" className={active ? "active" : ""} style={scanChipStyle(item)} onClick={() => toggleScanChannel(item)}>{item === "all" ? "All" : item}</button>;
                   })}
                 </div>
                 {extraScanChannels.length ? (
-                  <details className="more-scan-channels">
-                    <summary>More channels</summary>
+                  <details className="more-scan-channels command-more-channels">
+                    <summary>More</summary>
                     <div className="scan-channel-chips compact" aria-label="More scan channels">
-                      {extraScanChannels.map((item) => (
-                        <button key={item} type="button" className={scanChannels.includes(item) ? "active" : ""} style={scanChipStyle(item)} onClick={() => toggleScanChannel(item)}>{item}</button>
-                      ))}
+                      {extraScanChannels.map((item) => <button key={item} type="button" className={scanChannels.includes(item) ? "active" : ""} style={scanChipStyle(item)} onClick={() => toggleScanChannel(item)}>{item}</button>)}
                     </div>
                   </details>
                 ) : null}
               </div>
-              <div className="filter-control scan-type-control">
-                <span className="filter-label">Test type</span>
-                <div className="segmented" aria-label="Scan type">
-                  {["all", "title", "thumbnail"].map((item) => (
-                    <button key={item} className={scanType === item ? "active" : ""} onClick={() => setScanType(item)} type="button">{item === "all" ? "All" : titleCase(item)}</button>
-                  ))}
-                </div>
+            </div>
+            <div className="filter-control scan-type-control command-type-control">
+              <span className="filter-label">Test type</span>
+              <div className="segmented" aria-label="Scan type">
+                {["all", "title", "thumbnail"].map((item) => <button key={item} className={scanType === item ? "active" : ""} onClick={() => setScanType(item)} type="button">{item === "all" ? "All" : titleCase(item)}</button>)}
               </div>
             </div>
             <button className="primary-button primary-check-button" onClick={checkForFinishedTests} disabled={scanning || checkOperation?.running}>
-              <BellRing size={19} className={scanning || checkOperation?.running ? "spin" : ""} />
-              {scanning || checkOperation?.running ? "Checking for finished tests" : "Check for finished tests"}
+              <BellRing size={18} className={scanning || checkOperation?.running ? "spin" : ""} />
+              {scanning || checkOperation?.running ? "Checking" : "Check now"}
             </button>
-            <p className="scan-scope-help">Checks Studio signals first, then always refreshes the selected Sheets and YouTube data.</p>
+          </div>
+          <div className="command-footer">
+            <span>{scanScopeSummary(scanChannels, scanType)} · Studio signals, Sheets, and YouTube metadata</span>
             {checkOperation ? <UnifiedCheckStatus operation={checkOperation} /> : null}
           </div>
         </section>
 
         {scanning ? <ScanProgress scan={lastScan} lastSuccessfulScan={lastSuccessfulScan} progress={scanProgress} scanning /> : null}
 
-        <Summary summary={summary} runs={runs} />
+        <section className="review-queue-panel">
+          <Summary summary={summary} runs={runs} />
 
         <section className="filters">
           <label>
@@ -941,6 +925,7 @@ export default function DetectorPage({ session }) {
             <ExtensionScanReceipt connectorStatus={connectorStatus} compact />
           </div>
         </details>
+        </section>
 
         {error ? <div className="error-banner">{error}</div> : null}
         {notice ? <div className="warning-banner">{notice}</div> : null}
@@ -1045,12 +1030,8 @@ export default function DetectorPage({ session }) {
 }
 
 function Summary({ summary, runs = [] }) {
-  const items = [
-    ["Ready to review", (summary?.actionConflict || 0) + (summary?.confirmedFinished || summary?.newlyFinished || 0), "ready"],
-    ["New today", countNewToday(runs), "new"],
-    ["App managed", summary?.appManagedRuns || 0, "managed"],
-    ["Coverage problems", summary?.uncovered || 0, "coverage"]
-  ];
+  const ready = (summary?.actionConflict || 0) + (summary?.confirmedFinished || summary?.newlyFinished || 0);
+  const newToday = countNewToday(runs);
   const background = [
     ["Observed", summary?.appliedChangeObserved || 0],
     ["Manual check", summary?.pastDueCheck || 0],
@@ -1061,11 +1042,17 @@ function Summary({ summary, runs = [] }) {
   ];
   return (
     <section className="queue-overview">
-      <div className="summary-grid compact-summary-grid">
-        {items.map(([label, value, tone]) => <div className={`summary-card ${tone}`} key={label}><span>{label}</span><strong>{value}</strong></div>)}
+      <div className="queue-overview-title">
+        <span className="eyebrow">Review queue</span>
+        <h3><strong>{ready}</strong> ready to review</h3>
+        <em>{newToday ? `${newToday} new today` : "No new finishes today"}</em>
       </div>
-      <details className="background-counts">
-        <summary>Background monitoring</summary>
+      <div className="queue-overview-metrics">
+        <span className="managed"><strong>{summary?.appManagedRuns || 0}</strong> app managed</span>
+        <span className="coverage"><strong>{summary?.uncovered || 0}</strong> need coverage</span>
+      </div>
+      <details className="background-counts queue-background-counts">
+        <summary>Monitoring totals</summary>
         <div>{background.map(([label, value]) => <span key={label}>{label} <strong>{value}</strong></span>)}</div>
       </details>
     </section>
@@ -1701,7 +1688,6 @@ function BoardLane({
             <RefreshCw size={16} />
             Scan channel
           </button>
-          <span className="board-lane-hint">Deep scan lives in the Chrome extension.</span>
         </div>
       </div>
       {collapsed ? null : (
@@ -1746,10 +1732,12 @@ function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSavin
           </div>
           <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
           <p>{outcomeLabel(run)}</p>
-          {isAppManagedRun(run) ? <span className="badge app-managed">App managed</span> : null}
-          {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
-          {run.unregistered && run.signalResolution?.bestSuggestion ? (
-            <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span>
+          {isAppManagedRun(run) || run.unregistered ? (
+            <div className="board-card-context">
+              {isAppManagedRun(run) ? <span className="badge app-managed">App managed</span> : null}
+              {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
+              {run.unregistered && run.signalResolution?.bestSuggestion ? <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span> : null}
+            </div>
           ) : null}
         </div>
       </div>
