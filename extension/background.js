@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.3.3";
+const EXTENSION_VERSION = "0.3.4";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://video-growth.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -621,23 +621,14 @@ async function waitForTabReady(tabId, timeoutMs = 5000) {
 }
 
 async function ensureAppBridge(tabId) {
-  const status = await chrome.scripting
-    .executeScript({
-      target: { tabId },
-      func: () => ({
-        loaded: Boolean(globalThis.__youtubeAbTestsAppBridgeLoaded),
-        version: String(globalThis.__youtubeAbTestsAppBridgeVersion || "")
-      })
-    })
-    .then((results) => results?.[0]?.result || { loaded: false, version: "" })
-    .catch(() => ({ loaded: false, version: "" }));
-  if (status.loaded && status.version === EXTENSION_VERSION) return { injected: false };
+  // Re-execution is intentional: app-bridge.js replaces its own listeners so a
+  // Chrome extension reload cannot leave a stale website bridge behind.
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["app-bridge.js"]
   });
   await delay(50);
-  return { injected: true };
+  return { injected: true, refreshed: true };
 }
 
 async function injectAppBridgeIntoAppTabs() {

@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.3.3";
+globalThis.__youtubeAbTestsConnectorVersion = "0.3.4";
 const DEFAULT_RUNTIME_CONFIG = {
   minTextLength: MIN_TEXT_LENGTH,
   maxTextLength: MAX_TEXT_LENGTH,

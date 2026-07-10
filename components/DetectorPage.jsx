@@ -116,6 +116,7 @@ export default function DetectorPage({ session }) {
     let bridgeReady = false;
     let cancelled = false;
     let retryTimer = null;
+    let probeInterval = null;
     function markReady(version = "") {
       if (cancelled) return;
       bridgeReady = true;
@@ -174,10 +175,14 @@ export default function DetectorPage({ session }) {
       if (!bridgeReady) probe(0);
     }
     probe(0);
+    probeInterval = window.setInterval(() => {
+      if (!bridgeReady) probe(0);
+    }, 10000);
     window.addEventListener("focus", onFocus);
     return () => {
       cancelled = true;
       if (retryTimer) window.clearTimeout(retryTimer);
+      if (probeInterval) window.clearInterval(probeInterval);
       window.removeEventListener("message", onMessage);
       window.removeEventListener("focus", onFocus);
     };
@@ -362,6 +367,11 @@ export default function DetectorPage({ session }) {
       }
       const response = await requestExtension(type, { payload: { channels: scopeChannels, testType: scanType } });
       if (!response?.ok) throw new Error(response?.error || "Extension did not complete the request.");
+      setExtensionBridge((current) => ({
+        status: "ready",
+        version: current.version || connectorConfig?.latestExtensionVersion || "",
+        message: "Website controls are connected to the extension."
+      }));
       const message =
         type === "check-studio-now"
           ? extensionScanSummary(response)
@@ -381,9 +391,16 @@ export default function DetectorPage({ session }) {
         setExtensionBridge({
           status: "missing",
           version: "",
-          message: "Open the extension popup once; reload this page if it stays offline."
+          message: connectorStatus.some((item) => item.active)
+            ? "Background detection is active. Open the extension popup once to reconnect website controls."
+            : "Open the extension popup once to connect website controls."
         });
-        setExtensionRequest({ status: "warn", message: "" });
+        setExtensionRequest({
+          status: "warn",
+          message: connectorStatus.some((item) => item.active)
+            ? "The extension is still scanning in the background; only this page button is disconnected."
+            : "Website controls could not reach the extension."
+        });
       } else {
         setExtensionRequest({
           status: "warn",
@@ -394,33 +411,16 @@ export default function DetectorPage({ session }) {
   }
 
   function recoverInvalidatedExtensionContext() {
-    const message = "Extension was updated or reloaded. Reconnecting this dashboard automatically...";
+    const message = "Extension was updated or reloaded. Open its popup once to reconnect website controls; background scans remain safe.";
     setExtensionBridge({
       status: "missing",
       version: "",
       message
     });
     setExtensionRequest({ status: "warn", message });
-    let alreadyTried = false;
     try {
-      alreadyTried = window.sessionStorage.getItem(EXTENSION_RECONNECT_STORAGE_KEY) === "1";
-      if (!alreadyTried) window.sessionStorage.setItem(EXTENSION_RECONNECT_STORAGE_KEY, "1");
+      window.sessionStorage.removeItem(EXTENSION_RECONNECT_STORAGE_KEY);
     } catch {}
-    if (alreadyTried) {
-      setExtensionBridge({
-        status: "missing",
-        version: "",
-        message: "Automatic reconnect already ran. Open the extension popup once, then reload this dashboard if needed."
-      });
-      setExtensionRequest({
-        status: "warn",
-        message: "Automatic reconnect already ran. Open the extension popup once, then reload this dashboard if needed."
-      });
-      return;
-    }
-    window.setTimeout(() => {
-      window.location.reload();
-    }, 1200);
   }
 
   function toggleScanChannel(channel) {
@@ -741,6 +741,7 @@ export default function DetectorPage({ session }) {
               <ExtensionQuickCheck
                 request={extensionRequest}
                 bridge={extensionBridge}
+                extensionActive={connectorStatus.some((item) => item.active)}
                 onCheck={() => sendExtensionCommand("check-studio-now")}
                 onOpenNotifications={() => sendExtensionCommand("open-notification-page")}
                 onPasteMiss={() => setMissedTextModalOpen(true)}
@@ -775,7 +776,7 @@ export default function DetectorPage({ session }) {
           connectorConfig={connectorConfig}
           connectorStatus={connectorStatus}
           runs={runs}
-          selectedChannel={viewChannel}
+          selectedChannels={scanChannels}
         />
 
         <ScanProgress
@@ -1084,8 +1085,8 @@ function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
   );
 }
 
-function ConnectorCoveragePanel({ connectorConfig, connectorStatus, runs, selectedChannel }) {
-  const coverage = buildConnectorCoverage({ connectorConfig, connectorStatus, runs, selectedChannel });
+function ConnectorCoveragePanel({ connectorConfig, connectorStatus, runs, selectedChannels = [] }) {
+  const coverage = buildConnectorCoverage({ connectorConfig, connectorStatus, runs, selectedChannels });
   if (!coverage.channels.length) return null;
 
   return (
@@ -1360,10 +1361,10 @@ function extensionScanStages(tabs, totals) {
   ];
 }
 
-function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, onPasteMiss }) {
+function ExtensionQuickCheck({ request, bridge, extensionActive, onCheck, onOpenNotifications, onPasteMiss }) {
   const running = request.status === "running";
   const tone = request.status === "ok" ? "ok" : request.status === "warn" ? "warn" : "neutral";
-  const bridgeTone = bridge?.status === "ready" ? "ok" : bridge?.status === "missing" ? "warn" : "neutral";
+  const bridgeTone = bridge?.status === "ready" || (bridge?.status === "missing" && extensionActive) ? "ok" : bridge?.status === "missing" ? "warn" : "neutral";
   const requestMessage = isBridgeOfflineMessage(request.message) ? "" : request.message;
   const bridgeMissing = bridge?.status === "missing";
   return (
@@ -1379,24 +1380,26 @@ function ExtensionQuickCheck({ request, bridge, onCheck, onOpenNotifications, on
             {bridge?.status === "ready"
               ? `Dashboard bridge ready${bridge.version ? ` · v${bridge.version}` : ""}`
               : bridge?.status === "missing"
-                ? "Dashboard bridge offline"
+                ? extensionActive ? "Extension active" : "Website controls not connected"
                 : "Checking dashboard bridge"}
           </strong>
           <span>
             {bridge?.status === "ready"
               ? "Website buttons can talk to the extension."
               : bridge?.status === "missing"
-                ? bridge.message || "Open the extension popup once; reload this page if it stays offline."
+                ? extensionActive
+                  ? "Background scans are working. Open the extension popup once to reconnect this page's buttons."
+                  : bridge.message || "Open the extension popup once to connect this page's buttons."
                 : "This should only take a moment."}
           </span>
         </div>
         {requestMessage ? <em>{requestMessage}</em> : null}
       </div>
       <div className="extension-quick-actions">
-        {bridgeMissing ? (
+        {bridgeMissing && !extensionActive ? (
           <>
-            <button className="primary-button" type="button" onClick={() => window.location.reload()}>
-              Reload dashboard
+            <button className="primary-button" type="button" onClick={onCheck} disabled={running}>
+              Try connection
             </button>
             <a className="secondary-button" href="/extension">
               Extension setup
@@ -2633,8 +2636,8 @@ function latestExtensionScanReceipt(items = []) {
   return receipts.sort((a, b) => new Date(b.scan.checkedAt).valueOf() - new Date(a.scan.checkedAt).valueOf())[0];
 }
 
-function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, selectedChannel }) {
-  const channels = coverageChannelNames({ connectorConfig, runs, selectedChannel });
+function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, selectedChannel, selectedChannels = [] }) {
+  const channels = coverageChannelNames({ connectorConfig, runs, selectedChannel, selectedChannels });
   const activeStatuses = connectorStatus.filter((item) => item.active);
   const openUrls = activeStatuses.flatMap((item) => item.payload?.studioTabUrls || []).filter(Boolean);
   const openTabs = activeStatuses.flatMap((item) => item.payload?.studioTabs || []).filter(Boolean);
@@ -2745,8 +2748,9 @@ function isFreshExtensionScan(value) {
   return Date.now() - time < 2 * 60 * 60 * 1000;
 }
 
-function coverageChannelNames({ connectorConfig, runs, selectedChannel }) {
+function coverageChannelNames({ connectorConfig, runs, selectedChannel, selectedChannels = [] }) {
   if (selectedChannel && selectedChannel !== "all") return [selectedChannel];
+  if (selectedChannels.length) return Array.from(new Set(selectedChannels.map(displayChannel))).filter(Boolean).sort(compareChannels);
   const names = new Set();
   for (const channel of connectorConfig?.channels || []) {
     if (channel) names.add(displayChannel(channel));

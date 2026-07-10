@@ -599,8 +599,26 @@ test("sheet inspection reports non-empty tabs without recognizable A/B headers",
   });
   assert.equal(inspection[0].hasContent, true);
   assert.equal(inspection[0].recognized, false);
+  assert.equal(inspection[0].likelyTestData, false);
   assert.equal(inspection[1].recognized, true);
   assert.equal(inspection[1].testType, "thumbnail");
+});
+
+test("sheet inspection flags unrecognized tabs that still look like A/B test data", () => {
+  const inspection = inspectWorkbookSheets({
+    sourceKind: "title",
+    sheets: [
+      {
+        title: "New layout",
+        values: [
+          ["Video", "Variant Alpha", "Variant Beta", "Start Date"],
+          ["https://youtube.com/watch?v=abc123xyz89", "First title", "Second title", "2026-07-01"]
+        ]
+      }
+    ]
+  });
+  assert.equal(inspection[0].recognized, false);
+  assert.equal(inspection[0].likelyTestData, true);
 });
 
 test("B/C title metadata change creates applied-change event, but A does not", () => {

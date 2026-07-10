@@ -11,15 +11,23 @@
     }, window.location.origin);
   }
 
-  if (globalThis.__youtubeAbTestsAppBridgeLoaded && globalThis.__youtubeAbTestsAppBridgeVersion === BRIDGE_VERSION) {
-    announceReady();
-    return;
-  }
-
   globalThis.__youtubeAbTestsAppBridgeLoaded = true;
   globalThis.__youtubeAbTestsAppBridgeVersion = BRIDGE_VERSION;
 
-  window.addEventListener("message", async (event) => {
+  if (globalThis.__youtubeAbTestsAppBridgeMessageHandler) {
+    window.removeEventListener("message", globalThis.__youtubeAbTestsAppBridgeMessageHandler);
+  }
+  if (globalThis.__youtubeAbTestsAppBridgeFocusHandler) {
+    window.removeEventListener("focus", globalThis.__youtubeAbTestsAppBridgeFocusHandler);
+  }
+  if (globalThis.__youtubeAbTestsAppBridgeVisibilityHandler) {
+    document.removeEventListener("visibilitychange", globalThis.__youtubeAbTestsAppBridgeVisibilityHandler);
+  }
+  if (globalThis.__youtubeAbTestsAppBridgeReadyTimer) {
+    window.clearInterval(globalThis.__youtubeAbTestsAppBridgeReadyTimer);
+  }
+
+  const messageHandler = async (event) => {
     if (event.source !== window) return;
     const message = event.data || {};
     if (message.source !== APP_MESSAGE_SOURCE) return;
@@ -62,14 +70,23 @@
         response: { ok: false, error: error.message || "Extension request failed." }
       }, window.location.origin);
     }
-  });
+  };
+  const focusHandler = () => announceReady();
+  const visibilityHandler = () => {
+    if (!document.hidden) announceReady();
+  };
+
+  globalThis.__youtubeAbTestsAppBridgeMessageHandler = messageHandler;
+  globalThis.__youtubeAbTestsAppBridgeFocusHandler = focusHandler;
+  globalThis.__youtubeAbTestsAppBridgeVisibilityHandler = visibilityHandler;
+  globalThis.__youtubeAbTestsAppBridgeReadyTimer = window.setInterval(announceReady, 10000);
+
+  window.addEventListener("message", messageHandler);
+  window.addEventListener("focus", focusHandler);
+  document.addEventListener("visibilitychange", visibilityHandler);
 
   announceReady();
   window.setTimeout(announceReady, 400);
   window.setTimeout(announceReady, 1400);
   window.setTimeout(announceReady, 3200);
-  window.addEventListener("focus", announceReady);
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) announceReady();
-  });
 })();
