@@ -313,6 +313,14 @@ test("keeps same-title unmatched signals separate across known channel IDs", () 
   assert.equal(result.events.length, 2);
 });
 
+test("infers a missing legacy channel ID from the same extension event batch", () => {
+  const result = consolidateUnmatchedFinishEvents([
+    { eventId: "missing", source: "studio_bell", observedAt: "2026-06-30T06:02:04.745Z", videoTitle: "Why AI Is Like GPS for Life", rawText: "A/B test performed well for all Why AI Is Like GPS for Life: Results with very similar performance", detectedOutcome: "no_clear" },
+    { eventId: "known", source: "studio_bell", observedAt: "2026-06-30T06:02:04.750Z", channelId: "UCIkU9Fe0OccRmqBMXRm1Q7A", videoTitle: "How ChatGPT Workspace Agents Work", rawText: "A/B test performed well for all How ChatGPT Workspace Agents Work: Results with very similar performance", detectedOutcome: "no_clear" }
+  ]);
+  assert.equal(result.events.find((event) => event.eventId === "missing").channelId, "UCIkU9Fe0OccRmqBMXRm1Q7A");
+});
+
 test("does not fuzzy-match a long notification through one generic shared token", () => {
   const match = matchFinishEventToRun(
     {
