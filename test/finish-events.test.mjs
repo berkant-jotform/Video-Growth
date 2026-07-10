@@ -544,6 +544,27 @@ test("suggests possible sheet rows for unregistered finish signals", () => {
   assert.equal(explainUnmatchedFinishEvent(event, suggestions), "Possible sheet row found; review before accepting the match.");
 });
 
+test("never suggests a sheet row with a different known YouTube video ID", () => {
+  const event = {
+    videoId: "actual-video-id",
+    videoTitle: "Enterprise Newsletter: June 2026",
+    rawText: "A/B test inconclusive Enterprise Newsletter: June 2026: The test completed with no winner",
+    channel: "Jotform"
+  };
+  const suggestions = suggestFinishEventMatches(event, [
+    {
+      testRunId: "wrong-video",
+      videoId: "different-video-id",
+      channel: "Jotform",
+      videoTitle: "Enterprise Newsletter: March 2026",
+      currentYoutubeTitle: "Enterprise Newsletter: June 2026",
+      options: {}
+    }
+  ]);
+  assert.deepEqual(suggestions, []);
+  assert.equal(explainUnmatchedFinishEvent(event, suggestions), "No sheet row has this YouTube video ID.");
+});
+
 test("matches close Studio notification titles by token overlap", () => {
   const activeRuns = [
     {

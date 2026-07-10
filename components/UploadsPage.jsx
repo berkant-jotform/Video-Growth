@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Upload } from "lucide-react";
+import { CheckCircle2, FileSpreadsheet, Image, Upload } from "lucide-react";
 import { upload as uploadToBlob } from "@vercel/blob/client";
 import AppShell from "@/components/AppShell.jsx";
 
@@ -85,14 +85,30 @@ export default function UploadsPage({ session }) {
 
   return (
     <AppShell session={session} active="uploads">
-      <main className="workspace settings-grid">
-        <section className="settings-panel">
-          <p className="eyebrow">Thumbnail snapshots</p>
-          <h2>Upload XLSX preview source</h2>
-          <p className="muted">Use this only when card previews are missing or stale. The import reads embedded A/B/C images and never writes to YouTube or Sheets.</p>
-          <form className="form-stack" onSubmit={submit}>
-            <label>
-              Thumbnail workbook snapshot
+      <main className="workspace uploads-workspace">
+        <section className="page-intro uploads-intro">
+          <div>
+            <p className="eyebrow">Thumbnail maintenance</p>
+            <h2>Refresh card previews</h2>
+            <p className="muted">Normal scans do not need an upload. Use a snapshot only when A/B/C images are missing or outdated.</p>
+          </div>
+          <div className="upload-safety-note">
+            <CheckCircle2 size={18} />
+            <span><strong>Read-only import</strong>Nothing is written to YouTube or Google Sheets.</span>
+          </div>
+        </section>
+
+        <section className="upload-layout">
+          <form className="settings-panel upload-panel" onSubmit={submit}>
+            <div className="panel-heading-row">
+              <span className="panel-icon"><Image size={20} /></span>
+              <div>
+                <p className="eyebrow">New snapshot</p>
+                <h2>Import embedded thumbnails</h2>
+              </div>
+            </div>
+            <p className="muted">Export a smaller XLSX containing the active thumbnail-test tabs. Maximum size: 220 MB.</p>
+            <label className={`upload-dropzone ${file ? "has-file" : ""}`}>
               <input
                 key={inputKey}
                 type="file"
@@ -100,13 +116,10 @@ export default function UploadsPage({ session }) {
                 onChange={(event) => setFile(event.target.files?.[0] || null)}
                 disabled={busy}
               />
+              <FileSpreadsheet size={28} />
+              <strong>{file ? file.name : "Choose an XLSX snapshot"}</strong>
+              <span>{file ? formatBytes(file.size) : "Click to browse your computer"}</span>
             </label>
-            {file ? (
-              <div className="upload-file-summary">
-                <strong>{file.name}</strong>
-                <span>{formatBytes(file.size)}</span>
-              </div>
-            ) : null}
             {busy ? (
               <div className="upload-progress" role="status" aria-live="polite">
                 <div className="upload-progress-copy">
@@ -123,26 +136,31 @@ export default function UploadsPage({ session }) {
             {message ? <p className="form-success">{message}</p> : null}
             <button className="primary-button" disabled={busy || !file}>
               <Upload size={17} />
-              {busy ? phase : "Upload Snapshot"}
+              {busy ? phase : "Import Previews"}
             </button>
           </form>
-        </section>
 
-        <section className="settings-panel">
-          <p className="eyebrow">Recent imports</p>
-          <h2>Preview cache</h2>
+          <section className="settings-panel upload-history-panel">
+            <div className="panel-heading-row">
+              <span className="panel-icon"><FileSpreadsheet size={20} /></span>
+              <div>
+                <p className="eyebrow">Preview cache</p>
+                <h2>Recent imports</h2>
+              </div>
+            </div>
+            <p className="muted">The newest imported image for each sheet row and option is used on detector cards.</p>
           <div className="upload-list">
             {uploads.map((item) => (
               <div className="upload-row" key={item.uploadId}>
-                <strong>{item.filename}</strong>
-                <span>
-                  {item.importedCount} previews | {formatDateTime(item.createdAt)}
-                </span>
+                <span className="upload-row-icon"><FileSpreadsheet size={17} /></span>
+                <div><strong>{item.filename}</strong><span>{formatDateTime(item.createdAt)}</span></div>
+                <em>{item.importedCount} previews</em>
               </div>
             ))}
             {loading ? <p className="muted">Loading imports...</p> : null}
-            {!loading && !uploads.length ? <p className="muted">No uploads yet.</p> : null}
+            {!loading && !uploads.length ? <div className="empty-state"><strong>No snapshots imported</strong><span>Cards can still use the current YouTube thumbnail.</span></div> : null}
           </div>
+          </section>
         </section>
       </main>
     </AppShell>

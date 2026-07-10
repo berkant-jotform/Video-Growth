@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Mail, Plus, Save, Send, Slack, Trash2 } from "lucide-react";
+import { Bell, ChevronDown, Mail, Plus, Save, Send, Settings2, Trash2, Users } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 
 const STATUS_OPTIONS = [
@@ -24,6 +24,8 @@ export default function NotificationsPage({ session }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({});
   const [profiles, setProfiles] = useState([]);
+  const [savedForm, setSavedForm] = useState({});
+  const [savedProfiles, setSavedProfiles] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState("");
@@ -48,6 +50,8 @@ export default function NotificationsPage({ session }) {
       setConfig(configPayload.config);
       setForm(configPayload.config.values || {});
       setProfiles(profilesPayload.profiles || []);
+      setSavedForm(configPayload.config.values || {});
+      setSavedProfiles(profilesPayload.profiles || []);
     } catch (loadError) {
       setError(loadError.message || "Could not load notification settings.");
     } finally {
@@ -80,6 +84,8 @@ export default function NotificationsPage({ session }) {
       setConfig(configPayload.config);
       setForm(configPayload.config.values || {});
       setProfiles(profilesPayload.profiles || []);
+      setSavedForm(configPayload.config.values || {});
+      setSavedProfiles(profilesPayload.profiles || []);
       setMessage("Notification profiles saved.");
     } catch (saveError) {
       setError(saveError.message || "Could not save notification profiles.");
@@ -177,17 +183,32 @@ export default function NotificationsPage({ session }) {
     const configured = parseList(form.CONNECTOR_CHANNELS);
     return Array.from(new Set([...configured, ...DEFAULT_CHANNELS])).filter(Boolean);
   }, [form.CONNECTOR_CHANNELS]);
+  const hasChanges = useMemo(
+    () => stableJson(form) !== stableJson(savedForm) || stableJson(profiles) !== stableJson(savedProfiles),
+    [form, profiles, savedForm, savedProfiles]
+  );
+  const activeProfiles = profiles.filter((profile) => profile.enabled !== false).length;
+  const emailReady = Boolean(form.SMTP_HOST && form.SMTP_USERNAME && form.SMTP_PASSWORD && form.SMTP_FROM);
+
+  useEffect(() => {
+    const warn = (event) => {
+      if (!hasChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasChanges]);
 
   return (
     <AppShell session={session} active="notifications">
       <main className="workspace notifications-workspace">
-        <section className="settings-panel full-width notification-hero">
+        <section className="page-intro notification-hero">
           <div>
             <p className="eyebrow">Notifications</p>
             <h2>Team notification profiles</h2>
             <p className="muted">
-              The detector queue is shared. Profiles decide who receives which channel, test type, and status.
-              SMTP sender settings are shared; Slack webhooks and email recipients can be profile-specific.
+              Create one profile per teammate or workflow. Each profile chooses its own channels, test types, outcomes, and destinations.
             </p>
           </div>
           <div className="notification-actions">
@@ -200,33 +221,14 @@ export default function NotificationsPage({ session }) {
               {sending === "digest" ? "Sending..." : "Send Digest Now"}
             </button>
           </div>
+          <div className="notification-summary-strip">
+            <span><Users size={17} /><strong>{activeProfiles}</strong> active profiles</span>
+            <span><Mail size={17} /><strong>{emailReady ? "Ready" : "Setup needed"}</strong> email sender</span>
+            <span><Bell size={17} /><strong>{form.DAILY_DIGEST_TIME_LOCAL || "09:00"}</strong> daily digest</span>
+          </div>
         </section>
 
         <form onSubmit={save} className="notifications-grid">
-          <section className="settings-panel notification-schedule">
-            <p className="eyebrow">Shared Sender</p>
-            <h2>Email delivery</h2>
-            <p className="muted">
-              These SMTP values send email for every profile. Each profile controls its own recipients and filters.
-            </p>
-            <SettingField label="Daily digest time" name="DAILY_DIGEST_TIME_LOCAL" value={form.DAILY_DIGEST_TIME_LOCAL || "09:00"} onChange={(value) => setForm((current) => ({ ...current, DAILY_DIGEST_TIME_LOCAL: value }))} />
-            <SettingField label="SMTP host" name="SMTP_HOST" value={form.SMTP_HOST || ""} source={config?.sources?.SMTP_HOST} onChange={(value) => setForm((current) => ({ ...current, SMTP_HOST: value }))} />
-            <SettingField label="SMTP port" name="SMTP_PORT" value={form.SMTP_PORT || "587"} source={config?.sources?.SMTP_PORT} onChange={(value) => setForm((current) => ({ ...current, SMTP_PORT: value }))} />
-            <SettingField label="SMTP username" name="SMTP_USERNAME" value={form.SMTP_USERNAME || ""} source={config?.sources?.SMTP_USERNAME} onChange={(value) => setForm((current) => ({ ...current, SMTP_USERNAME: value }))} />
-            <SettingField label="SMTP password" name="SMTP_PASSWORD" secret value={form.SMTP_PASSWORD || ""} source={config?.sources?.SMTP_PASSWORD} onChange={(value) => setForm((current) => ({ ...current, SMTP_PASSWORD: value }))} />
-            <SettingField label="From email" name="SMTP_FROM" value={form.SMTP_FROM || ""} source={config?.sources?.SMTP_FROM} onChange={(value) => setForm((current) => ({ ...current, SMTP_FROM: value }))} />
-          </section>
-
-          <section className="settings-panel notification-schedule">
-            <p className="eyebrow">Profile Defaults</p>
-            <h2>Recommended routing</h2>
-            <div className="notification-guidance">
-              <span><Bell size={16} /> Start with confirmed finished and applied change observed. Add manual checks only when you really want them.</span>
-              <span><Mail size={16} /> Use email recipients for people, Slack webhooks for channels or DMs.</span>
-              <span><Slack size={16} /> Leave a filter empty when that profile should receive all values.</span>
-            </div>
-          </section>
-
           {loading ? (
             <section className="settings-panel notification-empty full-width">
               <h2>Loading notification profiles...</h2>
@@ -255,12 +257,32 @@ export default function NotificationsPage({ session }) {
             </section>
           )}
 
-          <section className="settings-panel full-width notification-save-panel">
+          <details className="settings-panel full-width notification-shared-settings">
+            <summary>
+              <span className="panel-icon"><Settings2 size={19} /></span>
+              <span><strong>Shared email sender</strong><em>{emailReady ? "Configured" : "Setup needed"}</em></span>
+              <ChevronDown size={18} />
+            </summary>
+            <div className="notification-shared-settings-body">
+              <p className="muted">Configure this once for the whole team. Individual recipients remain inside each profile.</p>
+              <div className="profile-fields">
+                <SettingField label="Daily digest time" name="DAILY_DIGEST_TIME_LOCAL" value={form.DAILY_DIGEST_TIME_LOCAL || "09:00"} onChange={(value) => setForm((current) => ({ ...current, DAILY_DIGEST_TIME_LOCAL: value }))} />
+                <SettingField label="SMTP host" name="SMTP_HOST" value={form.SMTP_HOST || ""} source={config?.sources?.SMTP_HOST} onChange={(value) => setForm((current) => ({ ...current, SMTP_HOST: value }))} />
+                <SettingField label="SMTP port" name="SMTP_PORT" value={form.SMTP_PORT || "587"} source={config?.sources?.SMTP_PORT} onChange={(value) => setForm((current) => ({ ...current, SMTP_PORT: value }))} />
+                <SettingField label="SMTP username" name="SMTP_USERNAME" value={form.SMTP_USERNAME || ""} source={config?.sources?.SMTP_USERNAME} onChange={(value) => setForm((current) => ({ ...current, SMTP_USERNAME: value }))} />
+                <SettingField label="SMTP password" name="SMTP_PASSWORD" secret value={form.SMTP_PASSWORD || ""} source={config?.sources?.SMTP_PASSWORD} onChange={(value) => setForm((current) => ({ ...current, SMTP_PASSWORD: value }))} />
+                <SettingField label="From email" name="SMTP_FROM" value={form.SMTP_FROM || ""} source={config?.sources?.SMTP_FROM} onChange={(value) => setForm((current) => ({ ...current, SMTP_FROM: value }))} />
+              </div>
+            </div>
+          </details>
+
+          <section className={`settings-panel full-width notification-save-panel ${hasChanges ? "has-changes" : ""}`}>
             {error ? <p className="form-error">{error}</p> : null}
             {message ? <p className="form-success">{message}</p> : null}
+            <span className="notification-save-state">{hasChanges ? "Unsaved notification changes" : "All notification settings saved"}</span>
             <button className="primary-button" disabled={saving || loading}>
               <Save size={17} />
-              {saving ? "Saving..." : "Save Notification Profiles"}
+              {saving ? "Saving..." : "Save Changes"}
             </button>
           </section>
         </form>
@@ -378,4 +400,12 @@ function parseList(value) {
     .split(/[\n,]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }

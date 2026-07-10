@@ -82,6 +82,7 @@ export default function DetectorPage({ session }) {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [scanInfo, setScanInfo] = useState("");
   const [selected, setSelected] = useState(null);
   const [modalRun, setModalRun] = useState(null);
   const [modalInitialAction, setModalInitialAction] = useState("");
@@ -318,6 +319,7 @@ export default function DetectorPage({ session }) {
     setScanning(true);
     setError("");
     setNotice("");
+    setScanInfo("");
     setLastScan({
       scanId: `local-${Date.now()}`,
       startedAt: optimisticStartedAt,
@@ -346,6 +348,9 @@ export default function DetectorPage({ session }) {
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Scan failed.");
       if (payload.warnings?.length) {
         setNotice(`Scan completed with ${payload.warnings.length} warning${payload.warnings.length === 1 ? "" : "s"}: ${payload.warnings.slice(0, 3).join(" ")}`);
+      }
+      if (payload.notices?.length) {
+        setScanInfo(payload.notices.slice(0, 3).join(" "));
       }
       notifyBrowser("YouTube A/B Tests", `${payload.summary.total} items need attention.`);
       await refresh();
@@ -893,6 +898,7 @@ export default function DetectorPage({ session }) {
 
         {error ? <div className="error-banner">{error}</div> : null}
         {notice ? <div className="warning-banner">{notice}</div> : null}
+        {scanInfo ? <div className="info-banner">{scanInfo}</div> : null}
         {loading ? <div className="empty-state">Loading queue</div> : null}
         {!loading && filtered.length === 0 ? (
           <div className="empty-state">
@@ -1138,7 +1144,7 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
   const tabCount = Number(totals.tabs || tabs.length);
   const scopeText = extensionScanScopeText(receipt.scan.scope);
   const rulesText = receipt.scan.runtimeConfigVersion ? ` Rules ${receipt.scan.runtimeConfigVersion}.` : "";
-  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${scopeText ? ` for ${scopeText}` : ""}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}.${rulesText} Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} new, ${duplicate} already seen, ${queued} queued for retry, ${ignored} ignored. ${matched} matched, ${unmatched} unregistered.`;
+  const summaryText = `Checked ${tabCount} tab${tabCount === 1 ? "" : "s"}${scopeText ? ` for ${scopeText}` : ""}${receipt.scan.checkedAt ? ` at ${formatDateTime(receipt.scan.checkedAt)}` : ""}.${rulesText} Processed ${processed} signal${processed === 1 ? "" : "s"}: ${received} submitted, ${duplicate} already seen, ${queued} queued for retry, ${ignored} ignored. ${matched} matched, ${unmatched} unregistered.`;
   if (compact) {
     return (
       <details className={`extension-scan-receipt compact ${tone}`} open={Boolean(found || failed || diagnosisWarn)}>
@@ -1318,7 +1324,7 @@ function extensionScanStages(tabs, totals) {
     },
     {
       key: "sent",
-      label: "New signals",
+      label: "Signals processed",
       value: `${sent}`,
       state: sent ? "ok" : duplicate || queued ? "neutral" : "warn"
     },
@@ -1365,8 +1371,12 @@ function ExtensionQuickCheck({ request, bridge, extensionActive, onCheck, onOpen
   const running = request.status === "running";
   const tone = request.status === "ok" ? "ok" : request.status === "warn" ? "warn" : "neutral";
   const bridgeTone = bridge?.status === "ready" || (bridge?.status === "missing" && extensionActive) ? "ok" : bridge?.status === "missing" ? "warn" : "neutral";
-  const requestMessage = isBridgeOfflineMessage(request.message) ? "" : request.message;
   const bridgeMissing = bridge?.status === "missing";
+  const requestMessage = bridgeMissing && extensionActive
+    ? ""
+    : isBridgeOfflineMessage(request.message)
+      ? ""
+      : request.message;
   return (
     <section className={`extension-quick-check ${tone}`}>
       <div className="extension-quick-copy">
@@ -1388,7 +1398,7 @@ function ExtensionQuickCheck({ request, bridge, extensionActive, onCheck, onOpen
               ? "Website buttons can talk to the extension."
               : bridge?.status === "missing"
                 ? extensionActive
-                  ? "Background scans are working. Open the extension popup once to reconnect this page's buttons."
+                  ? "Background detection is healthy. Open the extension popup only when you want to use Check now from this page."
                   : bridge.message || "Open the extension popup once to connect this page's buttons."
                 : "This should only take a moment."}
           </span>

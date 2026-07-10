@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Clipboard, Download, ExternalLink, KeyRound, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clipboard, Download, ExternalLink, KeyRound, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 import {
   DEFAULT_EXTENSION_RUNTIME_CONFIG,
@@ -266,8 +266,22 @@ export default function ExtensionPage({ session }) {
         {error ? <p className="form-error full-width" role="alert">{error}</p> : null}
         {message ? <p className="form-success full-width" role="status">{message}</p> : null}
 
-        <section className="settings-panel extension-token-panel">
-          <p className="eyebrow">1. Browser connection</p>
+        {activeStatus?.active ? (
+          <section className="extension-daily-note full-width">
+            <CheckCircle2 size={19} />
+            <span><strong>Setup is active.</strong> Use Detector for daily scans. Return here only to add a channel, connect another browser, or troubleshoot.</span>
+            <a className="secondary-button compact-button" href="/">Open Detector</a>
+          </section>
+        ) : null}
+
+        <details className="settings-panel full-width extension-setup-details" open={!activeStatus?.active}>
+          <summary>
+            <span><strong>Install or connect another browser</strong><em>{deviceTokens.filter((item) => item.active).length} active browser connection{deviceTokens.filter((item) => item.active).length === 1 ? "" : "s"}</em></span>
+            <ExternalLink size={17} />
+          </summary>
+          <div className="extension-setup-grid">
+        <section className="extension-subpanel extension-token-panel">
+          <p className="eyebrow">Browser connection</p>
           <h2>Connect this Chrome profile</h2>
           <p className="muted">
             Create a separate connection for each teammate or Chrome profile. You can revoke one browser without disconnecting everyone else.
@@ -334,8 +348,8 @@ export default function ExtensionPage({ session }) {
           ) : null}
         </section>
 
-        <section className="settings-panel extension-token-panel">
-          <p className="eyebrow">2. Install</p>
+        <section className="extension-subpanel extension-token-panel">
+          <p className="eyebrow">Chrome installation</p>
           <h2>Load the extension in Chrome</h2>
           <div className="extension-steps-list">
             <span><Download size={16} /> Download the zip.</span>
@@ -353,9 +367,11 @@ export default function ExtensionPage({ session }) {
             </button>
           </div>
         </section>
+          </div>
+        </details>
 
         <section className="settings-panel full-width">
-          <p className="eyebrow">3. Watch channels</p>
+          <p className="eyebrow">Watched channels</p>
           <h2>Studio watcher tabs</h2>
           <p className="muted">Add a channel name first. Paste its Studio channel URL or UC channel ID when available; rows without an ID are saved but clearly marked as not ready to open.</p>
           <WatcherRows
@@ -387,9 +403,12 @@ export default function ExtensionPage({ session }) {
           </div>
         </section>
 
-        <section className="settings-panel full-width">
-          <p className="eyebrow">4. Detection rules</p>
-          <h2>Detection reliability</h2>
+        <details className="settings-panel full-width extension-advanced-panel">
+          <summary>
+            <span><strong>Detection reliability</strong><em>{runtimePreset === "thorough" ? "Thorough checks" : "Balanced checks"}</em></span>
+            <ChevronDown size={18} />
+          </summary>
+          <div className="extension-advanced-body">
           <p className="muted">
             Changes are pulled by installed extensions automatically. Updating these settings does not require a new extension zip.
           </p>
@@ -480,11 +499,15 @@ export default function ExtensionPage({ session }) {
               Reset Safe Defaults
             </button>
           </div>
-        </section>
+          </div>
+        </details>
 
-        <section className="settings-panel full-width">
-          <p className="eyebrow">5. Confirm</p>
-          <h2>Check coverage</h2>
+        <details className="settings-panel full-width extension-advanced-panel" open={!activeStatus?.active}>
+          <summary>
+            <span><strong>Connection health and troubleshooting</strong><em>{activeStatus?.active ? "Healthy" : "Needs attention"}</em></span>
+            <ChevronDown size={18} />
+          </summary>
+          <div className="extension-advanced-body">
           <div className="extension-check-grid">
             {connectorStatus.length ? (
               connectorStatus.slice(0, 6).map((item) => (
@@ -511,7 +534,8 @@ export default function ExtensionPage({ session }) {
               Download Troubleshooting Bundle
             </a>
           </div>
-        </section>
+          </div>
+        </details>
 
       </main>
     </AppShell>
