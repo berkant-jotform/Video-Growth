@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { appManagedRunIdentity, inferFinishEventTestType } from "../lib/app-registry.mjs";
 
-test("app registry reuses a stable run for the same finish occurrence", () => {
+test("app registry reuses a stable run across repeated notification scans", () => {
   const event = { videoId: "video-1", rawText: "A/B test inconclusive Example", occurredAt: "2026-07-10T08:00:00Z" };
   assert.equal(appManagedRunIdentity(event).testRunId, appManagedRunIdentity({ ...event, observedAt: "2026-07-12T10:00:00Z" }).testRunId);
 });
 
-test("app registry keeps a later retest occurrence separate", () => {
+test("app registry does not invent a retest from a later repeated signal", () => {
   const first = appManagedRunIdentity({ videoId: "video-1", occurredAt: "2026-07-10T08:00:00Z" });
   const later = appManagedRunIdentity({ videoId: "video-1", occurredAt: "2026-08-01T08:00:00Z" });
-  assert.notEqual(first.testRunId, later.testRunId);
+  assert.equal(first.testRunId, later.testRunId);
 });
 
 test("app registry infers thumbnail signals without requiring a sheet", () => {

@@ -196,7 +196,7 @@ export default function ReviewSessionPage({ session }) {
             <header className="review-card-header">
               <div className="review-channel">
                 {run.youtubeChannelThumbnailUrl ? <img src={run.youtubeChannelThumbnailUrl} alt="" /> : <span>{channelInitials(run.channel)}</span>}
-                <div><strong>{run.channel || "Unknown channel"}</strong><em>{run.sourceKind === "app_registry" ? "App managed" : "Sheet connected"}</em></div>
+                <div><strong>{run.channel || "Unknown channel"}</strong><em>{run.sourceKind === "app_registry" ? "Studio finish · No sheet row" : "Sheet connected"}</em></div>
               </div>
               <div className="review-card-badges">
                 <span className={`type-pill ${run.testType}-type`}>{run.testType === "thumbnail" ? <ImageIcon size={14} /> : <Type size={14} />}{titleCase(run.testType)} test</span>
@@ -209,7 +209,7 @@ export default function ReviewSessionPage({ session }) {
                 {run.currentYoutubeThumbnailUrl ? <img className="review-current-thumbnail" src={run.currentYoutubeThumbnailUrl} alt="Current YouTube thumbnail" /> : null}
                 <p className="eyebrow">Video</p>
                 <h2>{run.videoTitle || run.currentYoutubeTitle || run.videoId}</h2>
-                <p className="review-signal-reason">{run.sourceKind === "app_registry" ? "Confirmed by Studio and tracked independently by the app." : run.finishEventSource?.includes("studio") ? "Confirmed by a real Studio finish signal." : "Finished according to the configured sheet."}</p>
+                <p className="review-signal-reason">{run.sourceKind === "app_registry" ? "Confirmed by Studio. No matching row exists in the configured A/B sheet yet." : run.finishEventSource?.includes("studio") ? "Confirmed by a real Studio finish signal." : "Finished according to the configured sheet."}</p>
                 <a className={`studio-button review-studio-button ${openedStudioRun === run.testRunId ? "opened" : ""}`} href={run.studioUrl || "#"} target="_blank" rel="noreferrer" onClick={() => setOpenedStudioRun(run.testRunId)}><ExternalLink size={18} />{openedStudioRun === run.testRunId ? "Studio opened" : "Open Studio"}</a>
               </div>
               <ReviewOptions run={run} />

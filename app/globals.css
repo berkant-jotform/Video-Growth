@@ -5643,3 +5643,167 @@ select,
 .board-card-actions .primary-studio-action { min-height: 42px; min-width: 0; padding: 0 14px; }
 .board-card-actions .quick-actions { flex-wrap: nowrap; }
 .board-card-actions .mini-icon-button { flex: 0 0 auto; }
+
+/* Card typography and layout: use only supported weights to avoid synthetic glyphs. */
+.test-card,
+.board-card,
+.review-card {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-variant-ligatures: contextual;
+  letter-spacing: 0;
+}
+
+.test-card h4,
+.board-card-copy h4,
+.review-card h2 {
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.test-card h4 {
+  font-size: 16px;
+  line-height: 1.32;
+}
+
+.board-card-copy h4 {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.test-card .outcome,
+.board-card-copy p,
+.review-signal-reason {
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.channel-heading-title,
+.board-lane-title strong { font-weight: 700; }
+
+.channel-pill,
+.type-pill,
+.result-pill,
+.badge,
+.date-pill,
+.signal-resolution-note,
+.board-lane-metrics span {
+  font-weight: 600;
+}
+
+.card-top-actions,
+.card-badges { min-width: 0; }
+
+.card-copy {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.card-context {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.card-context .signal-resolution-note {
+  flex: 1 1 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-card .card-actions {
+  align-items: stretch;
+  display: grid;
+  gap: 9px;
+  margin-top: auto;
+}
+
+.card-primary-actions,
+.card-secondary-actions {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+  min-width: 0;
+}
+
+.card-primary-actions .primary-studio-action {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.card-secondary-actions {
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  justify-content: space-between;
+  padding-top: 9px;
+}
+
+.card-secondary-actions .done-button,
+.card-secondary-actions .ignore-button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 30px;
+  padding: 0 6px;
+}
+
+.card-secondary-actions .done-button:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.quick-action,
+.primary-studio-action,
+.board-card-actions button,
+.board-card-actions a { font-weight: 700; }
+
+.title-option-card span { font-weight: 600; }
+.title-option-card strong,
+.thumbnail-visual-grid figcaption,
+.channel-avatar.fallback { font-weight: 700; }
+
+.filter-label,
+.filters > label,
+.toolbar-field-label,
+.history-search-field > span:first-child {
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.filters select,
+.filters input,
+.filters .segmented button,
+.daily-command-strip button,
+.review-toolbar select,
+.review-toolbar button {
+  font-weight: 600;
+}
+
+.queue-trust-state {
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 1px;
+  grid-column: 1 / -1;
+}
+
+.queue-trust-state > span {
+  align-items: center;
+  background: color-mix(in srgb, var(--amber) 7%, var(--surface));
+  color: var(--muted);
+  display: flex;
+  flex: 1 1 50%;
+  font-size: 12px;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 16px;
+}
+
+.queue-trust-state > span + span { border-left: 1px solid var(--border); }
+.queue-trust-state strong { color: var(--amber); font-weight: 700; white-space: nowrap; }

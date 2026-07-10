@@ -60,3 +60,141 @@ test("keeps the most actionable duplicate as the visible card", () => {
   assert.equal(result[0].testRunId, "confirmed");
   assert.equal(result[0].finishEventId, "event-1");
 });
+
+test("collapses repeated app-managed Studio signals for the same video", () => {
+  const result = dedupeQueueRuns([
+    {
+      ...base,
+      testRunId: "app-old",
+      sourceKind: "app_registry",
+      spreadsheetId: "",
+      sheetName: "App registry",
+      rowNumber: 0,
+      startDate: "",
+      optionFingerprint: "",
+      finishEventId: "event-old"
+    },
+    {
+      ...base,
+      testRunId: "app-new",
+      sourceKind: "app_registry",
+      spreadsheetId: "",
+      sheetName: "App registry",
+      rowNumber: 0,
+      startDate: "",
+      optionFingerprint: "",
+      finishEventId: "event-new",
+      finishEventAt: "2026-07-10T12:00:00Z"
+    }
+  ]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].duplicateCount, 1);
+  assert.equal(result[0].possibleRetest, false);
+});
+
+test("app-managed signals do not make a sheet run look like a retest", () => {
+  const result = dedupeQueueRuns([
+    { ...base, testRunId: "sheet", sourceKind: "title", spreadsheetId: "main", sheetName: "Jotform", rowNumber: 4 },
+    {
+      ...base,
+      testRunId: "app",
+      sourceKind: "app_registry",
+      spreadsheetId: "",
+      sheetName: "App registry",
+      rowNumber: 0,
+      startDate: "",
+      optionFingerprint: ""
+    }
+  ]);
+  assert.equal(result.find((run) => run.testRunId === "sheet").possibleRetest, false);
+  assert.equal(result.find((run) => run.testRunId === "app").possibleRetest, false);
+});
+
+test("merges a title-only app signal after YouTube later resolves its video ID", () => {
+  const result = dedupeQueueRuns([
+    {
+      ...base,
+      testRunId: "title-only",
+      videoId: "",
+      videoTitle: "Introducing Jotform AI App Builder",
+      channel: "Jotform",
+      sourceKind: "app_registry",
+      startDate: "",
+      optionFingerprint: ""
+    },
+    {
+      ...base,
+      testRunId: "resolved",
+      videoId: "resolved-video",
+      videoTitle: "Introducing Jotform AI App Builder",
+      channel: "Jotform",
+      sourceKind: "app_registry",
+      startDate: "",
+      optionFingerprint: ""
+    }
+  ]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].videoId, "resolved-video");
+  assert.equal(result[0].possibleRetest, false);
+});
+
+test("merges app signals when current YouTube metadata improves the stored title", () => {
+  const result = dedupeQueueRuns([
+    {
+      ...base,
+      testRunId: "resolved",
+      videoId: "resolved-video",
+      videoTitle: "Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder",
+      currentYoutubeTitle: "June 2026 | Announcing Jotform AI App Builder",
+      channel: "Jotform",
+      sourceKind: "app_registry",
+      startDate: "",
+      optionFingerprint: ""
+    },
+    {
+      ...base,
+      testRunId: "legacy-title",
+      videoId: "",
+      videoTitle: "Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder",
+      currentYoutubeTitle: "",
+      channel: "Unknown source",
+      sourceKind: "app_registry",
+      startDate: "",
+      optionFingerprint: ""
+    }
+  ]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].possibleRetest, false);
+});
+
+test("does not let a stale hidden channel ID prevent an exact unknown-source merge", () => {
+  const title = "Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder";
+  const result = dedupeQueueRuns([
+    {
+      ...base,
+      testRunId: "resolved",
+      videoId: "resolved-video",
+      videoTitle: title,
+      currentYoutubeTitle: title,
+      channel: "Jotform",
+      youtubeChannelId: "actual-channel",
+      sourceKind: "app_registry",
+      startDate: "",
+      optionFingerprint: ""
+    },
+    {
+      ...base,
+      testRunId: "unknown",
+      videoId: "",
+      videoTitle: title,
+      currentYoutubeTitle: title,
+      channel: "Unknown source",
+      youtubeChannelId: "stale-watcher-id",
+      sourceKind: "app_registry",
+      startDate: "",
+      optionFingerprint: ""
+    }
+  ]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].videoId, "resolved-video");
+});

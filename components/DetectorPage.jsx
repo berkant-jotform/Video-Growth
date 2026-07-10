@@ -791,6 +791,7 @@ export default function DetectorPage({ session }) {
 
         <section className="review-queue-panel">
           <Summary summary={summary} runs={runs} />
+          <QueueTrustState operation={checkOperation} scan={lastSuccessfulScan || lastScan} />
 
         <section className="filters">
           <label>
@@ -1048,7 +1049,7 @@ function Summary({ summary, runs = [] }) {
         <em>{newToday ? `${newToday} new today` : "No new finishes today"}</em>
       </div>
       <div className="queue-overview-metrics">
-        <span className="managed"><strong>{summary?.appManagedRuns || 0}</strong> app managed</span>
+        <span className="managed"><strong>{summary?.appManagedRuns || 0}</strong> Studio-only</span>
         <span className="coverage"><strong>{summary?.uncovered || 0}</strong> need coverage</span>
       </div>
       <details className="background-counts queue-background-counts">
@@ -1056,6 +1057,28 @@ function Summary({ summary, runs = [] }) {
         <div>{background.map(([label, value]) => <span key={label}>{label} <strong>{value}</strong></span>)}</div>
       </details>
     </section>
+  );
+}
+
+function QueueTrustState({ operation, scan }) {
+  const cachedWarnings = (scan?.warnings || []).filter(isCachedSourceWarning);
+  const studioUnavailable = operation?.extension === "warn" && operation?.refresh === "ok";
+  if (!studioUnavailable && !cachedWarnings.length) return null;
+  return (
+    <div className="queue-trust-state" role="status">
+      {studioUnavailable ? (
+        <span className="studio-incomplete">
+          <strong>Sheet-only refresh</strong>
+          Studio signals were unavailable, so newly finished tests may be missing.
+        </span>
+      ) : null}
+      {cachedWarnings.length ? (
+        <span className="cached-source">
+          <strong>Cached source in use</strong>
+          One linked workbook could not be read; its existing rows may be stale.
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -1718,6 +1741,11 @@ function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSavin
   return (
     <article
       className={`board-card ${statusKey(run)} ${run.testType}-test result-${result.key}${opened ? " studio-opened" : ""}`}
+      data-test-run-id={run.testRunId}
+      data-video-id={run.videoId || ""}
+      data-source-kind={run.sourceKind || ""}
+      data-video-title={run.videoTitle || ""}
+      data-current-title={run.currentYoutubeTitle || ""}
       style={{ "--channel-hue": channelHue(displayChannel(run)), "--channel-accent": channelAccent(displayChannel(run)) }}
     >
       <div className="board-card-main">
@@ -1734,7 +1762,7 @@ function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSavin
           <p>{outcomeLabel(run)}</p>
           {isAppManagedRun(run) || run.unregistered ? (
             <div className="board-card-context">
-              {isAppManagedRun(run) ? <span className="badge app-managed">App managed</span> : null}
+              {isAppManagedRun(run) ? <span className="badge app-managed">Studio finish · Not linked to sheet</span> : null}
               {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
               {run.unregistered && run.signalResolution?.bestSuggestion ? <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span> : null}
             </div>
@@ -1862,6 +1890,11 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
   return (
     <article
       className={`test-card ${statusKey(run)} ${run.testType}-test result-${result.key}${opened ? " studio-opened" : ""}`}
+      data-test-run-id={run.testRunId}
+      data-video-id={run.videoId || ""}
+      data-source-kind={run.sourceKind || ""}
+      data-video-title={run.videoTitle || ""}
+      data-current-title={run.currentYoutubeTitle || ""}
       style={{ "--channel-hue": channelHue(channel), "--channel-accent": channelAccent(channel) }}
     >
       <div className="card-topline">
@@ -1886,7 +1919,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
           >
             <InfoIcon size={14} />
           </button>
-          <span className="date-pill">{signalDateLabel(run)}</span>
+          <span className="date-pill">{cardSignalDateLabel(run)}</span>
         </span>
       </div>
       <div className="card-badges">
@@ -1897,50 +1930,60 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
         <span className={`result-pill ${result.tone}`}>{result.label}</span>
       </div>
       <CardVisual run={run} result={result} />
-      <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
-      <p className="outcome compact">{outcomeLabel(run)}</p>
-      {isAppManagedRun(run) ? <span className="badge app-managed">App managed</span> : null}
-      {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
-      {run.unregistered && run.signalResolution?.bestSuggestion ? (
-        <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span>
-      ) : null}
-      {requiresRetestConfirmation(run) ? <span className="badge warning">Possible Retest</span> : null}
+      <div className="card-copy">
+        <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
+        <p className="outcome compact">{outcomeLabel(run)}</p>
+        {isAppManagedRun(run) || run.unregistered || requiresRetestConfirmation(run) ? (
+          <div className="card-context">
+            {isAppManagedRun(run) ? <span className="badge app-managed">Studio finish · Not linked to sheet</span> : null}
+            {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
+            {requiresRetestConfirmation(run) ? <span className="badge warning">Possible Retest</span> : null}
+            {run.unregistered && run.signalResolution?.bestSuggestion ? (
+              <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       <div className="card-actions">
-        <a
-          className={`studio-button primary-studio-action${opened ? " opened" : ""}`}
-          href={run.studioUrl || "#"}
-          target="_blank"
-          rel="noreferrer"
-          onClick={() => onStudioOpen(run)}
-        >
-          {opened ? <Check size={18} /> : <ExternalLink size={18} />}
-          {opened ? "Opened Studio" : "Open Studio"}
-        </a>
-        <div className="quick-actions" aria-label="Quick outcome actions">
-          {quickActions.map((action) => (
-            <button
-              className={`quick-action ${action.toLowerCase()}`}
-              key={action}
-              title={`Mark ${action} done`}
-              disabled={Boolean(quickSaving)}
-              onClick={() => onQuickAction(run, action)}
-            >
-              {quickSaving === `${run.testRunId}:${action}` ? "..." : action}
-            </button>
-          ))}
+        <div className="card-primary-actions">
+          <a
+            className={`studio-button primary-studio-action${opened ? " opened" : ""}`}
+            href={run.studioUrl || "#"}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => onStudioOpen(run)}
+          >
+            {opened ? <Check size={18} /> : <ExternalLink size={18} />}
+            {opened ? "Opened Studio" : "Open Studio"}
+          </a>
+          <div className="quick-actions" aria-label="Quick outcome actions">
+            {quickActions.map((action) => (
+              <button
+                className={`quick-action ${action.toLowerCase()}`}
+                key={action}
+                title={`Mark ${action} done`}
+                disabled={Boolean(quickSaving)}
+                onClick={() => onQuickAction(run, action)}
+              >
+                {quickSaving === `${run.testRunId}:${action}` ? "..." : action}
+              </button>
+            ))}
+          </div>
         </div>
-        <button className="done-button" onClick={() => onDone(run)}>
-          <Check size={17} />
-          Done
-        </button>
-        <button
-          className="ignore-button"
-          onClick={() => onIgnore(run)}
-          disabled={quickSaving === `${run.testRunId}:IGNORE`}
-        >
-          <X size={15} />
-          {quickSaving === `${run.testRunId}:IGNORE` ? "Ignoring" : "Ignore"}
-        </button>
+        <div className="card-secondary-actions">
+          <button className="done-button" onClick={() => onDone(run)}>
+            <Check size={17} />
+            Done with another result
+          </button>
+          <button
+            className="ignore-button"
+            onClick={() => onIgnore(run)}
+            disabled={quickSaving === `${run.testRunId}:IGNORE`}
+          >
+            <X size={15} />
+            {quickSaving === `${run.testRunId}:IGNORE` ? "Ignoring" : "Not relevant"}
+          </button>
+        </div>
       </div>
     </article>
   );
@@ -1996,9 +2039,8 @@ function CardVisual({ run, result }) {
   }
   return (
     <div className="card-visual visual-placeholder">
-      <span>{result.label}</span>
       <strong>{channelInitials(channel)}</strong>
-      <em>{titleCase(run.testType)} test</em>
+      <em>Preview unavailable</em>
     </div>
   );
 }
@@ -2027,7 +2069,7 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen, onAcceptMatch, quick
       </a>
       <div className="detail-grid">
         <Info label="Video ID" value={run.videoId || "Missing"} />
-        <Info label="Source row" value={run.unregistered ? "Not registered in A/B sheet" : isAppManagedRun(run) ? "App registry · sheet independent" : `${run.sheetName} row ${run.rowNumber}`} />
+        <Info label="Source row" value={run.unregistered ? "Not registered in A/B sheet" : isAppManagedRun(run) ? "Studio finish · No matching sheet row" : `${run.sheetName} row ${run.rowNumber}`} />
         {run.duplicateCount ? <Info label="Merged copies" value={`${run.duplicateCount + 1} equivalent sheet rows`} /> : null}
         <Info label="Signal" value={signalSourceLabel(run)} />
         <Info label="Test lasted" value={testDurationLabel(run)} />
@@ -2484,7 +2526,7 @@ function tokenOverlap(a, b) {
 
 function outcomeLabel(run) {
   if (run.unregistered) return "Studio says this test finished, but no matching row exists in the configured A/B sheet.";
-  if (isAppManagedRun(run)) return "Studio confirmed this test finished. The app is tracking it independently and will link a sheet row later if one appears.";
+  if (isAppManagedRun(run)) return "Confirmed by Studio; no matching A/B sheet row was found.";
   if (run.queueStatus === "action_conflict") return `Tool says ${run.latestAction}; sheet now says ${sheetResultText(run)}. Resolve before closing.`;
   if (run.queueStatus === "confirmed_finished") {
     if (run.finishEventSource === "studio_bell") return "Studio notification confirmed this test finished";
@@ -2503,6 +2545,11 @@ function outcomeLabel(run) {
 
 function isAppManagedRun(run) {
   return run?.sourceKind === "app_registry";
+}
+
+function isCachedSourceWarning(value) {
+  const text = String(value || "").toLowerCase();
+  return text.includes("cached rows") || text.includes("could not be read") || text.includes("not publicly readable");
 }
 
 function cardResult(run) {
@@ -2656,6 +2703,14 @@ function signalDateLabel(run) {
   if (run.finishEventAt) return formatDateTimeWithExactAge(run.finishEventAt);
   if (run.queueStatus === "past_due_check") return "Manual check";
   if (run.effectiveFinishDate) return `Sheet ${formatDateWithExactAge(run.effectiveFinishDate)}`;
+  return "No signal yet";
+}
+
+function cardSignalDateLabel(run) {
+  if (run.finishEventNotificationAge) return normalizeNotificationAgeLabel(run.finishEventNotificationAge);
+  if (run.finishEventAt) return exactDaysAgo(run.finishEventAt);
+  if (run.queueStatus === "past_due_check") return "Manual check";
+  if (run.effectiveFinishDate) return `Sheet · ${exactDaysAgo(`${run.effectiveFinishDate}T00:00:00`)}`;
   return "No signal yet";
 }
 
