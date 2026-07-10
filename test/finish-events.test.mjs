@@ -5,6 +5,7 @@ import {
   detectNotificationOutcome,
   explainUnmatchedFinishEvent,
   expandConnectorEventInputs,
+  extractAccessibleFinishEventsFromScan,
   extractFinishNotificationSnippets,
   isLikelyFinishNotification,
   matchFinishEventToRun,
@@ -217,6 +218,86 @@ test("filters Studio edit-page noise from finish notifications", () => {
     isLikelyFinishNotification("Test finished. Ran from February 26, 2026 at 4:16 PM to March 12, 2026 at 5:03 PM."),
     true
   );
+});
+
+test("filters content-list status blocks and title fragments from finish notifications", () => {
+  assert.equal(
+    isLikelyFinishNotification(
+      "How to Create Connected Pages A/B Test completed — Public Mar 10 Published 996 How to Build Apps A/B Test completed Notifications All Analytics"
+    ),
+    false
+  );
+  assert.equal(
+    isLikelyFinishNotification("ow to Design Your App with AI: Not enough views to determine a winner"),
+    false
+  );
+});
+
+test("deduplicates partial and complete copies of the same bell notification", () => {
+  const events = expandConnectorEventInputs([
+    {
+      channelId: "UCh04CepWeaJT7wJUIgnmzJQ",
+      rawText: "A/B test performed well for all Google Drive Tutorial for Beginners (+ OneDrive Comparison):"
+    },
+    {
+      channelId: "UCh04CepWeaJT7wJUIgnmzJQ",
+      rawText: "A/B test performed well for all Google Drive Tutorial for Beginners (+ OneDrive Comparison): Results with very similar performance"
+    }
+  ]);
+  assert.equal(events.length, 1);
+  assert.match(events[0].rawText, /Results with very similar performance/);
+});
+
+test("recovers canonical finish signals from hidden Studio accessibility labels", () => {
+  const events = extractAccessibleFinishEventsFromScan({
+    checkedAt: "2026-07-10T08:00:00.000Z",
+    tabs: [
+      {
+        tabUrl: "https://studio.youtube.com/channel/UCIkU9Fe0OccRmqBMXRm1Q7A",
+        channel: "AI Agents Podcast",
+        pageIdentity: {
+          accountHints: [
+            "New notification. A/B test performed well for all Chatbots Are the New Websites: Results with very similar performance. 2 days ago",
+            "Go to channel analytics"
+          ]
+        }
+      }
+    ]
+  });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].channelId, "UCIkU9Fe0OccRmqBMXRm1Q7A");
+  assert.equal(events[0].videoTitle, "Chatbots Are the New Websites");
+  assert.equal(events[0].notificationAge, "2 days ago");
+  assert.equal(events[0].source, "studio_accessibility_label");
+});
+
+test("does not fuzzy-match a long notification through one generic shared token", () => {
+  const match = matchFinishEventToRun(
+    {
+      videoTitle: "Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder",
+      rawText: "A/B test inconclusive Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder: The test completed with no winner",
+      channelId: "UCh04CepWeaJT7wJUIgnmzJQ"
+    },
+    [{
+      testRunId: "wrong",
+      videoId: "Zwxy1YypbnE",
+      videoTitle: "What is Jotform?",
+      currentYoutubeTitle: "What is Jotform?",
+      youtubeChannelId: "UCh04CepWeaJT7wJUIgnmzJQ",
+      channel: "Jotform",
+      options: {}
+    }]
+  );
+  assert.equal(match.run, null);
+});
+
+test("does not match a notification fragment without a video title", () => {
+  const match = matchFinishEventToRun(
+    { rawText: "Not enough views to determine a winner", channelId: "UCSIMCBt8yyTabkalWA05ZiA" },
+    [{ testRunId: "run", videoTitle: "How to Design Your App with AI", youtubeChannelId: "UCSIMCBt8yyTabkalWA05ZiA" }]
+  );
+  assert.equal(match.run, null);
+  assert.equal(match.matchedConfidence, "missing_video_title");
 });
 
 test("parses watcher tabs from channel IDs and Studio URLs", () => {

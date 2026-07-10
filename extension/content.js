@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.3.1";
+globalThis.__youtubeAbTestsConnectorVersion = "0.3.2";
 const DEFAULT_RUNTIME_CONFIG = {
   minTextLength: MIN_TEXT_LENGTH,
   maxTextLength: MAX_TEXT_LENGTH,
@@ -12,6 +12,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   scrollRounds: 3,
   scrollDelayMs: 650,
   includeSeenOnManualScan: true,
+  accessibleLabelsEnabled: true,
   notificationSelectors: [],
   notificationButtonSelectors: [],
   notificationSurfaceSelectors: [],
@@ -148,6 +149,7 @@ function collectNotificationEvents({ includeSeen = false, runtimeConfig = DEFAUL
   const pageText = currentPageText();
 
   const events = collectStudioPageStatusEvents(channel);
+  events.push(...collectAccessibleNotificationEvents({ includeSeen, runtimeConfig: config }));
   for (const element of candidates) {
     if (!isVisible(element)) continue;
     const rawText = collapseText(element.innerText || element.textContent || "");
@@ -209,6 +211,51 @@ function collectNotificationEvents({ includeSeen = false, runtimeConfig = DEFAUL
   return compactEvents(events);
 }
 
+function collectAccessibleNotificationEvents({ includeSeen = false, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
+  const urlChannelId = location.href.match(/\/channel\/(UC[A-Za-z0-9_-]{10,})/i)?.[1] || "";
+  const channelId = urlChannelId || (/\/video\/[A-Za-z0-9_-]{6,}/i.test(location.href) ? detectChannelId() : "");
+  if (!config.accessibleLabelsEnabled || !channelId) return [];
+  const events = [];
+  const channel = detectChannelName();
+  for (const rawText of accessibleNotificationLabels(config)) {
+    const snippets = finishNotificationSnippets(rawText, config);
+    for (const text of snippets) {
+      const event = {
+        source: "studio_accessibility_label",
+        rawText: text,
+        url: location.href,
+        videoId: extractVideoId(text),
+        channel,
+        channelId,
+        videoTitle: extractNotificationVideoTitle(text),
+        notificationAge: extractAgeAfterSnippet(rawText, text),
+        observedAt: new Date().toISOString()
+      };
+      if (!rememberEvent(event, includeSeen)) continue;
+      events.push(event);
+      if (events.length >= config.maxEvents) return events;
+    }
+  }
+  return events;
+}
+
+function accessibleNotificationLabels(runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
+  if (!config.accessibleLabelsEnabled) return [];
+  const labels = [];
+  const seenLabels = new Set();
+  for (const element of queryAllDeep("[aria-label]")) {
+    const label = collapseLongText(element.getAttribute?.("aria-label") || "");
+    if (!/\ba\/b\s+test\s+(?:won|performed well for all|inconclusive)\b/i.test(label)) continue;
+    if (seenLabels.has(label)) continue;
+    seenLabels.add(label);
+    labels.push(label);
+    if (labels.length >= config.maxEvents) break;
+  }
+  return labels;
+}
+
 async function scrapeStudioNotifications({ includeSeen = false, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
   const config = normalizeRuntimeConfig(runtimeConfig);
   const before = collectNotificationEvents({ includeSeen, runtimeConfig: config });
@@ -256,6 +303,7 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
     bodySnippetCount: bodySnippets.length,
     rawWindowCount: rawWindows.length,
     finishHintCount: countFinishHints(bodyText),
+    accessibleNotificationCount: accessibleNotificationLabels(config).length,
     debugSample: events.length ? "" : debugTextSample(bodyText, rawWindows),
     bodyTextLength: bodyText.length,
     beforeCount: before.length,
@@ -282,6 +330,7 @@ function studioTabStatus() {
     bodySnippetCount: finishNotificationSnippets(bodyText).length,
     rawWindowCount: rawWindows.length,
     finishHintCount: countFinishHints(bodyText),
+    accessibleNotificationCount: accessibleNotificationLabels(config).length,
     checkedAt: new Date().toISOString()
   };
 }
@@ -445,12 +494,18 @@ function extractNotificationVideoTitle(rawText) {
   const partial = text.match(
     /\bA\/B test (?:won|performed well for all|inconclusive)\s+(.+?)(?::\s*(?:We\b|Results?\b|The test\b|Not enough\b|No winner\b)|$)/i
   );
-  if (partial?.[1]) return partial[1].trim();
+  if (partial?.[1]) return cleanNotificationVideoTitle(partial[1]);
   const current = text.match(
     /\bA\/B test (?:won|performed well for all|inconclusive)\s+(.+?)(?::\s*(?:We updated your video to use the winner|Results with very similar performance|The test completed with no winner)\b|$)/i
   );
-  if (current?.[1]) return current[1].trim();
+  if (current?.[1]) return cleanNotificationVideoTitle(current[1]);
   return "";
+}
+
+function cleanNotificationVideoTitle(value) {
+  return String(value || "")
+    .replace(/:\s*(?:older|today|yesterday|this week)?\s*$/i, "")
+    .trim();
 }
 
 function trimNotificationTail(value) {
@@ -743,6 +798,7 @@ function notificationButtonLabel(element) {
 
 function detectPageIdentity() {
   const text = collapseText(document.body?.innerText || "").slice(0, 5000);
+  const notificationLabels = accessibleNotificationLabels(DEFAULT_RUNTIME_CONFIG);
   const accountLabels = queryAllDeep("[aria-label], [title]")
     .map((element) => [
       element.getAttribute("aria-label"),
@@ -753,7 +809,10 @@ function detectPageIdentity() {
   return {
     title: document.title || "",
     url: location.href,
-    accountHints: accountLabels.map((value) => collapseText(value).slice(0, 140)),
+    accountHints: Array.from(new Set([
+      ...notificationLabels,
+      ...accountLabels.map((value) => collapseText(value))
+    ])).map((value) => value.slice(0, 400)).slice(0, 40),
     hasStudioText: /youtube studio|dashboard|content|analytics/i.test(text),
     hasYoutubeNotificationsText: /notifications|bildirimler|a\/b test/i.test(text)
   };
@@ -837,6 +896,7 @@ function normalizeRuntimeConfig(value = {}) {
     scrollRounds: clampNumber(input.scrollRounds, 0, 8, DEFAULT_RUNTIME_CONFIG.scrollRounds),
     scrollDelayMs: clampNumber(input.scrollDelayMs, 150, 3000, DEFAULT_RUNTIME_CONFIG.scrollDelayMs),
     includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
+    accessibleLabelsEnabled: input.accessibleLabelsEnabled !== false,
     notificationSelectors: mergeSelectorList(input.notificationSelectors, 48),
     notificationButtonSelectors: mergeSelectorList(input.notificationButtonSelectors, 48),
     notificationSurfaceSelectors: mergeSelectorList(input.notificationSurfaceSelectors, 32),

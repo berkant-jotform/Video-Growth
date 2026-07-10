@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.3.1";
+const EXTENSION_VERSION = "0.3.2";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://video-growth.vercel.app/*", "http://127.0.0.1:8770/*"];
@@ -8,7 +8,7 @@ const MAX_PENDING_EVENTS = 200;
 const RECENT_EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RUNTIME_CONFIG_STORAGE_KEY = "extensionRuntimeConfig";
 const DEFAULT_RUNTIME_CONFIG = {
-  version: "2026-07-10.1",
+  version: "2026-07-10.2",
   waitAfterOpenMs: 1200,
   waitForRowsMs: 4500,
   scrollRounds: 3,
@@ -17,6 +17,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   openYoutubeFallback: true,
   deepScanFallbackEnabled: false,
   includeSeenOnManualScan: true,
+  accessibleLabelsEnabled: true,
   notificationSelectors: [],
   notificationButtonSelectors: [],
   notificationSurfaceSelectors: [],
@@ -1239,8 +1240,10 @@ async function buildLastStudioScanPayload() {
           duplicate: Number(tab.duplicate || 0),
           menuOpened: Boolean(tab.diagnostics?.menuOpened),
           channel: tab.diagnostics?.channel || "",
+          channelId: tab.diagnostics?.channelId || "",
           rawWindowCount: Number(tab.diagnostics?.rawWindowCount || 0),
           finishHintCount: Number(tab.diagnostics?.finishHintCount || 0),
+          accessibleNotificationCount: Number(tab.diagnostics?.accessibleNotificationCount || 0),
           debugSample: tab.diagnostics?.debugSample || "",
           notificationOpenResult: tab.diagnostics?.notificationOpenResult || null,
           pageIdentity: tab.diagnostics?.pageIdentity || null,
@@ -1310,6 +1313,7 @@ function normalizeRuntimeConfig(value = {}) {
     openYoutubeFallback: input.openYoutubeFallback === true,
     deepScanFallbackEnabled: input.deepScanFallbackEnabled === true,
     includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
+    accessibleLabelsEnabled: input.accessibleLabelsEnabled !== false,
     notificationSelectors: mergeRuntimeSelectors(input.notificationSelectors, 48),
     notificationButtonSelectors: mergeRuntimeSelectors(input.notificationButtonSelectors, 48),
     notificationSurfaceSelectors: mergeRuntimeSelectors(input.notificationSurfaceSelectors, 32),

@@ -20,6 +20,7 @@ test("normalizes extension runtime config with safe guardrails", () => {
     openYoutubeFallback: true,
     deepScanFallbackEnabled: true,
     includeSeenOnManualScan: false,
+    accessibleLabelsEnabled: false,
     finishPhrases: ["custom finish"],
     ignorePhrases: ["custom ignore"]
   });
@@ -36,6 +37,7 @@ test("normalizes extension runtime config with safe guardrails", () => {
   assert.equal(config.openYoutubeFallback, true);
   assert.equal(config.deepScanFallbackEnabled, true);
   assert.equal(config.includeSeenOnManualScan, false);
+  assert.equal(config.accessibleLabelsEnabled, false);
   assert.ok(config.finishPhrases.includes("A/B test won"));
   assert.ok(config.finishPhrases.includes("custom finish"));
   assert.ok(config.ignorePhrases.includes("A/B Test running"));
@@ -61,6 +63,7 @@ test("safe parser falls back to defaults for invalid runtime config JSON", () =>
 test("default runtime config keeps automatic YouTube recovery enabled", () => {
   const config = normalizeExtensionRuntimeConfig({});
   assert.equal(config.openYoutubeFallback, true);
+  assert.equal(config.accessibleLabelsEnabled, true);
 });
 
 test("runtime config keeps current YouTube A/B wording in safe defaults", () => {

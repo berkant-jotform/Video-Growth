@@ -81,6 +81,7 @@ export default function DetectorPage({ session }) {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [selected, setSelected] = useState(null);
   const [modalRun, setModalRun] = useState(null);
   const [modalInitialAction, setModalInitialAction] = useState("");
@@ -311,6 +312,7 @@ export default function DetectorPage({ session }) {
     const optimisticStartedAt = new Date().toISOString();
     setScanning(true);
     setError("");
+    setNotice("");
     setLastScan({
       scanId: `local-${Date.now()}`,
       startedAt: optimisticStartedAt,
@@ -337,6 +339,9 @@ export default function DetectorPage({ session }) {
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Scan failed.");
+      if (payload.warnings?.length) {
+        setNotice(`Scan completed with ${payload.warnings.length} warning${payload.warnings.length === 1 ? "" : "s"}: ${payload.warnings.slice(0, 3).join(" ")}`);
+      }
       notifyBrowser("YouTube A/B Tests", `${payload.summary.total} items need attention.`);
       await refresh();
     } catch (err) {
@@ -886,6 +891,7 @@ export default function DetectorPage({ session }) {
         </section>
 
         {error ? <div className="error-banner">{error}</div> : null}
+        {notice ? <div className="warning-banner">{notice}</div> : null}
         {loading ? <div className="empty-state">Loading queue</div> : null}
         {!loading && filtered.length === 0 ? (
           <div className="empty-state">
@@ -1241,7 +1247,11 @@ function ExtensionScanReceipt({ connectorStatus, compact = false }) {
               <article key={`${tab.tabUrl || tab.tabTitle || "tab"}-${index}`}>
                 <strong>{tab.channel || tab.tabTitle || "Studio tab"}</strong>
                 <span>
-                  {tab.menuOpened ? "Notification menu opened" : "Menu not opened"} · {Number(tab.candidates || 0)} candidate
+                  {tab.menuOpened
+                    ? "Notification menu opened"
+                    : Number(tab.accessibleNotificationCount || 0)
+                      ? "Background bell labels read"
+                      : "Bell data unavailable"} · {Number(tab.candidates || 0)} candidate
                   {Number(tab.candidates || 0) === 1 ? "" : "s"} · {Number(tab.matched || 0)} matched
                 </span>
                 {tab.error ? <em>{tab.error}</em> : null}
@@ -1277,6 +1287,7 @@ function extensionScanScopeText(scope) {
 
 function extensionScanStages(tabs, totals) {
   const openedMenus = tabs.filter((tab) => tab.menuOpened).length;
+  const accessibleLabels = tabs.reduce((sum, tab) => sum + Number(tab.accessibleNotificationCount || 0), 0);
   const visibleTextTabs = tabs.filter((tab) => Number(tab.candidates || 0) > 0 || Number(tab.received || 0) > 0).length;
   const sent = Number(totals.received || 0);
   const matched = Number(totals.matched || 0);
@@ -1294,9 +1305,9 @@ function extensionScanStages(tabs, totals) {
     },
     {
       key: "bell",
-      label: "Bell opened",
-      value: openedMenus ? `${openedMenus}` : "0",
-      state: openedMenus ? "ok" : "warn"
+      label: "Bell source",
+      value: openedMenus ? `${openedMenus} menu${openedMenus === 1 ? "" : "s"}` : accessibleLabels ? `${accessibleLabels} labels` : "Unavailable",
+      state: openedMenus || accessibleLabels ? "ok" : "warn"
     },
     {
       key: "text",

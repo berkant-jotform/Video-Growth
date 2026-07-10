@@ -420,6 +420,17 @@ export default function ExtensionPage({ session }) {
             <label className="runtime-toggle-row">
               <input
                 type="checkbox"
+                checked={runtimeConfig.accessibleLabelsEnabled !== false}
+                onChange={(event) => updateRuntimeConfig({ accessibleLabelsEnabled: event.target.checked })}
+              />
+              <span>
+                <strong>Read background bell results</strong>
+                <small>Uses YouTube's built-in notification labels when a background Studio tab refuses to open its bell menu.</small>
+              </span>
+            </label>
+            <label className="runtime-toggle-row">
+              <input
+                type="checkbox"
                 checked={runtimeConfig.openYoutubeFallback}
                 onChange={(event) => updateRuntimeConfig({ openYoutubeFallback: event.target.checked })}
               />

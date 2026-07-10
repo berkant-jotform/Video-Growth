@@ -2594,6 +2594,7 @@ select {
 }
 
 .error-banner,
+.warning-banner,
 .empty-state,
 .form-error,
 .form-success {
@@ -2606,6 +2607,12 @@ select {
 .form-error {
   background: color-mix(in srgb, var(--red) 12%, var(--surface));
   color: var(--red);
+}
+
+.warning-banner {
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--amber) 34%, var(--border));
+  color: var(--amber);
 }
 
 .form-success {

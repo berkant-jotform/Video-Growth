@@ -1,7 +1,7 @@
 import { requireConnector } from "@/lib/connector-auth.js";
 import { json, errorJson } from "@/lib/http.js";
-import { parseConnectorChannels } from "@/lib/finish-events.mjs";
-import { recordConnectorHeartbeat, recordDiagnosticLog } from "@/lib/repository.js";
+import { extractAccessibleFinishEventsFromScan, parseConnectorChannels } from "@/lib/finish-events.mjs";
+import { recordConnectorEvents, recordConnectorHeartbeat, recordDiagnosticLog } from "@/lib/repository.js";
 
 export const runtime = "nodejs";
 
@@ -36,6 +36,30 @@ export async function POST(request) {
     });
     const diagnosis = lastStudioScan?.diagnosis || null;
     const totals = lastStudioScan?.totals || {};
+    const recoveredEvents = extractAccessibleFinishEventsFromScan(lastStudioScan || {});
+    let recoveredSignals = [];
+    if (recoveredEvents.length) {
+      try {
+        recoveredSignals = await recordConnectorEvents({
+          events: recoveredEvents,
+          actorName: body.actorName || body.reviewerInitials || "",
+          connectorId: body.connectorId || "",
+          source: "studio_accessibility_label",
+          // Keep heartbeats fast. The normal event endpoint and subsequent
+          // sheet scans perform YouTube title resolution for unmatched labels.
+          youtubeApiKey: "",
+          channelScope: parseConnectorChannels(body.channels || [])
+        });
+      } catch (recoveryError) {
+        await recordDiagnosticLog({
+          category: "extension_recovery",
+          severity: "warning",
+          message: "Background notification labels could not be promoted",
+          actorName: body.actorName || body.reviewerInitials || "",
+          context: { connectorId: body.connectorId || "", events: recoveredEvents.length, error: recoveryError.message }
+        });
+      }
+    }
     if (diagnosis?.severity && diagnosis.severity !== "ok") {
       await recordDiagnosticLog({
         category: "extension_scan",
@@ -54,7 +78,15 @@ export async function POST(request) {
         }
       });
     }
-    return json({ ok: true, connectorStatus: status });
+    return json({
+      ok: true,
+      connectorStatus: status,
+      recoveredSignals: {
+        found: recoveredEvents.length,
+        matched: recoveredSignals.filter((item) => item.processingStatus === "matched").length,
+        unregistered: recoveredSignals.filter((item) => item.processingStatus === "unmatched").length
+      }
+    });
   } catch (error) {
     await recordDiagnosticLog({
       category: "extension_heartbeat",
@@ -78,6 +110,7 @@ function sanitizeStudioTabs(value) {
     bodySnippetCount: Number(tab?.bodySnippetCount || 0),
     rawWindowCount: Number(tab?.rawWindowCount || 0),
     finishHintCount: Number(tab?.finishHintCount || 0),
+    accessibleNotificationCount: Number(tab?.accessibleNotificationCount || 0),
     ok: tab?.ok !== false,
     error: String(tab?.error || "").slice(0, 240)
   }));
@@ -170,8 +203,10 @@ function sanitizeLastStudioScan(value) {
           candidates: Number(tab.candidates || 0),
           menuOpened: Boolean(tab.menuOpened),
           channel: String(tab.channel || "").slice(0, 120),
+          channelId: String(tab.channelId || "").slice(0, 40),
           rawWindowCount: Number(tab.rawWindowCount || 0),
           finishHintCount: Number(tab.finishHintCount || 0),
+          accessibleNotificationCount: Number(tab.accessibleNotificationCount || 0),
           debugSample: String(tab.debugSample || "").slice(0, 700),
           notificationOpenResult: sanitizeNotificationOpenResult(tab.notificationOpenResult),
           pageIdentity: sanitizePageIdentity(tab.pageIdentity),
@@ -205,7 +240,7 @@ function sanitizePageIdentity(value) {
     title: String(value.title || "").slice(0, 160),
     url: String(value.url || "").slice(0, 300),
     accountHints: Array.isArray(value.accountHints)
-      ? value.accountHints.map((item) => String(item || "").slice(0, 140)).slice(0, 8)
+      ? value.accountHints.map((item) => String(item || "").slice(0, 400)).slice(0, 40)
       : [],
     hasStudioText: Boolean(value.hasStudioText),
     hasYoutubeNotificationsText: Boolean(value.hasYoutubeNotificationsText)
