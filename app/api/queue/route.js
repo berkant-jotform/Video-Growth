@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/auth.js";
 import { applyChannelLogoFallbacks, loadConfiguredChannelLogos } from "@/lib/channel-logos.js";
+import { canonicalChannelName } from "@/lib/channels.mjs";
 import { getAppConfig } from "@/lib/config.js";
 import {
   getConnectorStatus,
@@ -8,8 +9,9 @@ import {
   listUnmatchedFinishEvents,
   summarizeQueue
 } from "@/lib/repository.js";
-import { consolidateUnmatchedFinishEvents, explainUnmatchedFinishEvent, suggestFinishEventMatches } from "@/lib/finish-events.mjs";
+import { consolidateUnmatchedFinishEvents, explainUnmatchedFinishEvent, parseStudioNotification, suggestFinishEventMatches } from "@/lib/finish-events.mjs";
 import { errorJson, json } from "@/lib/http.js";
+import { fetchYouTubeVideoMetadata } from "@/lib/youtube.js";
 
 export const runtime = "nodejs";
 
@@ -25,7 +27,12 @@ export async function GET() {
     ]);
     const channelLogos = await loadConfiguredChannelLogos(config);
     const consolidatedEvents = consolidateUnmatchedFinishEvents(unmatchedEvents).events;
-    const unregisteredRuns = buildUnregisteredRuns(consolidatedEvents, matchCandidates);
+    const unregisteredMetadata = await fetchYouTubeVideoMetadata(
+      consolidatedEvents.map((event) => event.videoId),
+      config.youtubeApiKey
+    );
+    const enrichedEvents = consolidatedEvents.map((event) => enrichUnregisteredEvent(event, unregisteredMetadata));
+    const unregisteredRuns = buildUnregisteredRuns(enrichedEvents, matchCandidates);
     const runsWithLogos = applyChannelLogoFallbacks([...runs, ...unregisteredRuns], channelLogos);
     return json({
       ok: true,
@@ -45,19 +52,36 @@ function buildUnregisteredRuns(events, matchCandidates) {
   );
 }
 
+function enrichUnregisteredEvent(event, metadata) {
+  const item = metadata[event.videoId];
+  if (!item) return event;
+  return {
+    ...event,
+    videoTitle: event.videoTitle || item.title || "",
+    channel: canonicalChannelName(item.channelTitle || event.channel) || item.channelTitle || event.channel || "",
+    channelId: event.channelId || item.channelId || "",
+    youtubeMetadata: item
+  };
+}
+
 function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandidates = []) {
-  const title = event.videoTitle || event.videoId || "Finished A/B test";
   const bestYoutubeCandidate = youtubeCandidates.find((item) => isStrongYoutubeCandidate(event, item)) || null;
+  const reparsedEvent = parseStudioNotification(event);
+  const title = event.videoTitle || reparsedEvent.videoTitle || bestYoutubeCandidate?.title || event.videoId || "Finished A/B test";
   const knownChannelRun = event.channelId
     ? matchCandidates.find((run) => run.youtubeChannelId && run.youtubeChannelId === event.channelId)
     : null;
   const rawChannel = String(event.channel || "").trim();
-  const channel = rawChannel && !/^(?:account|channel|unknown source)$/i.test(rawChannel)
+  const resolvedChannel = rawChannel && !/^(?:account|channel|unknown source)$/i.test(rawChannel)
     ? rawChannel
     : bestYoutubeCandidate?.channel || knownChannelRun?.youtubeChannelTitle || knownChannelRun?.channel || "Unknown source";
-  const enrichedEvent = bestYoutubeCandidate && !event.videoId
-    ? { ...event, videoId: bestYoutubeCandidate.videoId }
-    : event;
+  const channel = canonicalChannelName(resolvedChannel) || resolvedChannel;
+  const enrichedEvent = {
+    ...reparsedEvent,
+    ...event,
+    videoTitle: title,
+    videoId: event.videoId || bestYoutubeCandidate?.videoId || ""
+  };
   const suggestions = suggestFinishEventMatches(enrichedEvent, matchCandidates, { limit: 2 });
   const highConfidenceSuggestion = suggestions.find((item) => item.confidence === "high");
   return {
@@ -104,7 +128,7 @@ function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandid
     ],
     thumbnailPreviews: {},
     currentYoutubeTitle: bestYoutubeCandidate?.title || title,
-    currentYoutubeThumbnailUrl: "",
+    currentYoutubeThumbnailUrl: event.youtubeMetadata?.thumbnailUrl || "",
     youtubeChannelTitle: channel === "Unknown source" ? "" : channel,
     youtubeChannelThumbnailUrl: "",
     possibleRetest: false,

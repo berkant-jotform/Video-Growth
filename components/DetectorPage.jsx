@@ -1946,6 +1946,7 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen, onAcceptMatch, quick
       <div className="detail-grid">
         <Info label="Video ID" value={run.videoId || "Missing"} />
         <Info label="Source row" value={run.unregistered ? "Not registered in A/B sheet" : `${run.sheetName} row ${run.rowNumber}`} />
+        {run.duplicateCount ? <Info label="Merged copies" value={`${run.duplicateCount + 1} equivalent sheet rows`} /> : null}
         <Info label="Signal" value={signalSourceLabel(run)} />
         <Info label="Test lasted" value={testDurationLabel(run)} />
         <Info label="Extension" value={run.connectorCovered ? `Watching${run.connectorActorName ? ` by ${run.connectorActorName}` : ""}` : "Not watching"} />
