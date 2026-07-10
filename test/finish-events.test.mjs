@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   detectAppliedChange,
   detectNotificationOutcome,
+  consolidateUnmatchedFinishEvents,
   explainUnmatchedFinishEvent,
   expandConnectorEventInputs,
   extractAccessibleFinishEventsFromScan,
@@ -269,6 +270,47 @@ test("recovers canonical finish signals from hidden Studio accessibility labels"
   assert.equal(events[0].videoTitle, "Chatbots Are the New Websites");
   assert.equal(events[0].notificationAge, "2 days ago");
   assert.equal(events[0].source, "studio_accessibility_label");
+});
+
+test("collapses duplicate unmatched signals and rejects navigation-text contamination", () => {
+  const result = consolidateUnmatchedFinishEvents([
+    {
+      eventId: "unknown-copy",
+      videoTitle: "Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder:",
+      rawText: "A/B test inconclusive Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder: The test completed with no winner",
+      detectedOutcome: "no_clear",
+      observedAt: "2026-07-09T08:00:00Z"
+    },
+    {
+      eventId: "known-copy",
+      channel: "Jotform",
+      channelId: "UCh04CepWeaJT7wJUIgnmzJQ",
+      videoTitle: "Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder",
+      rawText: "A/B test inconclusive Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder: The test completed with no winner",
+      detectedOutcome: "no_clear",
+      notificationAge: "2 days ago",
+      observedAt: "2026-07-10T08:00:00Z"
+    },
+    {
+      eventId: "navigation-noise",
+      videoTitle: "How to Build Custom Online Forms Faster with All Earn Known issues Policy Analytics Ideas News",
+      rawText: "A/B test won How to Build Custom Online Forms Faster with All Earn Known issues Policy Analytics Ideas News",
+      detectedOutcome: "finished_unknown",
+      observedAt: "2026-07-10T08:00:00Z"
+    }
+  ]);
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].eventId, "known-copy");
+  assert.deepEqual(result.duplicateIds, ["unknown-copy"]);
+  assert.deepEqual(result.rejectedIds, ["navigation-noise"]);
+});
+
+test("keeps same-title unmatched signals separate across known channel IDs", () => {
+  const result = consolidateUnmatchedFinishEvents([
+    { eventId: "one", channelId: "UConechannel123", videoTitle: "Shared Video", rawText: "A/B test inconclusive Shared Video: Not enough views to determine a winner", detectedOutcome: "no_clear" },
+    { eventId: "two", channelId: "UCtwochannel456", videoTitle: "Shared Video", rawText: "A/B test inconclusive Shared Video: Not enough views to determine a winner", detectedOutcome: "no_clear" }
+  ]);
+  assert.equal(result.events.length, 2);
 });
 
 test("does not fuzzy-match a long notification through one generic shared token", () => {

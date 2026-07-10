@@ -8,7 +8,7 @@ import {
   listUnmatchedFinishEvents,
   summarizeQueue
 } from "@/lib/repository.js";
-import { explainUnmatchedFinishEvent, suggestFinishEventMatches } from "@/lib/finish-events.mjs";
+import { consolidateUnmatchedFinishEvents, explainUnmatchedFinishEvent, suggestFinishEventMatches } from "@/lib/finish-events.mjs";
 import { errorJson, json } from "@/lib/http.js";
 
 export const runtime = "nodejs";
@@ -24,7 +24,8 @@ export async function GET() {
       listFinishSignalMatchCandidates()
     ]);
     const channelLogos = await loadConfiguredChannelLogos(config);
-    const unregisteredRuns = buildUnregisteredRuns(unmatchedEvents, matchCandidates);
+    const consolidatedEvents = consolidateUnmatchedFinishEvents(unmatchedEvents).events;
+    const unregisteredRuns = buildUnregisteredRuns(consolidatedEvents, matchCandidates);
     const runsWithLogos = applyChannelLogoFallbacks([...runs, ...unregisteredRuns], channelLogos);
     return json({
       ok: true,
@@ -47,6 +48,13 @@ function buildUnregisteredRuns(events, matchCandidates) {
 function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandidates = []) {
   const title = event.videoTitle || event.videoId || "Finished A/B test";
   const bestYoutubeCandidate = youtubeCandidates.find((item) => isStrongYoutubeCandidate(event, item)) || null;
+  const knownChannelRun = event.channelId
+    ? matchCandidates.find((run) => run.youtubeChannelId && run.youtubeChannelId === event.channelId)
+    : null;
+  const rawChannel = String(event.channel || "").trim();
+  const channel = rawChannel && !/^(?:account|channel|unknown source)$/i.test(rawChannel)
+    ? rawChannel
+    : bestYoutubeCandidate?.channel || knownChannelRun?.youtubeChannelTitle || knownChannelRun?.channel || "Unknown source";
   const enrichedEvent = bestYoutubeCandidate && !event.videoId
     ? { ...event, videoId: bestYoutubeCandidate.videoId }
     : event;
@@ -63,8 +71,8 @@ function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandid
     sheetName: "Not registered in A/B sheet",
     rowNumber: 0,
     testType: inferEventTestType(event),
-    channel: event.channel || "Unknown source",
-    youtubeChannelId: enrichedEvent.channelId || "",
+    channel,
+    youtubeChannelId: enrichedEvent.channelId || bestYoutubeCandidate?.channelId || knownChannelRun?.youtubeChannelId || "",
     videoTitle: title,
     videoUrl: enrichedEvent.videoId ? `https://www.youtube.com/watch?v=${enrichedEvent.videoId}` : "",
     studioUrl: enrichedEvent.videoId ? `https://studio.youtube.com/video/${enrichedEvent.videoId}/edit` : event.notificationUrl || "",
@@ -97,7 +105,7 @@ function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandid
     thumbnailPreviews: {},
     currentYoutubeTitle: bestYoutubeCandidate?.title || title,
     currentYoutubeThumbnailUrl: "",
-    youtubeChannelTitle: event.channel || "",
+    youtubeChannelTitle: channel === "Unknown source" ? "" : channel,
     youtubeChannelThumbnailUrl: "",
     possibleRetest: false,
     driftedAt: "",
@@ -137,7 +145,13 @@ function notificationAgeLabel(value) {
     }
     return "";
   }
-  return String(value);
+  const text = String(value);
+  if (text.startsWith("{")) {
+    try {
+      return notificationAgeLabel(JSON.parse(text));
+    } catch {}
+  }
+  return text;
 }
 
 function relatedChannelName(left, right) {
