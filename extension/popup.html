@@ -7,62 +7,69 @@
   </head>
   <body class="popup">
     <main class="panel compact">
-      <div class="title-row">
-        <h1>Studio Watcher</h1>
+      <header class="popup-brand">
+        <img src="icons/icon-48.png" alt="" />
+        <div>
+          <span>YouTube A/B Tests</span>
+          <h1>Studio Watcher</h1>
+        </div>
         <span id="versionBadge" class="version-badge">v...</span>
-      </div>
+      </header>
       <section id="healthPanel" class="health-panel neutral">
-        <strong id="healthTitle">Checking connector...</strong>
-        <p id="healthText">Looking for Studio watcher tabs.</p>
+        <span class="health-indicator" aria-hidden="true"></span>
+        <div>
+          <strong id="healthTitle">Checking connection...</strong>
+          <p id="healthText">Looking for your watched Studio channels.</p>
+        </div>
       </section>
       <section class="automation-card">
         <div>
+          <span class="automation-label">Recommended</span>
           <strong id="primaryTitle">Next best action</strong>
           <p id="primaryHint">Checking the safest automatic step.</p>
         </div>
         <button id="smartStart">Start watching + check</button>
+        <p id="summary" class="status" role="status" aria-live="polite">Checking status...</p>
       </section>
-      <p id="summary" class="status">Checking status...</p>
       <section class="watcher-menu">
         <div class="menu-title">
-          <strong>Watched Studio channels</strong>
+          <strong>Channel coverage</strong>
           <span id="watcherCount">Loading...</span>
         </div>
         <div id="watcherButtons" class="watcher-buttons"></div>
+        <button id="openWatchers" class="open-watchers-button">Open missing channels</button>
       </section>
-      <div class="actions stacked">
-        <button id="scan">Check now</button>
-        <button id="openNotifications">Open YouTube home for bell check</button>
-        <details class="more-actions">
-          <summary>More checks</summary>
-          <button id="heartbeat">Check connection</button>
-          <button id="deepScan">Check active tests now</button>
-        </details>
-        <button id="openWatchers">Open missing watcher tabs</button>
-        <button id="options">Settings</button>
-      </div>
-      <p class="hint">Check scans open Studio tabs and the YouTube bell menu in this Chrome profile. It may open the notification menu to read text, but it does not change YouTube.</p>
-      <details class="scan-log">
+      <details class="tools-panel">
         <summary>
-          <span>Last scan details</span>
+          <span>Tools and diagnostics</span>
           <em id="scanLogSummary">No scan yet</em>
         </summary>
-        <div id="scanLogBody" class="scan-log-body"></div>
+        <div class="tools-panel-body">
+          <p class="hint">Use these only when the recommended action reports a problem.</p>
+          <div class="actions stacked">
+            <button id="scan">Check open tabs only</button>
+            <button id="openNotifications">Open YouTube home</button>
+            <button id="deepScan">Check active test pages</button>
+          <button id="heartbeat">Check connection</button>
+          </div>
+          <div id="scanLogBody" class="scan-log-body"></div>
+          <dl>
+            <div>
+              <dt>Dashboard</dt>
+              <dd id="dashboardBridge">Not checked yet</dd>
+            </div>
+            <div>
+              <dt>Last connection check</dt>
+              <dd id="lastHeartbeat">Never</dd>
+            </div>
+            <div>
+              <dt>Last finish signal</dt>
+              <dd id="lastEvent">Never</dd>
+            </div>
+          </dl>
+        </div>
       </details>
-      <dl>
-        <div>
-          <dt>Dashboard page</dt>
-          <dd id="dashboardBridge">Not checked yet</dd>
-        </div>
-        <div>
-          <dt>Last connection check</dt>
-          <dd id="lastHeartbeat">Never</dd>
-        </div>
-        <div>
-          <dt>Last finish signal sent</dt>
-          <dd id="lastEvent">Never</dd>
-        </div>
-      </dl>
+      <button id="options" class="popup-settings-button">Extension settings</button>
     </main>
     <script src="popup.js"></script>
   </body>

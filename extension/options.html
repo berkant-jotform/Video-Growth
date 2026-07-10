@@ -5,31 +5,64 @@
     <title>YouTube A/B Tests Connector Settings</title>
     <link rel="stylesheet" href="extension.css" />
   </head>
-  <body>
-    <main class="panel">
-      <div class="title-row">
-        <h1>YouTube A/B Tests Connector</h1>
+  <body class="options-page">
+    <main class="panel options-panel">
+      <header class="popup-brand options-brand">
+        <img src="icons/icon-48.png" alt="" />
+        <div>
+          <span>YouTube A/B Tests</span>
+          <h1>Extension settings</h1>
+        </div>
         <span id="versionBadge" class="version-badge">v...</span>
+      </header>
+      <section class="options-intro">
+        <strong>Connect this Chrome profile once</strong>
+        <p>The extension reads visible YouTube and Studio notification text. It never edits videos, titles, or thumbnails.</p>
+      </section>
+      <section class="options-form-card">
+        <div class="options-step">
+          <span>1</span>
+          <div>
+            <strong>Cloud dashboard</strong>
+            <p>Keep the production URL unless you are testing locally.</p>
+          </div>
+        </div>
+        <label>
+          App URL
+          <input id="appUrl" placeholder="https://video-growth.vercel.app" />
+        </label>
+        <div class="options-step">
+          <span>2</span>
+          <div>
+            <strong>Browser connection token</strong>
+            <p>Create this on the website Extension page. Each browser gets its own token.</p>
+          </div>
+        </div>
+        <label>
+          Token
+          <div class="input-action-row">
+            <input id="connectorToken" type="password" autocomplete="off" />
+            <button id="toggleToken" class="input-action" type="button">Show</button>
+          </div>
+        </label>
+        <div class="options-step">
+          <span>3</span>
+          <div>
+            <strong>Reviewer</strong>
+            <p>This name appears in connection and action history.</p>
+          </div>
+        </div>
+        <label>
+          Name or initials
+          <input id="actorName" placeholder="BG" />
+        </label>
+      </section>
+      <div class="actions options-actions">
+        <button id="save">Save and connect</button>
+        <button id="heartbeat" type="button">Check again</button>
       </div>
-      <p>Connect this Chrome profile to the cloud detector. The extension only reads visible YouTube and Studio notification text.</p>
-      <p class="hint">Create a browser connection on the website Extension page, paste its token below, then save and check. Watched channels are managed on the website.</p>
-      <label>
-        Cloud app URL
-        <input id="appUrl" placeholder="https://video-growth.vercel.app" />
-      </label>
-      <label>
-        Connector token
-        <input id="connectorToken" type="password" />
-      </label>
-      <label>
-        Reviewer initials
-        <input id="actorName" placeholder="BG" />
-      </label>
-      <div class="actions">
-        <button id="save">Save and Check</button>
-        <button id="heartbeat" type="button">Check Connection</button>
-      </div>
-      <p id="status" class="status"></p>
+      <p id="status" class="status" role="status" aria-live="polite">Enter the three values above, then connect.</p>
+      <a id="openWebSetup" class="web-setup-link" href="https://video-growth.vercel.app/extension" target="_blank" rel="noreferrer">Open website Extension setup</a>
     </main>
     <script src="options.js"></script>
   </body>

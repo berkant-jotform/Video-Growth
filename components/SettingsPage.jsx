@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Clipboard, ExternalLink, Save, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Bell, CheckCircle2, Clipboard, Database, ExternalLink, Save, Settings2, ShieldCheck, Undo2, Youtube } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 
 const DELETE_SECRET_VALUE = "__DELETE_SECRET__";
@@ -78,6 +78,7 @@ APP_SHARED_PASSWORD_HASH=`;
 export default function SettingsPage({ session }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({});
+  const [savedForm, setSavedForm] = useState({});
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -86,14 +87,28 @@ export default function SettingsPage({ session }) {
     load();
   }, []);
 
+  const hasChanges = useMemo(() => JSON.stringify(form) !== JSON.stringify(savedForm), [form, savedForm]);
+
+  useEffect(() => {
+    function protectUnsavedChanges(event) {
+      if (!hasChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", protectUnsavedChanges);
+    return () => window.removeEventListener("beforeunload", protectUnsavedChanges);
+  }, [hasChanges]);
+
   async function load() {
     setError("");
     try {
       const response = await fetch("/api/config", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not load settings.");
+      const values = payload.config.values || {};
       setConfig(payload.config);
-      setForm(payload.config.values || {});
+      setForm(values);
+      setSavedForm(values);
     } catch (loadError) {
       setError(loadError.message || "Could not load settings.");
     }
@@ -112,9 +127,11 @@ export default function SettingsPage({ session }) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save settings.");
+      const values = payload.config.values || {};
       setConfig(payload.config);
-      setForm(payload.config.values || {});
-      setMessage("Settings saved.");
+      setForm(values);
+      setSavedForm(values);
+      setMessage("Settings saved. New scans will use these values.");
     } catch (saveError) {
       setError(saveError.message || "Could not save settings.");
     } finally {
@@ -124,52 +141,57 @@ export default function SettingsPage({ session }) {
 
   const databaseReady = Boolean(config?.configured?.database);
   const connectorStatus = config?.connectorStatus || [];
+  const essentials = [
+    Boolean(config?.configured?.titleSpreadsheet && config?.configured?.thumbnailSpreadsheet),
+    Boolean(config?.configured?.youtubeApi),
+    Boolean(connectorStatus.some((item) => item.active))
+  ];
+  const readyCount = essentials.filter(Boolean).length;
+
+  function discardChanges() {
+    setForm(savedForm);
+    setError("");
+    setMessage("Unsaved changes discarded.");
+  }
 
   return (
     <AppShell session={session} active="settings">
-      <main className="workspace settings-grid">
-        <section className="settings-panel full-width setup-overview">
-          <p className="eyebrow">Guided setup</p>
-          <h2>Set up the detector in order</h2>
-          <div className="setup-steps">
-            <SetupStep
-              number="1"
-              title="Data Sources"
-              text="Connect the title and thumbnail sheets that the detector reads."
-              state={config?.configured?.titleSpreadsheet && config?.configured?.thumbnailSpreadsheet ? "Ready" : "Setup needed"}
-              tone={config?.configured?.titleSpreadsheet && config?.configured?.thumbnailSpreadsheet ? "ok" : "warn"}
-            />
-            <SetupStep
-              number="2"
-              title="YouTube / Extension"
-              text="Add the YouTube API key and keep Studio watchers open."
-              state={watchingStudioCount(connectorStatus) > 0 ? `Watching ${watchingStudioCount(connectorStatus)}` : "Open Studio watcher"}
-              tone={watchingStudioCount(connectorStatus) > 0 ? "ok" : "warn"}
-            />
-            <SetupStep
-              number="3"
-              title="Notifications"
-              text="Create personal email/browser notification profiles for the team."
-              state={config?.configured?.smtp || config?.configured?.digestEmail ? "Configured" : "Optional"}
-              tone={config?.configured?.smtp || config?.configured?.digestEmail ? "ok" : "neutral"}
-            />
-            <SetupStep
-              number="4"
-              title="Advanced / Admin"
-              text="Database, Vercel env, Blob storage, and raw debug details."
-              state={databaseReady ? "Online" : "Setup needed"}
-              tone={databaseReady ? "ok" : "warn"}
-            />
+      <main className="workspace settings-grid settings-workspace">
+        <section className="settings-panel full-width settings-command-header">
+          <div className="settings-command-copy">
+            <p className="eyebrow">Workspace settings</p>
+            <h2>Configure once, then scan from Detector</h2>
+            <p className="muted">Everyday scanning stays on the Detector page. This page is only for data sources, YouTube access, and team setup.</p>
           </div>
+          <div className="settings-readiness-meter" aria-label={`${readyCount} of 3 essential connections ready`}>
+            <div>
+              <span>Essential connections</span>
+              <strong>{readyCount}/3 ready</strong>
+            </div>
+            <progress value={readyCount} max="3">{readyCount} of 3</progress>
+            <small>{readyCount === 3 ? "Ready for reliable scans" : "Complete the highlighted section below"}</small>
+          </div>
+          <nav className="settings-section-nav" aria-label="Settings sections">
+            <a href="#data-sources"><Database size={16} />Data sources</a>
+            <a href="#youtube-extension"><Youtube size={16} />YouTube and extension</a>
+            <a href="#notification-settings"><Bell size={16} />Notifications</a>
+            <a href="#advanced-settings"><Settings2 size={16} />Advanced</a>
+          </nav>
         </section>
 
         <form onSubmit={save} className="settings-guide full-width">
-          <section className="settings-panel guided-settings-section">
-            <p className="eyebrow">1. Data Sources</p>
-            <h2>Read the A/B test sheets</h2>
-            <p className="muted">These are read-only sources. The app does not write to Sheets.</p>
+          {error ? <p className="form-error settings-feedback" role="alert">{error}</p> : null}
+          {message ? <p className="form-success settings-feedback" role="status">{message}</p> : null}
+
+          <section id="data-sources" className="settings-panel guided-settings-section settings-focus-section">
+            <SettingsSectionHeading
+              number="1"
+              title="Data sources"
+              description="The two read-only sheets used to build the test queue. The app never writes to either sheet."
+              ready={Boolean(config?.configured?.titleSpreadsheet && config?.configured?.thumbnailSpreadsheet)}
+            />
             <fieldset className="settings-fieldset" disabled={!databaseReady}>
-              <legend>Sheets</legend>
+              <legend>Google Sheets</legend>
               {["TITLE_SPREADSHEET_ID", "THUMBNAIL_SPREADSHEET_ID"].map((key) => (
                 <SettingField
                   key={key}
@@ -207,12 +229,13 @@ export default function SettingsPage({ session }) {
             <SectionReadiness keys={["titleSpreadsheet", "thumbnailSpreadsheet"]} config={config} />
           </section>
 
-          <section className="settings-panel guided-settings-section full-width">
-            <p className="eyebrow">2. YouTube / Extension</p>
-            <h2>Connect YouTube and keep Studio watched</h2>
-            <p className="muted">
-              YouTube API enriches cards. The Chrome extension is the real finish signal when Studio tabs are open.
-            </p>
+          <section id="youtube-extension" className="settings-panel guided-settings-section full-width settings-focus-section">
+            <SettingsSectionHeading
+              number="2"
+              title="YouTube and extension"
+              description="The API supplies current video details. The Chrome extension supplies the real Studio finish signal."
+              ready={Boolean(config?.configured?.youtubeApi && connectorStatus.some((item) => item.active))}
+            />
             <div className="settings-two-column">
               <fieldset className="settings-fieldset" disabled={!databaseReady}>
                 <legend>YouTube metadata</legend>
@@ -228,8 +251,9 @@ export default function SettingsPage({ session }) {
               </fieldset>
               <ExtensionCoverageSummary connectorStatus={connectorStatus} />
             </div>
-            <div className="notification-guidance">
-              <span>Browser connections, watched channels, channel IDs, and detection rules are managed in one place.</span>
+            <div className="settings-next-action">
+              <CheckCircle2 size={18} />
+              <span>Browser connections, watched channels, and detection reliability are managed on the dedicated Extension page.</span>
             </div>
             <a className="primary-button save-inline-button" href="/extension">
               <ExternalLink size={16} />
@@ -238,12 +262,14 @@ export default function SettingsPage({ session }) {
             <SectionReadiness keys={["youtubeApi"]} config={config} />
           </section>
 
-          <section className="settings-panel guided-settings-section">
-            <p className="eyebrow">3. Notifications</p>
-            <h2>Team notification profiles</h2>
-            <p className="muted">
-              Email, browser, and future Slack rules live in the Notifications tab so each person can have their own filters.
-            </p>
+          <section id="notification-settings" className="settings-panel guided-settings-section settings-focus-section">
+            <SettingsSectionHeading
+              number="3"
+              title="Notifications"
+              description="Each teammate can choose their own channels, test types, delivery method, and schedule."
+              ready={Boolean(config?.configured?.smtp || config?.configured?.digestEmail)}
+              optional
+            />
             <div className="notification-guidance">
               <span>{config?.configured?.smtp ? "Email sender configured" : "Email sender setup needed for email digests"}</span>
               <span>{config?.configured?.digestEmail ? "Fallback digest recipients configured" : "Profiles can still use their own recipients"}</span>
@@ -254,7 +280,7 @@ export default function SettingsPage({ session }) {
             </a>
           </section>
 
-          <details className="settings-panel guided-settings-section advanced-settings">
+          <details id="advanced-settings" className="settings-panel guided-settings-section advanced-settings full-width">
             <summary>
               <span>
                 <strong>4. Advanced / Admin</strong>
@@ -309,15 +335,42 @@ export default function SettingsPage({ session }) {
             </div>
           </details>
 
-          {error ? <p className="form-error">{error}</p> : null}
-          {message ? <p className="form-success">{message}</p> : null}
-          <button className="primary-button save-inline-button" disabled={!databaseReady || busy}>
-            <Save size={17} />
-            {busy ? "Saving..." : "Save Settings"}
-          </button>
+          <footer className={`settings-save-bar ${hasChanges ? "dirty" : ""}`}>
+            <div>
+              <strong>{hasChanges ? "Unsaved changes" : "Settings are up to date"}</strong>
+              <span>{hasChanges ? "Save before leaving so the shared app uses your changes." : "New scans are using the saved configuration."}</span>
+            </div>
+            <div className="settings-save-actions">
+              {hasChanges ? (
+                <button type="button" className="secondary-button" onClick={discardChanges} disabled={busy}>
+                  <Undo2 size={16} />
+                  Discard
+                </button>
+              ) : null}
+              <button className="primary-button" disabled={!databaseReady || busy || !hasChanges}>
+                <Save size={17} />
+                {busy ? "Saving..." : "Save changes"}
+              </button>
+            </div>
+          </footer>
         </form>
       </main>
     </AppShell>
+  );
+}
+
+function SettingsSectionHeading({ number, title, description, ready, optional = false }) {
+  return (
+    <header className="settings-section-heading">
+      <span className="settings-section-number">{number}</span>
+      <div>
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+      <span className={`settings-section-state ${ready ? "ok" : optional ? "optional" : "warn"}`}>
+        {ready ? "Ready" : optional ? "Optional" : "Setup needed"}
+      </span>
+    </header>
   );
 }
 
@@ -394,19 +447,6 @@ function ExtensionDebugList({ connectorStatus }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function SetupStep({ number, title, text, state, tone = "neutral" }) {
-  return (
-    <article className={`setup-step ${tone}`}>
-      <strong>{number}</strong>
-      <div>
-        <h3>{title}</h3>
-        <p>{text}</p>
-      </div>
-      <span>{state}</span>
-    </article>
   );
 }
 

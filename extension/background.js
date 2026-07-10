@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.3.2";
+const EXTENSION_VERSION = "0.3.3";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://video-growth.vercel.app/*", "http://127.0.0.1:8770/*"];

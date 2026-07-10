@@ -13,6 +13,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   document.getElementById("save").addEventListener("click", saveAndCheck);
   document.getElementById("heartbeat").addEventListener("click", heartbeat);
+  document.getElementById("toggleToken").addEventListener("click", toggleTokenVisibility);
+  updateWebSetupLink(settings.appUrl);
 });
 
 async function save() {
@@ -25,6 +27,7 @@ async function save() {
     updates.connectorId = current.connectorId || crypto.randomUUID();
   }
   await chrome.storage.sync.set(updates);
+  updateWebSetupLink(updates.appUrl);
   setStatus("Saved. Checking the dashboard connection...");
   return updates;
 }
@@ -72,5 +75,25 @@ async function heartbeat() {
 }
 
 function setStatus(text) {
-  document.getElementById("status").textContent = text;
+  const element = document.getElementById("status");
+  element.textContent = text;
+  const normalized = String(text || "").toLowerCase();
+  element.className = `status ${normalized.includes("connected") || normalized.includes("succeeded") ? "success" : normalized.includes("failed") || normalized.includes("could not") || normalized.includes("enter ") || normalized.includes("paste ") ? "error" : ""}`;
+}
+
+function toggleTokenVisibility() {
+  const input = document.getElementById("connectorToken");
+  const button = document.getElementById("toggleToken");
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  button.textContent = showing ? "Show" : "Hide";
+}
+
+function updateWebSetupLink(appUrl) {
+  const link = document.getElementById("openWebSetup");
+  try {
+    link.href = `${new URL(appUrl || DEFAULTS.appUrl).origin}/extension`;
+  } catch {
+    link.href = `${DEFAULTS.appUrl}/extension`;
+  }
 }
