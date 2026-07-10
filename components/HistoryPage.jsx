@@ -103,9 +103,12 @@ export default function HistoryPage({ session }) {
         </section>
 
         <section className="history-toolbar" aria-label="History filters">
-          <label className="search-box history-search">
-            <Search size={16} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search video, ID, reviewer" />
+          <label className="history-search-field">
+            <span>Search</span>
+            <span className="search-box history-search">
+              <Search size={16} />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search video, ID, reviewer" />
+            </span>
           </label>
           <label>
             <span>Channel</span>
@@ -121,10 +124,13 @@ export default function HistoryPage({ session }) {
               {actions.map((value) => <option key={value} value={value}>{labelAction(value)}</option>)}
             </select>
           </label>
-          <div className="segmented history-type-filter" role="group" aria-label="Test type">
-            {[["all", "All"], ["title", "Title"], ["thumbnail", "Thumbnail"]].map(([value, label]) => (
-              <button type="button" className={testType === value ? "active" : ""} key={value} onClick={() => setTestType(value)}>{label}</button>
-            ))}
+          <div className="filter-control history-type-control">
+            <span className="toolbar-field-label">Test type</span>
+            <div className="segmented history-type-filter" role="group" aria-label="Test type">
+              {[["all", "All"], ["title", "Title"], ["thumbnail", "Thumbnail"]].map(([value, label]) => (
+                <button type="button" className={testType === value ? "active" : ""} key={value} onClick={() => setTestType(value)}>{label}</button>
+              ))}
+            </div>
           </div>
         </section>
 

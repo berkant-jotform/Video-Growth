@@ -171,8 +171,11 @@ export default function ReviewSessionPage({ session }) {
 
         <section className="review-toolbar">
           <label><span>Channel</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setIndex(0); }}><option value="all">All channels</option>{channels.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
-          <div className="segmented" role="group" aria-label="Test type">
-            {[["all", "All"], ["title", "Title"], ["thumbnail", "Thumbnail"]].map(([value, label]) => <button type="button" className={testType === value ? "active" : ""} key={value} onClick={() => { setTestType(value); setIndex(0); }}>{label}</button>)}
+          <div className="filter-control review-type-control">
+            <span className="toolbar-field-label">Test type</span>
+            <div className="segmented" role="group" aria-label="Test type">
+              {[["all", "All"], ["title", "Title"], ["thumbnail", "Thumbnail"]].map(([value, label]) => <button type="button" className={testType === value ? "active" : ""} key={value} onClick={() => { setTestType(value); setIndex(0); }}>{label}</button>)}
+            </div>
           </div>
           {run ? <span className="review-position">{safeIndex + 1} of {queue.length}</span> : null}
         </section>

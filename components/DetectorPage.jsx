@@ -874,6 +874,7 @@ export default function DetectorPage({ session }) {
             </span>
           </label>
           <div className="advanced-filter">
+            <span className="filter-label">Options</span>
             <button className="secondary-button" onClick={() => setAdvancedOpen((value) => !value)}>
               <Filter size={16} />
               More
