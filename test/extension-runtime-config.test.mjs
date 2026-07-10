@@ -53,9 +53,14 @@ test("safe parser falls back to defaults for invalid runtime config JSON", () =>
   const result = safeParseExtensionRuntimeConfigJson("{bad json");
   assert.match(result.error, /valid JSON/);
   assert.equal(result.config.scanOrder, "youtube_first");
-  assert.equal(result.config.openYoutubeFallback, false);
+  assert.equal(result.config.openYoutubeFallback, true);
   assert.equal(result.config.deepScanFallbackEnabled, false);
   assert.ok(result.config.finishPhrases.includes("A/B test won"));
+});
+
+test("default runtime config keeps automatic YouTube recovery enabled", () => {
+  const config = normalizeExtensionRuntimeConfig({});
+  assert.equal(config.openYoutubeFallback, true);
 });
 
 test("runtime config keeps current YouTube A/B wording in safe defaults", () => {

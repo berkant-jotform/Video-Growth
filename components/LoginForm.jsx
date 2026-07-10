@@ -17,7 +17,8 @@ export default function LoginForm() {
         setPasswordRequired(Boolean(payload?.configured?.sharedPassword));
       })
       .catch(() => {
-        setPasswordRequired(true);
+        setPasswordRequired(false);
+        setError("Could not check app readiness. You can still try to sign in.");
       });
   }, []);
 
@@ -25,18 +26,23 @@ export default function LoginForm() {
     event.preventDefault();
     setBusy(true);
     setError("");
-    const response = await fetch("/api/access/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ actorName, password })
-    });
-    const payload = await response.json();
-    setBusy(false);
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Login failed.");
-      return;
+    try {
+      const response = await fetch("/api/access/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actorName, password })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        setError(payload.error || "Login failed.");
+        return;
+      }
+      window.location.href = "/";
+    } catch {
+      setError("Could not reach the app. Check your connection and try again.");
+    } finally {
+      setBusy(false);
     }
-    window.location.href = "/";
   }
 
   return (
@@ -54,13 +60,20 @@ export default function LoginForm() {
         <h1>Open the detector</h1>
         <label>
           Your name or initials
-          <input value={actorName} onChange={(event) => setActorName(event.target.value)} />
+          <input
+            value={actorName}
+            maxLength={80}
+            autoComplete="name"
+            required
+            onChange={(event) => setActorName(event.target.value)}
+          />
         </label>
         {passwordRequired ? (
           <label>
             Shared password
             <input
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, History, Moon, Puzzle, Settings, Sun, Upload, Youtube } from "lucide-react";
+import { Bell, History, LogOut, Moon, Puzzle, Settings, Sun, Upload, Youtube } from "lucide-react";
 
 const THEME_STORAGE_KEY = "youtube-ab-tests-theme";
 
@@ -67,6 +67,17 @@ export default function AppShell({ session, active, children }) {
             }}
           >
             <Bell size={18} />
+          </button>
+          <button
+            className="icon-button"
+            title="Switch reviewer"
+            aria-label="Switch reviewer"
+            onClick={async () => {
+              await fetch("/api/access/logout", { method: "POST" }).catch(() => null);
+              window.location.href = "/login";
+            }}
+          >
+            <LogOut size={18} />
           </button>
           <span className="user-chip">{session?.actorName || "Reviewer"}</span>
         </div>

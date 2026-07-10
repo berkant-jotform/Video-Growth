@@ -10,8 +10,7 @@ const STATUS_OPTIONS = [
   ["past_due_check", "Needs manual check"],
   ["uncovered", "Needs signal"],
   ["watching", "Watching"],
-  ["missing_data", "Missing data"],
-  ["sheet_changed_after_done", "Sheet updated after action"]
+  ["missing_data", "Missing data"]
 ];
 
 const TEST_TYPE_OPTIONS = [
@@ -19,7 +18,7 @@ const TEST_TYPE_OPTIONS = [
   ["thumbnail", "Thumbnail"]
 ];
 
-const DEFAULT_CHANNELS = ["Jotform", "AI Agents Podcast", "AI Agents", "Jotform Apps", "Jotform Sign"];
+const DEFAULT_CHANNELS = ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Sign"];
 
 export default function NotificationsPage({ session }) {
   const [config, setConfig] = useState(null);
@@ -28,101 +27,109 @@ export default function NotificationsPage({ session }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     load();
   }, []);
 
   async function load() {
-    const [configResponse, profilesResponse] = await Promise.all([
-      fetch("/api/config"),
-      fetch("/api/notification-profiles")
-    ]);
-    const configPayload = await configResponse.json();
-    const profilesPayload = await profilesResponse.json();
-    if (!configResponse.ok || !configPayload.ok) {
-      setError(configPayload.error || "Could not load notification settings.");
-      return;
+    setError("");
+    try {
+      const [configResponse, profilesResponse] = await Promise.all([
+        fetch("/api/config", { cache: "no-store" }),
+        fetch("/api/notification-profiles", { cache: "no-store" })
+      ]);
+      const configPayload = await configResponse.json().catch(() => ({}));
+      const profilesPayload = await profilesResponse.json().catch(() => ({}));
+      if (!configResponse.ok || !configPayload.ok) throw new Error(configPayload.error || "Could not load notification settings.");
+      if (!profilesResponse.ok || !profilesPayload.ok) throw new Error(profilesPayload.error || "Could not load notification profiles.");
+      setConfig(configPayload.config);
+      setForm(configPayload.config.values || {});
+      setProfiles(profilesPayload.profiles || []);
+    } catch (loadError) {
+      setError(loadError.message || "Could not load notification settings.");
+    } finally {
+      setLoading(false);
     }
-    if (!profilesResponse.ok || !profilesPayload.ok) {
-      setError(profilesPayload.error || "Could not load notification profiles.");
-      return;
-    }
-    setConfig(configPayload.config);
-    setForm(configPayload.config.values || {});
-    setProfiles(profilesPayload.profiles || []);
   }
 
   async function save(event) {
     event?.preventDefault?.();
     setMessage("");
     setError("");
-    const [configResponse, profilesResponse] = await Promise.all([
-      fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form)
-      }),
-      fetch("/api/notification-profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profiles })
-      })
-    ]);
-    const configPayload = await configResponse.json();
-    const profilesPayload = await profilesResponse.json();
-    if (!configResponse.ok || !configPayload.ok) {
-      setError(configPayload.error || "Could not save notification settings.");
-      return;
+    setSaving(true);
+    try {
+      const [configResponse, profilesResponse] = await Promise.all([
+        fetch("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form)
+        }),
+        fetch("/api/notification-profiles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profiles })
+        })
+      ]);
+      const configPayload = await configResponse.json().catch(() => ({}));
+      const profilesPayload = await profilesResponse.json().catch(() => ({}));
+      if (!configResponse.ok || !configPayload.ok) throw new Error(configPayload.error || "Could not save notification settings.");
+      if (!profilesResponse.ok || !profilesPayload.ok) throw new Error(profilesPayload.error || "Could not save notification profiles.");
+      setConfig(configPayload.config);
+      setForm(configPayload.config.values || {});
+      setProfiles(profilesPayload.profiles || []);
+      setMessage("Notification profiles saved.");
+    } catch (saveError) {
+      setError(saveError.message || "Could not save notification profiles.");
+    } finally {
+      setSaving(false);
     }
-    if (!profilesResponse.ok || !profilesPayload.ok) {
-      setError(profilesPayload.error || "Could not save notification profiles.");
-      return;
-    }
-    setConfig(configPayload.config);
-    setForm(configPayload.config.values || {});
-    setProfiles(profilesPayload.profiles || []);
-    setMessage("Notification profiles saved.");
   }
 
   async function sendDigest() {
     setSending("digest");
     setMessage("");
     setError("");
-    const response = await fetch("/api/notifications/digest", { method: "POST" });
-    const payload = await response.json();
-    setSending("");
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Could not send digest.");
-      return;
+    try {
+      const response = await fetch("/api/notifications/digest", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not send digest.");
+      const slackCount = payload.slack?.profileCount ?? payload.slack?.results?.length ?? 0;
+      const emailCount = payload.smtp?.profileCount ?? payload.smtp?.results?.length ?? 0;
+      setMessage(`Digest processed. Slack profiles: ${slackCount}. Email profiles: ${emailCount}.`);
+    } catch (sendError) {
+      setError(sendError.message || "Could not send digest.");
+    } finally {
+      setSending("");
     }
-    const slackCount = payload.slack?.profileCount ?? payload.slack?.results?.length ?? 0;
-    const emailCount = payload.smtp?.profileCount ?? payload.smtp?.results?.length ?? 0;
-    setMessage(`Digest processed. Slack profiles: ${slackCount}. Email profiles: ${emailCount}.`);
   }
 
   async function testBrowserNotification(profile) {
     setSending(`browser-${profile.profileId}`);
     setMessage("");
     setError("");
-    const response = await fetch("/api/notifications/test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profileId: profile.profileId })
-    });
-    const payload = await response.json();
-    setSending("");
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Could not create browser notification preview.");
-      return;
-    }
-    if ("Notification" in window) {
+    try {
+      const response = await fetch("/api/notifications/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.profileId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not create browser notification preview.");
+      if (!("Notification" in window)) throw new Error("This browser does not support desktop notifications.");
       const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
-      if (permission === "granted") {
-        new Notification(payload.browserNotification.title, { body: payload.browserNotification.body });
+      if (permission !== "granted") {
+        throw new Error("Browser notification permission was not granted.");
       }
+      new Notification(payload.browserNotification.title, { body: payload.browserNotification.body });
+      setMessage(`${profile.displayName || "Profile"} preview: ${payload.digest.summary.total} matching item${payload.digest.summary.total === 1 ? "" : "s"}.`);
+    } catch (previewError) {
+      setError(previewError.message || "Could not create browser notification preview.");
+    } finally {
+      setSending("");
     }
-    setMessage(`${profile.displayName || "Profile"} preview: ${payload.digest.summary.total} matching item${payload.digest.summary.total === 1 ? "" : "s"}.`);
   }
 
   function addProfile() {
@@ -220,7 +227,11 @@ export default function NotificationsPage({ session }) {
             </div>
           </section>
 
-          {profiles.length ? (
+          {loading ? (
+            <section className="settings-panel notification-empty full-width">
+              <h2>Loading notification profiles...</h2>
+            </section>
+          ) : profiles.length ? (
             profiles.map((profile) => (
               <ProfileCard
                 key={profile.profileId}
@@ -247,9 +258,9 @@ export default function NotificationsPage({ session }) {
           <section className="settings-panel full-width notification-save-panel">
             {error ? <p className="form-error">{error}</p> : null}
             {message ? <p className="form-success">{message}</p> : null}
-            <button className="primary-button">
+            <button className="primary-button" disabled={saving || loading}>
               <Save size={17} />
-              Save Notification Profiles
+              {saving ? "Saving..." : "Save Notification Profiles"}
             </button>
           </section>
         </form>

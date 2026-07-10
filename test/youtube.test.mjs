@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findYouTubeVideoCandidates } from "../lib/youtube.js";
+import { enrichWithYouTubeMetadata, findYouTubeVideoCandidates } from "../lib/youtube.js";
 
 test("finds and caches YouTube video candidates by title", async () => {
   const originalFetch = globalThis.fetch;
@@ -54,6 +54,50 @@ test("finds and caches YouTube video candidates by title", async () => {
     assert.equal(first[0].videoId, "zoom123");
     assert.equal(first[0].channelId, "UCjotform123456789012");
     assert.deepEqual(second, first);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("uses YouTube channel identity instead of a category-style sheet tab name", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes("/videos?")) {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [{
+              id: "video123",
+              snippet: {
+                title: "Current title",
+                channelId: "UCapps1234567890",
+                channelTitle: "Jotform Apps",
+                thumbnails: {}
+              }
+            }]
+          };
+        }
+      };
+    }
+    return {
+      ok: true,
+      async json() {
+        return {
+          items: [{
+            id: "UCapps1234567890",
+            snippet: { title: "Jotform Apps", thumbnails: {} }
+          }]
+        };
+      }
+    };
+  };
+  try {
+    const records = [{ videoId: "video123", channel: "With Podo", troubles: [] }];
+    await enrichWithYouTubeMetadata(records, { youtubeApiKey: "test-key" });
+    assert.equal(records[0].channel, "Apps");
+    assert.equal(records[0].youtubeChannelId, "UCapps1234567890");
   } finally {
     globalThis.fetch = originalFetch;
   }

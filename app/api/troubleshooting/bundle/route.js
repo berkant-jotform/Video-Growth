@@ -10,7 +10,7 @@ import {
   listUnmatchedFinishEvents,
   summarizeQueue
 } from "@/lib/repository.js";
-import { LATEST_EXTENSION_VERSION } from "@/lib/app-version.js";
+import { APP_VERSION, LATEST_EXTENSION_VERSION } from "@/lib/app-version.js";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,7 @@ export async function GET() {
       generatedBy: session.actorName || "",
       app: {
         name: "YouTube A/B Tests",
-        version: "3.0.0",
+        version: APP_VERSION,
         latestExtensionVersion: LATEST_EXTENSION_VERSION
       },
       config: publicConfig(config),

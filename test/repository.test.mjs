@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveQueueStatus, isActionConflict, sheetOutcomeAction } from "../lib/queue-status.mjs";
+import { deriveQueueStatus, isActionableQueueStatus, isActionConflict, sheetOutcomeAction } from "../lib/queue-status.mjs";
+
+test("default action queue excludes metadata observations and passive monitoring", () => {
+  assert.equal(isActionableQueueStatus("confirmed_finished"), true);
+  assert.equal(isActionableQueueStatus("past_due_check"), true);
+  assert.equal(isActionableQueueStatus("action_conflict"), true);
+  assert.equal(isActionableQueueStatus("applied_change_observed"), false);
+  assert.equal(isActionableQueueStatus("watching"), false);
+  assert.equal(isActionableQueueStatus("uncovered"), false);
+});
 
 test("sheet result entered after tool action does not reopen active queue", () => {
   assert.equal(
@@ -14,7 +23,7 @@ test("sheet result entered after tool action does not reopen active queue", () =
   );
 });
 
-test("unexpected source drift after tool action remains reviewable", () => {
+test("source drift after a tool action stays closed unless a real result conflicts", () => {
   assert.equal(
     deriveQueueStatus({
       drifted: true,
@@ -22,7 +31,22 @@ test("unexpected source drift after tool action remains reviewable", () => {
       baseQueueStatus: "running",
       startDate: "2020-01-01"
     }),
-    "sheet_changed_after_done"
+    "done"
+  );
+});
+
+test("blank sheet after tool action stays closed", () => {
+  assert.equal(
+    deriveQueueStatus({
+      drifted: true,
+      hasAction: true,
+      baseQueueStatus: "running",
+      latestAction: "B",
+      detectedOutcome: "result_missing",
+      suggestedWinner: "",
+      startDate: "2020-01-01"
+    }),
+    "done"
   );
 });
 

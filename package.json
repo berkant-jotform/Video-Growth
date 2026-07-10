@@ -1,6 +1,6 @@
 {
   "name": "youtube-ab-tests-detector",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,14 +13,19 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
-    "@vercel/blob": "^2.0.0",
+    "@vercel/blob": "^2.6.1",
     "exceljs": "^4.4.0",
-    "googleapis": "^144.0.0",
+    "googleapis": "^173.0.0",
     "lucide-react": "^0.468.0",
-    "next": "^15.3.4",
-    "nodemailer": "^6.9.16",
+    "next": "^15.5.20",
+    "nodemailer": "^9.0.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "sharp": "^0.34.0"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "overrides": {
+    "postcss": "^8.5.10",
+    "uuid": "^11.1.1"
+  }
 }

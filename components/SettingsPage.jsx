@@ -62,24 +62,6 @@ const READINESS_ITEMS = [
     fix: "Paste a YouTube Data API key below."
   },
   {
-    key: "connectorToken",
-    label: "Extension Token",
-    required: true,
-    fix: "Create a random token here, save it, then paste the same token into the Chrome extension."
-  },
-  {
-    key: "connectorChannels",
-    label: "Watched Channels",
-    required: true,
-    fix: "Keep Jotform, AI Agents Podcast, and AI Agents first. Add other channel names as needed."
-  },
-  {
-    key: "connectorWatcherTabs",
-    label: "Studio Watchers",
-    required: false,
-    fix: "Optional but recommended. Add one per line: Channel name | Studio URL or YouTube channel ID."
-  },
-  {
     key: "blob",
     label: "Thumbnail Image Storage",
     required: false,
@@ -93,57 +75,54 @@ DATABASE_URL=
 # Optional shared password gate:
 APP_SHARED_PASSWORD_HASH=`;
 
-const DEFAULT_WATCHER_ROWS = [
-  { label: "Jotform", target: "" },
-  { label: "AI Agents Podcast", target: "" },
-  { label: "AI Agents", target: "" }
-];
-const QUICK_WATCHER_CHANNELS = ["Apps", "Sign", "Boards", "PDF Editor", "Workflow", "Noupe"];
-
 export default function SettingsPage({ session }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({});
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     load();
   }, []);
 
   async function load() {
-    const response = await fetch("/api/config");
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Could not load settings.");
-      return;
+    setError("");
+    try {
+      const response = await fetch("/api/config", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not load settings.");
+      setConfig(payload.config);
+      setForm(payload.config.values || {});
+    } catch (loadError) {
+      setError(loadError.message || "Could not load settings.");
     }
-    setConfig(payload.config);
-    setForm(payload.config.values || {});
   }
 
   async function save(event) {
     event?.preventDefault?.();
     setMessage("");
     setError("");
-    const response = await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form)
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Could not save settings.");
-      return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save settings.");
+      setConfig(payload.config);
+      setForm(payload.config.values || {});
+      setMessage("Settings saved.");
+    } catch (saveError) {
+      setError(saveError.message || "Could not save settings.");
+    } finally {
+      setBusy(false);
     }
-    setConfig(payload.config);
-    setForm(payload.config.values || {});
-    setMessage("Settings saved.");
   }
 
   const databaseReady = Boolean(config?.configured?.database);
-  const connectorToken = form.CONNECTOR_TOKEN || "";
-  const connectorChannels = form.CONNECTOR_CHANNELS || "Jotform, AI Agents Podcast, AI Agents";
-  const connectorWatcherTabs = form.CONNECTOR_WATCHER_TABS || "";
   const connectorStatus = config?.connectorStatus || [];
 
   return (
@@ -236,44 +215,27 @@ export default function SettingsPage({ session }) {
             </p>
             <div className="settings-two-column">
               <fieldset className="settings-fieldset" disabled={!databaseReady}>
-                <legend>YouTube and extension</legend>
-                {[
-                  ["YOUTUBE_API_KEY", "YouTube API key", "input", true],
-                  ["CONNECTOR_TOKEN", "Extension token", "input", true],
-                  ["CONNECTOR_CHANNELS", "Watched channels", "textarea", false]
-                ].map(([key, label, type, secret]) => (
-                  <SettingField
-                    key={key}
-                    label={label}
-                    name={key}
-                    type={type}
-                    secret={Boolean(secret)}
-                    source={config?.sources?.[key]}
-                    value={form[key] || ""}
-                    onChange={(value) => setForm((current) => ({ ...current, [key]: value }))}
-                  />
-                ))}
+                <legend>YouTube metadata</legend>
+                <SettingField
+                  label="YouTube API key"
+                  name="YOUTUBE_API_KEY"
+                  type="input"
+                  secret
+                  source={config?.sources?.YOUTUBE_API_KEY}
+                  value={form.YOUTUBE_API_KEY || ""}
+                  onChange={(value) => setForm((current) => ({ ...current, YOUTUBE_API_KEY: value }))}
+                />
               </fieldset>
               <ExtensionCoverageSummary connectorStatus={connectorStatus} />
             </div>
-            <InstallExtensionPanel
-              connectorToken={connectorToken}
-              connectorChannels={connectorChannels}
-              connectorWatcherTabs={connectorWatcherTabs}
-              onGenerateToken={() =>
-                setForm((current) => ({ ...current, CONNECTOR_TOKEN: generateConnectorToken() }))
-              }
-            />
-            <section className="watcher-manager-panel">
-              <h3>Studio watchers</h3>
-              <p className="muted">Add one Studio watcher per channel, save, then open those channels from the extension.</p>
-              <WatcherTabManager
-                value={connectorWatcherTabs}
-                connectorStatus={connectorStatus}
-                onChange={(value) => setForm((current) => ({ ...current, CONNECTOR_WATCHER_TABS: value }))}
-              />
-            </section>
-            <SectionReadiness keys={["youtubeApi", "connectorToken", "connectorChannels", "connectorWatcherTabs"]} config={config} />
+            <div className="notification-guidance">
+              <span>Browser connections, watched channels, channel IDs, and detection rules are managed in one place.</span>
+            </div>
+            <a className="primary-button save-inline-button" href="/extension">
+              <ExternalLink size={16} />
+              Open Extension Setup
+            </a>
+            <SectionReadiness keys={["youtubeApi"]} config={config} />
           </section>
 
           <section className="settings-panel guided-settings-section">
@@ -349,9 +311,9 @@ export default function SettingsPage({ session }) {
 
           {error ? <p className="form-error">{error}</p> : null}
           {message ? <p className="form-success">{message}</p> : null}
-          <button className="primary-button save-inline-button" disabled={!databaseReady}>
+          <button className="primary-button save-inline-button" disabled={!databaseReady || busy}>
             <Save size={17} />
-            Save Settings
+            {busy ? "Saving..." : "Save Settings"}
           </button>
         </form>
       </main>
@@ -448,199 +410,6 @@ function SetupStep({ number, title, text, state, tone = "neutral" }) {
   );
 }
 
-function InstallExtensionPanel({ connectorToken, connectorChannels, connectorWatcherTabs, onGenerateToken }) {
-  const appUrl = typeof window === "undefined" ? "https://video-growth.vercel.app" : window.location.origin;
-  const visibleToken = connectorToken && connectorToken !== "********" ? connectorToken : "";
-  const copyText = [
-    `App URL: ${appUrl}`,
-    `Extension token: ${visibleToken || "generate-or-enter-token-first"}`,
-    `Channels: ${connectorChannels}`,
-    `Studio watchers:\n${connectorWatcherTabs || "Add Studio URLs or channel IDs in Settings"}`
-  ].join("\n");
-
-  return (
-    <section className="settings-panel full-width install-panel">
-      <p className="eyebrow">Install Chrome Extension</p>
-      <h2>Studio bell finish detector</h2>
-      <p className="muted">
-        This extension is the real finish signal. It runs in the Chrome profile that is logged into
-        YouTube Studio, reads visible Studio notification text at the top of each hour or when you
-        click manual scan, and reports matching finish events back to this app.
-      </p>
-      <p className="setup-warning">
-        Detection only works when this page shows <strong> Watching </strong> for at least one open Studio watcher.
-      </p>
-
-      <div className="install-actions">
-        <a
-          className="primary-button"
-          href="/downloads/youtube-ab-tests-connector.zip"
-          download
-        >
-          <ExternalLink size={16} />
-          Download Extension Zip
-        </a>
-        <button type="button" className="secondary-button" onClick={onGenerateToken}>
-          Generate Extension Token
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => navigator.clipboard?.writeText(copyText)}
-        >
-          <Clipboard size={16} />
-          Copy Extension Values
-        </button>
-      </div>
-
-      <div className="install-grid">
-        <div className="install-card">
-          <h3>1. Prepare the extension folder</h3>
-          <ol>
-            <li>Download the zip above.</li>
-            <li>Unzip it.</li>
-            <li>Keep the unzipped folder somewhere easy to find.</li>
-          </ol>
-          <p>
-            On this Mac, you can also use the local source folder:
-            <code>/Users/berkantgul/Documents/B Tests/extension</code>
-          </p>
-        </div>
-        <div className="install-card">
-          <h3>2. Load it in Chrome</h3>
-          <ol>
-            <li>Open <code>chrome://extensions</code>.</li>
-            <li>Turn on <strong>Developer Mode</strong>.</li>
-            <li>Click <strong>Load unpacked</strong>.</li>
-            <li>Select the unzipped extension folder.</li>
-          </ol>
-        </div>
-        <div className="install-card">
-          <h3>3. Configure the extension</h3>
-          <dl className="copy-values">
-            <div>
-              <dt>App URL</dt>
-              <dd>{appUrl}</dd>
-            </div>
-            <div>
-              <dt>Extension token</dt>
-              <dd>{visibleToken || "Generate or enter one below, then save."}</dd>
-            </div>
-            <div>
-              <dt>Channels</dt>
-              <dd>{connectorChannels}</dd>
-            </div>
-          </dl>
-          <p>
-            If the token shows <code>********</code> below, the saved secret is hidden. Generate a new
-            token if you need to set up another browser.
-          </p>
-        </div>
-        <div className="install-card">
-          <h3>4. Open Studio watchers</h3>
-          <ol>
-            <li>In Studio watcher settings below, add channel URLs or IDs.</li>
-            <li>Use one line per channel: <code>Jotform | UC...</code></li>
-            <li>Open the extension popup.</li>
-            <li>Click <strong>Start watching + check</strong> in the extension.</li>
-          </ol>
-          <p>The extension checks open Studio watchers hourly. An extension check without Studio open is not detection.</p>
-        </div>
-        <div className="install-card">
-          <h3>Watcher tab examples</h3>
-          <p>Paste channel IDs or direct Studio URLs into the Studio watchers field below.</p>
-          <code>Jotform | UCxxxxxxxxxxxxxxxxxxxxxx</code>
-          <code>AI Agents Podcast | https://studio.youtube.com/channel/UC...</code>
-        </div>
-        <div className="install-card">
-          <h3>5. Confirm coverage</h3>
-          <ol>
-            <li>Open the extension popup.</li>
-            <li>Use <strong>Start watching + check</strong> or <strong>Check now</strong>.</li>
-            <li>Refresh this Settings page.</li>
-            <li>Look for <strong>Watching</strong>, not just connected.</li>
-          </ol>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function WatcherTabManager({ value, connectorStatus = [], onChange }) {
-  const [rows, setRows] = useState(() => parseWatcherRows(value));
-  const openUrls = connectorStatus
-    .flatMap((item) => item?.payload?.studioTabUrls || [])
-    .filter(Boolean);
-
-  useEffect(() => {
-    setRows(parseWatcherRows(value));
-  }, [value]);
-
-  function commitRows(next) {
-    setRows(next);
-    onChange(serializeWatcherRows(next));
-  }
-
-  function updateRow(index, patch) {
-    const next = rows.map((row, idx) => (idx === index ? { ...row, ...patch } : row));
-    commitRows(next);
-  }
-
-  function addRow(label = "") {
-    commitRows([...rows, { label, target: "" }]);
-  }
-
-  function removeRow(index) {
-    commitRows(rows.filter((_, idx) => idx !== index));
-  }
-
-  return (
-    <div className="watcher-manager">
-      <div className="watcher-header">
-        <span>Channel</span>
-        <span>Studio watcher URL or channel ID</span>
-        <span>Status</span>
-      </div>
-      {rows.map((row, index) => (
-        <div className="watcher-row" key={`${index}-${row.label}`}>
-          <input
-            value={row.label}
-            placeholder="Jotform"
-            onChange={(event) => updateRow(index, { label: event.target.value })}
-          />
-          <input
-            value={row.target}
-            placeholder="UC... or https://studio.youtube.com/channel/UC..."
-            onChange={(event) => updateRow(index, { target: event.target.value })}
-          />
-          <span className={`watcher-status ${watcherStatus(row, openUrls).state}`}>
-            {watcherStatus(row, openUrls).label}
-          </span>
-          <button type="button" className="mini-remove-button" onClick={() => removeRow(index)}>
-            Remove
-          </button>
-        </div>
-      ))}
-      <div className="watcher-actions">
-        <button type="button" className="secondary-button add-watcher-button" onClick={() => addRow()}>
-          Add Studio Watcher
-        </button>
-        {QUICK_WATCHER_CHANNELS.map((channel) => (
-          <button
-            type="button"
-            className="quiet-button"
-            key={channel}
-            onClick={() => addRow(channel)}
-            disabled={rows.some((row) => sameText(row.label, channel))}
-          >
-            Add {channel}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function SettingField({ label, name, type, secret, source, value, onChange }) {
   const markedForRemoval = value === DELETE_SECRET_VALUE;
   const maskedSecret = secret && value === "********";
@@ -725,66 +494,6 @@ function extensionCoverageState(item) {
 
 function watchingStudioCount(statuses) {
   return statuses.reduce((sum, item) => sum + connectorOpenStudioTabs(item), 0);
-}
-
-function parseWatcherRows(value) {
-  const lines = String(value || "")
-    .split(/\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const rows = lines.map((line) => {
-    const separator = line.includes("|") ? "|" : line.includes("=") ? "=" : "";
-    if (separator) {
-      const [label, ...rest] = line.split(separator);
-      return { label: label.trim(), target: rest.join(separator).trim() };
-    }
-    return { label: "", target: line };
-  });
-  return rows.length ? rows : DEFAULT_WATCHER_ROWS;
-}
-
-function serializeWatcherRows(rows) {
-  return rows
-    .map((row) => {
-      const label = String(row.label || "").trim();
-      const target = String(row.target || "").trim();
-      if (!target) return "";
-      return label ? `${label} | ${target}` : target;
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-function watcherStatus(row, openUrls) {
-  const target = String(row?.target || "").trim();
-  if (!target) return { state: "missing", label: "Missing URL/ID" };
-  return isWatcherOpen(row, openUrls)
-    ? { state: "open", label: "Watching" }
-    : { state: "closed", label: "Open tab needed" };
-}
-
-function isWatcherOpen(row, openUrls) {
-  const target = String(row?.target || "").trim();
-  const channelId =
-    target.match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] ||
-    String(row?.label || "").match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] ||
-    "";
-  if (channelId) return openUrls.some((url) => String(url).includes(channelId));
-  if (/^https:\/\/studio\.youtube\.com\//i.test(target)) {
-    const normalized = target.replace(/\/+$/, "");
-    return openUrls.some((url) => String(url).replace(/\/+$/, "").startsWith(normalized));
-  }
-  return false;
-}
-
-function sameText(left, right) {
-  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
-}
-
-function generateConnectorToken() {
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return `ytab_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function formatDateTime(value) {

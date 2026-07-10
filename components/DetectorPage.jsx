@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 import { CHANNEL_PRIORITY, canonicalChannelName, compareChannels } from "@/lib/channels.mjs";
+import { isActionableQueueStatus } from "@/lib/queue-status.mjs";
 
 const SECTION_ORDER = [
   "action_conflict",
@@ -25,7 +26,6 @@ const SECTION_ORDER = [
   "past_due_check",
   "uncovered",
   "watching",
-  "sheet_changed_after_done",
   "missing_data"
 ];
 
@@ -37,7 +37,6 @@ const SECTION_LABELS = {
   uncovered: "Needs Signal",
   watching: "Watching",
   needs_review: "Explicit Sheet Finish",
-  sheet_changed_after_done: "Sheet Updated After Action",
   missing_data: "Missing Data",
   result_logged: "Already Logged in Sheet",
   sheet_marked_done: "Marked Done in Sheet",
@@ -69,8 +68,6 @@ const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
-const EXTENSION_MISSING_RELOAD_STORAGE_KEY = "youtube-ab-extension-missing-reload-attempted";
-const REQUIRED_EXTENSION_VERSION = "0.2.2";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -95,7 +92,7 @@ export default function DetectorPage({ session }) {
   const [detectorView, setDetectorView] = useState("classic");
   const [viewChannel, setViewChannel] = useState("all");
   const [viewType, setViewType] = useState("all");
-  const [resultFilter, setResultFilter] = useState("all");
+  const [resultFilter, setResultFilter] = useState("actionable");
   const [finishWindow, setFinishWindow] = useState("all");
   const [retestFilter, setRetestFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -117,7 +114,7 @@ export default function DetectorPage({ session }) {
   useEffect(() => {
     let bridgeReady = false;
     let cancelled = false;
-    let missingTimer = null;
+    let retryTimer = null;
     function markReady(version = "") {
       if (cancelled) return;
       bridgeReady = true;
@@ -128,7 +125,6 @@ export default function DetectorPage({ session }) {
       });
       try {
         window.sessionStorage.removeItem(EXTENSION_RECONNECT_STORAGE_KEY);
-        window.sessionStorage.removeItem(EXTENSION_MISSING_RELOAD_STORAGE_KEY);
       } catch {}
       setExtensionRequest((current) =>
         current.status === "warn" && (!current.message || isBridgeOfflineMessage(current.message))
@@ -143,40 +139,46 @@ export default function DetectorPage({ session }) {
       markReady(message.version || "");
     }
     window.addEventListener("message", onMessage);
-    requestExtension("ping-extension", { timeoutMs: 4000 })
-      .then((response) => {
-        if (response?.ok) markReady(response.version || "");
-        if (response?.ok === false && isExtensionContextInvalidated(response.error)) {
-          recoverInvalidatedExtensionContext();
+    async function probe(attempt = 0) {
+      if (cancelled || bridgeReady) return;
+      try {
+        const response = await requestExtension("ping-extension", { timeoutMs: 1600 });
+        if (response?.ok) {
+          markReady(response.version || "");
+          return;
         }
-      })
-      .catch((error) => {
+        if (isExtensionContextInvalidated(response?.error)) {
+          recoverInvalidatedExtensionContext();
+          return;
+        }
+      } catch (error) {
         if (isExtensionContextInvalidated(error.message)) {
           recoverInvalidatedExtensionContext();
           return;
         }
-        missingTimer = window.setTimeout(() => {
-          if (!bridgeReady && !cancelled) {
-            if (tryAutoReloadMissingBridge()) {
-              setExtensionBridge({
-                status: "missing",
-                version: "",
-                message: "Dashboard bridge did not connect. Reloading this page once automatically..."
-              });
-              return;
-            }
-            setExtensionBridge({
-              status: "missing",
-              version: "",
-              message: "This dashboard cannot reach the Chrome extension. Reload the page; if it stays offline, open the extension popup once and reload again."
-            });
-          }
-        }, 500);
-      });
+      }
+      if (attempt < 2) {
+        retryTimer = window.setTimeout(() => probe(attempt + 1), 700 + attempt * 500);
+        return;
+      }
+      if (!cancelled && !bridgeReady) {
+        setExtensionBridge({
+          status: "missing",
+          version: "",
+          message: "The extension is not connected to this tab. Open the extension popup once; this page will reconnect when the bridge becomes available."
+        });
+      }
+    }
+    function onFocus() {
+      if (!bridgeReady) probe(0);
+    }
+    probe(0);
+    window.addEventListener("focus", onFocus);
     return () => {
       cancelled = true;
-      if (missingTimer) window.clearTimeout(missingTimer);
+      if (retryTimer) window.clearTimeout(retryTimer);
       window.removeEventListener("message", onMessage);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
@@ -305,8 +307,17 @@ export default function DetectorPage({ session }) {
       selectedChannels.length ? selectedChannels.join(", ") : "",
       scoped.testType !== "all" ? `${titleCase(scoped.testType)} tests` : ""
     ].filter(Boolean).join(" · ");
+    const previousLastScan = lastScan;
+    const optimisticStartedAt = new Date().toISOString();
     setScanning(true);
     setError("");
+    setLastScan({
+      scanId: `local-${Date.now()}`,
+      startedAt: optimisticStartedAt,
+      completedAt: null,
+      status: "running",
+      actorName: session?.actorName || "Reviewer"
+    });
     setScanProgress({
       stage: "starting",
       label: "Starting scan",
@@ -330,6 +341,8 @@ export default function DetectorPage({ session }) {
       await refresh();
     } catch (err) {
       setError(err.message);
+      setLastScan(previousLastScan);
+      await pollScanStatus();
     } finally {
       setScanning(false);
     }
@@ -403,20 +416,6 @@ export default function DetectorPage({ session }) {
     window.setTimeout(() => {
       window.location.reload();
     }, 1200);
-  }
-
-  function tryAutoReloadMissingBridge() {
-    try {
-      const alreadyTried = window.sessionStorage.getItem(EXTENSION_MISSING_RELOAD_STORAGE_KEY) === "1";
-      if (alreadyTried) return false;
-      window.sessionStorage.setItem(EXTENSION_MISSING_RELOAD_STORAGE_KEY, "1");
-      window.setTimeout(() => {
-        window.location.reload();
-      }, 900);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   function toggleScanChannel(channel) {
@@ -810,9 +809,10 @@ export default function DetectorPage({ session }) {
             </div>
           </div>
           <label>
-            Result
+            Show
             <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value)}>
-              <option value="all">All results</option>
+              <option value="actionable">Action needed</option>
+              <option value="all">Everything</option>
               <option value="action_conflict">Action conflict</option>
               <option value="confirmed">Confirmed finished</option>
               <option value="observed">Applied change observed</option>
@@ -821,7 +821,6 @@ export default function DetectorPage({ session }) {
               <option value="uncovered">Needs signal</option>
               <option value="not_determined">Not determined</option>
               <option value="missing_data">Cannot determine</option>
-              <option value="sheet_changed">Changed after done</option>
               <option value="winner">Winner known</option>
               <option value="no_clear">No clear</option>
             </select>
@@ -1001,8 +1000,10 @@ function Summary({ summary }) {
 }
 
 function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
-  const stale = isStaleRunningScan(scan);
+  const staleScan = isStaleRunningScan(scan);
+  const stale = !scanning && staleScan;
   const active = scanning || (scan?.status === "running" && !stale);
+  const elapsedScan = scanning && (scan?.status !== "running" || staleScan) ? null : scan;
   if (!active && !stale && !lastSuccessfulScan) return null;
   const percent = clampPercent(progress?.percent ?? 0);
   const counts = progress?.counts || {};
@@ -1028,7 +1029,7 @@ function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
           <h3>{active ? progress?.label || "Scanning" : stale ? "Previous scan did not finish cleanly" : "Queue is ready"}</h3>
           <p>
             {active
-              ? stillWorkingText(scan, progress)
+              ? stillWorkingText(elapsedScan, progress)
               : stale
                 ? `Last update was ${progress?.updatedAt ? formatDateTime(progress.updatedAt) : "not recorded"}. Start a new scan if counts look old.`
                 : `Completed ${formatDateTime(lastSuccessfulScan.completedAt)}.`}
@@ -1059,7 +1060,7 @@ function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
           ))}
         </div>
       ) : null}
-      {(active || stale) && timingItems.length ? (
+      {timingItems.length ? (
         <div className="scan-timing-list">
           {timingItems.map(([key, value]) => (
             <span key={key}>
@@ -2178,7 +2179,7 @@ function Info({ label, value }) {
 }
 
 function requiresRetestConfirmation(run) {
-  return Boolean(run.possibleRetest && !run.latestAction && run.queueStatus !== "sheet_changed_after_done");
+  return Boolean(run.possibleRetest && !run.latestAction);
 }
 
 function ChannelAvatar({ channel, logoUrl, size = "small" }) {
@@ -2261,7 +2262,6 @@ function boardStatusRank(status) {
     "past_due_check",
     "uncovered",
     "watching",
-    "sheet_changed_after_done",
     "missing_data"
   ];
   const index = order.indexOf(status);
@@ -2324,6 +2324,9 @@ function statusKey(run) {
 }
 
 function matchesResultFilter(run, filter) {
+  if (filter === "actionable") {
+    return isActionableQueueStatus(run.queueStatus);
+  }
   if (filter === "action_conflict") return run.queueStatus === "action_conflict";
   if (filter === "confirmed") return run.queueStatus === "confirmed_finished";
   if (filter === "observed") return run.queueStatus === "applied_change_observed";
@@ -2375,7 +2378,6 @@ function tokenOverlap(a, b) {
 function outcomeLabel(run) {
   if (run.unregistered) return "Studio says this test finished, but no matching row exists in the configured A/B sheet.";
   if (run.queueStatus === "action_conflict") return `Tool says ${run.latestAction}; sheet now says ${sheetResultText(run)}. Resolve before closing.`;
-  if (run.queueStatus === "sheet_changed_after_done") return "Sheet changed after the tool action; review only if this was unexpected";
   if (run.queueStatus === "confirmed_finished") {
     if (run.finishEventSource === "studio_bell") return "Studio notification confirmed this test finished";
     if (run.finishEventSource === "studio_page_status") return "Studio edit page says this test finished";
@@ -2404,9 +2406,6 @@ function cardResult(run) {
   }
   if (run.queueStatus === "action_conflict") {
     return { key: "action_conflict", label: "Conflict", value: "Tool vs sheet", tone: "danger" };
-  }
-  if (run.queueStatus === "sheet_changed_after_done") {
-    return { key: "sheet_changed", label: "Sheet updated", value: "After action", tone: "manual" };
   }
   if (run.queueStatus === "confirmed_finished") {
     const detected = detectedOutcomeLabel(run.finishEventOutcome || run.detectedOutcome);
@@ -2983,7 +2982,7 @@ function extensionScanSummary(response) {
       return `Found ${totals.candidates} A/B-looking text block${totals.candidates === 1 ? "" : "s"}, but ${totals.ignored} were running/non-finish text. Open YouTube home and check the bell again.`;
     }
     if (totals.duplicate) {
-      return `Found ${totals.candidates} A/B candidate${totals.candidates === 1 ? "" : "s"}; ${totals.duplicate} were already seen. Update to extension ${REQUIRED_EXTENSION_VERSION} and check again so the app can reconcile them.`;
+      return `Found ${totals.candidates} A/B candidate${totals.candidates === 1 ? "" : "s"}; ${totals.duplicate} were already processed, so no duplicate cards were created.`;
     }
     if (totals.queued) {
       return `Found ${totals.candidates} A/B candidate${totals.candidates === 1 ? "" : "s"}; ${totals.queued} queued for retry.`;

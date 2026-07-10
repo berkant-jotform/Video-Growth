@@ -211,6 +211,37 @@ test("parses thumbnail tabs when headers are not on the first row", () => {
   assert.deepEqual(records[0].options, { A: "A image", B: "B image" });
 });
 
+test("skips report and note rows that are not actual A/B test runs", () => {
+  const records = parseSheetRecords({
+    spreadsheetId: "sheet",
+    sourceKind: "title",
+    sheetName: "Published Videos With Ads",
+    today: "2026-07-10",
+    values: [
+      ["Test Start Date", "Video URL", "Title A", "Title B", "Done"],
+      ["", "A/B Test Result View Metrics", "", "", ""],
+      ["2026-07-01", "https://youtu.be/abc123XYZ_9", "Original", "Alternative", ""]
+    ]
+  });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].videoId, "abc123XYZ_9");
+});
+
+test("keeps historical test rows with lifecycle data and two options even when the old URL cell lost its link", () => {
+  const records = parseSheetRecords({
+    spreadsheetId: "sheet",
+    sourceKind: "title",
+    sheetName: "Historical Tests",
+    today: "2026-07-10",
+    values: [
+      ["Test Start Date", "Video URL", "Title A", "Title B", "Done"],
+      ["2025-10-22", "Old video title", "Original", "Alternative", "true"]
+    ]
+  });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].status, "sheet_marked_done");
+});
+
 test("test run ID changes when option fingerprint changes", () => {
   const base = {
     spreadsheetId: "sheet",

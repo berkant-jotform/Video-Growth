@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.2.2";
+globalThis.__youtubeAbTestsConnectorVersion = "0.3.1";
 const DEFAULT_RUNTIME_CONFIG = {
   minTextLength: MIN_TEXT_LENGTH,
   maxTextLength: MAX_TEXT_LENGTH,
@@ -12,6 +12,9 @@ const DEFAULT_RUNTIME_CONFIG = {
   scrollRounds: 3,
   scrollDelayMs: 650,
   includeSeenOnManualScan: true,
+  notificationSelectors: [],
+  notificationButtonSelectors: [],
+  notificationSurfaceSelectors: [],
   finishPhrases: [
     "A/B test won",
     "A/B test performed well for all",
@@ -71,6 +74,29 @@ const NOTIFICATION_SELECTORS = [
   "[role='alert']",
   "[aria-live]"
 ];
+const NOTIFICATION_BUTTON_SELECTORS = [
+  "#notification-button",
+  "ytcp-notification-button",
+  "ytcp-notifications-button",
+  "ytcp-notifications-button button",
+  "ytcp-notifications-button tp-yt-paper-icon-button",
+  "ytd-notification-topbar-button-renderer",
+  "ytd-notification-topbar-button-renderer button",
+  "ytd-notification-topbar-button-renderer #button",
+  "button[aria-label*='Notification' i]",
+  "button[aria-label*='Notifications' i]",
+  "tp-yt-paper-icon-button[aria-label*='Notifications' i]",
+  "ytcp-icon-button[aria-label*='Notifications' i]",
+  "[tooltip-label*='Notifications' i]",
+  "[aria-label*='Bildirim' i]"
+];
+const NOTIFICATION_SURFACE_SELECTORS = [
+  "ytd-multi-page-menu-renderer",
+  "ytd-notification-renderer",
+  "tp-yt-iron-dropdown",
+  "ytcp-notifications-dialog",
+  "ytcp-notification-menu"
+];
 const seen = new Set();
 let currentUrl = location.href;
 let lastNotificationOpenResult = null;
@@ -83,7 +109,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "scrape-studio-notifications") return false;
   const runtimeConfig = normalizeRuntimeConfig(message.runtimeConfig);
   scrapeStudioNotifications({
-    includeSeen: message.forcePost ? runtimeConfig.includeSeenOnManualScan : true,
+    includeSeen: Boolean(message.forcePost && runtimeConfig.includeSeenOnManualScan),
     runtimeConfig
   })
     .then(async ({ events, diagnostics }) => {
@@ -118,7 +144,7 @@ function collectNotificationEvents({ includeSeen = false, runtimeConfig = DEFAUL
   const config = normalizeRuntimeConfig(runtimeConfig);
   const channel = detectChannelName();
   const channelId = detectChannelId();
-  const candidates = queryAllDeep(NOTIFICATION_SELECTORS.join(","));
+  const candidates = queryAllDeep(selectorList(config.notificationSelectors, NOTIFICATION_SELECTORS).join(","));
   const pageText = currentPageText();
 
   const events = collectStudioPageStatusEvents(channel);
@@ -186,7 +212,7 @@ function collectNotificationEvents({ includeSeen = false, runtimeConfig = DEFAUL
 async function scrapeStudioNotifications({ includeSeen = false, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
   const config = normalizeRuntimeConfig(runtimeConfig);
   const before = collectNotificationEvents({ includeSeen, runtimeConfig: config });
-  const opened = await openNotificationMenu();
+  const opened = await openNotificationMenu(config);
   if (!opened) {
     const events = compactEvents(before);
     return {
@@ -224,9 +250,9 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
     channel: detectChannelName(),
     channelId: detectChannelId(),
     menuOpened,
-    notificationButtonFound: Boolean(findNotificationButton()),
+    notificationButtonFound: Boolean(findNotificationButton(config)),
     pageIdentity: detectPageIdentity(),
-    visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
+    visibleNotificationContainers: queryAllDeep(selectorList(config.notificationSelectors, NOTIFICATION_SELECTORS).join(",")).filter(isVisible).length,
     bodySnippetCount: bodySnippets.length,
     rawWindowCount: rawWindows.length,
     finishHintCount: countFinishHints(bodyText),
@@ -243,15 +269,16 @@ function scanDiagnostics({ menuOpened, before, after, events }, extra = {}) {
 }
 
 function studioTabStatus() {
+  const config = normalizeRuntimeConfig(DEFAULT_RUNTIME_CONFIG);
   const bodyText = currentPageText();
   const rawWindows = rawFinishTextWindows(bodyText);
   return {
     url: location.href,
     channel: detectChannelName(),
     channelId: detectChannelId(),
-    notificationButtonFound: Boolean(findNotificationButton()),
+    notificationButtonFound: Boolean(findNotificationButton(config)),
     pageIdentity: detectPageIdentity(),
-    visibleNotificationContainers: queryAllDeep(NOTIFICATION_SELECTORS.join(",")).filter(isVisible).length,
+    visibleNotificationContainers: queryAllDeep(selectorList(config.notificationSelectors, NOTIFICATION_SELECTORS).join(",")).filter(isVisible).length,
     bodySnippetCount: finishNotificationSnippets(bodyText).length,
     rawWindowCount: rawWindows.length,
     finishHintCount: countFinishHints(bodyText),
@@ -467,10 +494,11 @@ function collapseLongText(value) {
 }
 
 function currentPageText() {
-  return collapseLongText([
-    document.body?.innerText || "",
-    deepVisibleFinishText()
-  ].filter(Boolean).join(" "));
+  const deepText = deepVisibleFinishText();
+  const bodyText = String(document.body?.innerText || "").slice(0, 12000);
+  // Notification menus often live late in YouTube's shadow DOM. Put their
+  // focused text first so the global length cap cannot discard finish rows.
+  return collapseLongText([deepText, bodyText].filter(Boolean).join(" "));
 }
 
 function deepVisibleFinishText() {
@@ -531,9 +559,18 @@ function detectChannelName() {
 function detectChannelId() {
   const urlMatch = location.href.match(/\/channel\/(UC[A-Za-z0-9_-]{10,})/i);
   if (urlMatch?.[1]) return urlMatch[1];
-  const html = deepOuterHtml(document.body).slice(0, 200000);
-  const match = html.match(/(?:channelId|externalChannelId|browseId)["':\s]+(UC[A-Za-z0-9_-]{10,})/i);
-  return match?.[1] || "";
+  const direct = queryOneDeep(
+    "[data-channel-id*='UC'], [channel-id*='UC'], a[href*='/channel/UC'], meta[content*='UC']"
+  );
+  const directText = [
+    direct?.getAttribute?.("data-channel-id"),
+    direct?.getAttribute?.("channel-id"),
+    direct?.getAttribute?.("href"),
+    direct?.getAttribute?.("content")
+  ].filter(Boolean).join(" ");
+  const directMatch = directText.match(/(UC[A-Za-z0-9_-]{10,})/i);
+  if (directMatch?.[1]) return directMatch[1];
+  return findDeepChannelId(document.body || document.documentElement);
 }
 
 function cleanChannelLabel(value) {
@@ -545,19 +582,21 @@ function cleanChannelLabel(value) {
 }
 
 function findStudioVideoUrl(element) {
-  const html = deepOuterHtml(element).slice(0, 200000);
-  const match = html.match(/https:\/\/studio\.youtube\.com\/video\/[A-Za-z0-9_-]{6,}\/edit[^"'<\s]*/);
-  return match ? match[0] : "";
+  const link = queryOneDeep("a[href*='studio.youtube.com/video/']", element);
+  const href = link?.href || link?.getAttribute?.("href") || "";
+  const match = href.match(/https:\/\/studio\.youtube\.com\/video\/[A-Za-z0-9_-]{6,}\/edit[^"'<\s]*/);
+  return match?.[0] || "";
 }
 
-async function openNotificationMenu() {
-  const button = findNotificationButton();
+async function openNotificationMenu(runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
+  const config = normalizeRuntimeConfig(runtimeConfig);
+  const button = findNotificationButton(config);
   lastNotificationOpenResult = {
     foundButton: Boolean(button),
     buttonLabel: button ? notificationButtonLabel(button) : "",
     opened: false,
     attempts: 0,
-    surfaceVisible: notificationSurfaceVisible()
+    surfaceVisible: notificationSurfaceVisible(config)
   };
   if (!button) return false;
   if (lastNotificationOpenResult.surfaceVisible) {
@@ -571,37 +610,19 @@ async function openNotificationMenu() {
       clickLikeUser(button);
     }
     await delay(500 + attempt * 300);
-    lastNotificationOpenResult.surfaceVisible = notificationSurfaceVisible();
+    lastNotificationOpenResult.surfaceVisible = notificationSurfaceVisible(config);
     if (lastNotificationOpenResult.surfaceVisible || finishNotificationSnippets(currentPageText()).length) {
       lastNotificationOpenResult.opened = true;
       return true;
     }
   }
-  lastNotificationOpenResult.surfaceVisible = notificationSurfaceVisible();
+  lastNotificationOpenResult.surfaceVisible = notificationSurfaceVisible(config);
   lastNotificationOpenResult.opened = lastNotificationOpenResult.surfaceVisible;
   return lastNotificationOpenResult.opened;
 }
 
-function findNotificationButton() {
-  const selectors = [
-    "#notification-button",
-    "ytcp-notification-button",
-    "ytcp-notifications-button",
-    "ytcp-notifications-button button",
-    "ytcp-notifications-button tp-yt-paper-icon-button",
-    "ytd-notification-topbar-button-renderer",
-    "ytd-notification-topbar-button-renderer button",
-    "ytd-notification-topbar-button-renderer #button",
-    "button[aria-label*='Notification' i]",
-    "button[aria-label*='Notifications' i]",
-    "tp-yt-paper-icon-button[aria-label*='Notifications' i]",
-    "ytcp-icon-button[aria-label*='Notifications' i]",
-    "[tooltip-label*='Notifications' i]",
-    "button[aria-label*='notifications' i]",
-    "yt-icon-button[aria-label*='Notifications' i]",
-    "[aria-label*='Bildirim' i]",
-    "[aria-label*='Bildirimler' i]"
-  ];
+function findNotificationButton(runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
+  const selectors = selectorList(runtimeConfig.notificationButtonSelectors, NOTIFICATION_BUTTON_SELECTORS);
   for (const selector of selectors) {
     const element = queryOneDeep(selector);
     const clickable = findClickable(element);
@@ -640,24 +661,16 @@ async function collectWithScrolling({ includeSeen, runtimeConfig = DEFAULT_RUNTI
   const events = [];
   let scrolls = 0;
   for (let round = 0; round < config.scrollRounds; round += 1) {
-    scrolls += await scrollNotificationSurfaces(round);
+    scrolls += await scrollNotificationSurfaces(round, config);
     await delay(config.scrollDelayMs);
     events.push(...collectNotificationEvents({ includeSeen, runtimeConfig: config }));
   }
   return { scrolls, events: compactEvents(events) };
 }
 
-async function scrollNotificationSurfaces(round = 0) {
+async function scrollNotificationSurfaces(round = 0, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
   const surfaces = queryAllDeep(
-    [
-      "ytd-multi-page-menu-renderer",
-      "ytd-notification-renderer",
-      "tp-yt-iron-dropdown",
-      "ytcp-notifications-dialog",
-      "ytcp-notification-menu",
-      "[role='menu']",
-      "[role='dialog']"
-    ].join(",")
+    selectorList(runtimeConfig.notificationSurfaceSelectors, NOTIFICATION_SURFACE_SELECTORS).join(",")
   ).filter(isVisible);
   const containers = new Set();
   for (const surface of surfaces) {
@@ -693,17 +706,9 @@ function findClickable(element) {
   return inner || null;
 }
 
-function notificationSurfaceVisible() {
+function notificationSurfaceVisible(runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
   return queryAllDeep(
-    [
-      "ytd-multi-page-menu-renderer",
-      "ytd-notification-renderer",
-      "tp-yt-iron-dropdown",
-      "ytcp-notifications-dialog",
-      "ytcp-notification-menu",
-      "[role='menu']",
-      "[role='dialog']"
-    ].join(",")
+    selectorList(runtimeConfig.notificationSurfaceSelectors, NOTIFICATION_SURFACE_SELECTORS).join(",")
   ).some(isVisible);
 }
 
@@ -712,9 +717,12 @@ function clickLikeUser(element) {
     element.scrollIntoView?.({ block: "center", inline: "center" });
     element.focus?.();
   } catch {}
-  for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
-    element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+  const mouseOptions = { bubbles: true, cancelable: true, composed: true, view: window, button: 0 };
+  if (typeof PointerEvent === "function") {
+    element.dispatchEvent(new PointerEvent("pointerdown", { ...mouseOptions, pointerId: 1, pointerType: "mouse", isPrimary: true }));
   }
+  element.dispatchEvent(new MouseEvent("mousedown", mouseOptions));
+  element.dispatchEvent(new MouseEvent("mouseup", mouseOptions));
   element.click?.();
 }
 
@@ -793,14 +801,23 @@ function walkDeep(root) {
   return output;
 }
 
-function deepOuterHtml(root) {
-  const parts = [];
-  for (const node of walkDeep(root || document.body)) {
-    if (node?.nodeType === Node.ELEMENT_NODE) {
-      parts.push(node.outerHTML || node.textContent || "");
-    }
+function findDeepChannelId(root) {
+  let checked = 0;
+  for (const node of walkDeep(root)) {
+    if (node?.nodeType !== Node.ELEMENT_NODE) continue;
+    checked += 1;
+    if (checked > 5000) break;
+    const values = [
+      node.getAttribute?.("data-channel-id"),
+      node.getAttribute?.("channel-id"),
+      node.getAttribute?.("browse-id"),
+      node.getAttribute?.("href"),
+      node.getAttribute?.("content")
+    ].filter(Boolean).join(" ");
+    const match = values.match(/(UC[A-Za-z0-9_-]{10,})/i);
+    if (match?.[1]) return match[1];
   }
-  return parts.join(" ");
+  return "";
 }
 
 function delay(ms) {
@@ -820,9 +837,33 @@ function normalizeRuntimeConfig(value = {}) {
     scrollRounds: clampNumber(input.scrollRounds, 0, 8, DEFAULT_RUNTIME_CONFIG.scrollRounds),
     scrollDelayMs: clampNumber(input.scrollDelayMs, 150, 3000, DEFAULT_RUNTIME_CONFIG.scrollDelayMs),
     includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
+    notificationSelectors: mergeSelectorList(input.notificationSelectors, 48),
+    notificationButtonSelectors: mergeSelectorList(input.notificationButtonSelectors, 48),
+    notificationSurfaceSelectors: mergeSelectorList(input.notificationSurfaceSelectors, 32),
     finishPhrases: mergeRuntimePhrases(DEFAULT_RUNTIME_CONFIG.finishPhrases, input.finishPhrases, 80),
     ignorePhrases: mergeRuntimePhrases(DEFAULT_RUNTIME_CONFIG.ignorePhrases, input.ignorePhrases, 100)
   };
+}
+
+function mergeSelectorList(value, maxItems) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value
+    .map((item) => String(item || "").trim())
+    .filter((item) => item.length >= 2 && item.length <= 180)
+    .filter((item) => !/[{};<>]/.test(item))))
+    .slice(0, maxItems);
+}
+
+function selectorList(configured, fallback) {
+  const candidates = Array.isArray(configured) && configured.length ? configured : fallback;
+  return candidates.filter((selector) => {
+    try {
+      document.createDocumentFragment().querySelector(selector);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function mergeRuntimePhrases(required, custom, maxItems) {

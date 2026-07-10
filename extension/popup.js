@@ -400,11 +400,14 @@ function renderWatcherButtons(watcherTabs, openStudioUrls, connectorConfig) {
   }
   count.textContent = `${watcherTabs.length} configured`;
   watcherTabs.forEach((target) => {
+    const configured = Boolean(target?.url);
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `watcher-button ${isWatcherOpen(target, openStudioUrls) ? "open" : ""}`;
-    button.innerHTML = `<span>${escapeHtml(target.label || "Studio")}</span><em>${isWatcherOpen(target, openStudioUrls) ? "open" : "not open"}</em>`;
+    button.className = `watcher-button ${isWatcherOpen(target, openStudioUrls) ? "open" : ""} ${configured ? "" : "unconfigured"}`;
+    button.disabled = !configured;
+    button.innerHTML = `<span>${escapeHtml(target.label || "Studio")}</span><em>${configured ? (isWatcherOpen(target, openStudioUrls) ? "open" : "not open") : "needs channel ID"}</em>`;
     button.addEventListener("click", async () => {
+      if (!configured) return;
       await openWatcherTargets([target], `Opening ${target.label || "Studio"} watcher tab...`);
     });
     container.appendChild(button);

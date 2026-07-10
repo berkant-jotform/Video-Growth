@@ -313,6 +313,16 @@ button + button,
   color: #16794a;
 }
 
+.watcher-button.unconfigured {
+  background: #fff7e8;
+  border-color: #ead5ad;
+  opacity: 1;
+}
+
+.watcher-button.unconfigured em {
+  color: #7a510f;
+}
+
 .mini-warning {
   background: #fff7e8;
   border: 1px solid #ead5ad;

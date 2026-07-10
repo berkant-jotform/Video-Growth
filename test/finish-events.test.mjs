@@ -10,6 +10,7 @@ import {
   matchFinishEventToRun,
   parseWatcherTabs,
   parseStudioNotification,
+  resolveWatcherTabsFromRuns,
   suggestFinishEventMatches
 } from "../lib/finish-events.mjs";
 import { inspectWorkbookSheets, parseSheetRecords } from "../lib/domain.mjs";
@@ -23,6 +24,41 @@ test("parses Studio notification video IDs and no-clear outcome", () => {
   assert.equal(event.videoId, "abc123XYZ_9");
   assert.equal(event.detectedOutcome, "no_clear");
   assert.equal(event.channel, "Jotform");
+});
+
+test("keeps named watcher channels before their Studio IDs are configured", () => {
+  const watchers = parseWatcherTabs([
+    { label: "Jotform", target: "UCabcdefghijk" },
+    { label: "Apps", target: "" }
+  ]);
+  assert.deepEqual(watchers, [
+    { label: "Jotform", url: "https://studio.youtube.com/channel/UCabcdefghijk" },
+    { label: "Apps", url: "" }
+  ]);
+  assert.deepEqual(parseWatcherTabs("Apps |\nSign | UCabcdefghijkl"), [
+    { label: "Apps", url: "" },
+    { label: "Sign", url: "https://studio.youtube.com/channel/UCabcdefghijkl" }
+  ]);
+});
+
+test("deduplicates watcher URLs that point to the same Studio channel", () => {
+  const watchers = parseWatcherTabs([
+    { label: "Jotform", url: "https://studio.youtube.com/channel/UCh04CepWeaJT7wJUIgnmzJQ" },
+    { label: "", url: "https://studio.youtube.com/channel/UCh04CepWeaJT7wJUIgnmzJQ/videos/upload?filter=all" }
+  ]);
+  assert.equal(watchers.length, 1);
+  assert.equal(watchers[0].label, "Jotform");
+});
+
+test("resolves a named watcher from scanned YouTube channel metadata", () => {
+  const watchers = resolveWatcherTabsFromRuns(
+    [{ label: "Apps", url: "" }, { label: "Jotform", url: "https://studio.youtube.com/channel/UCsavedchannel" }],
+    [{ channel: "Jotform Apps", youtubeChannelId: "UCappsmetadata" }]
+  );
+  assert.deepEqual(watchers, [
+    { label: "Apps", url: "https://studio.youtube.com/channel/UCappsmetadata", resolvedFrom: "youtube_metadata" },
+    { label: "Jotform", url: "https://studio.youtube.com/channel/UCsavedchannel", resolvedFrom: "saved" }
+  ]);
 });
 
 test("extracts multiple current Studio A/B notifications from a bell panel", () => {

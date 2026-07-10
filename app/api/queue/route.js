@@ -9,11 +9,9 @@ import {
   summarizeQueue
 } from "@/lib/repository.js";
 import { explainUnmatchedFinishEvent, suggestFinishEventMatches } from "@/lib/finish-events.mjs";
-import { findYouTubeVideoCandidates } from "@/lib/youtube.js";
 import { errorJson, json } from "@/lib/http.js";
 
 export const runtime = "nodejs";
-const YOUTUBE_LOOKUP_LIMIT_PER_QUEUE_LOAD = 12;
 
 export async function GET() {
   try {
@@ -26,7 +24,7 @@ export async function GET() {
       listFinishSignalMatchCandidates()
     ]);
     const channelLogos = await loadConfiguredChannelLogos(config);
-    const unregisteredRuns = await buildUnregisteredRuns(unmatchedEvents, matchCandidates, config);
+    const unregisteredRuns = buildUnregisteredRuns(unmatchedEvents, matchCandidates);
     const runsWithLogos = applyChannelLogoFallbacks([...runs, ...unregisteredRuns], channelLogos);
     return json({
       ok: true,
@@ -40,25 +38,10 @@ export async function GET() {
   }
 }
 
-async function buildUnregisteredRuns(events, matchCandidates, config) {
-  let lookupCount = 0;
-  return Promise.all(events.map(async (event) => {
-    const shouldLookup = !event.videoId && event.videoTitle && lookupCount < YOUTUBE_LOOKUP_LIMIT_PER_QUEUE_LOAD;
-    if (shouldLookup) lookupCount += 1;
-    const youtubeCandidates = shouldLookup ? await findEventYouTubeCandidates(event, config) : [];
-    return finishEventToUnregisteredRun(event, matchCandidates, youtubeCandidates);
-  }));
-}
-
-async function findEventYouTubeCandidates(event, config) {
-  if (event.videoId || !event.videoTitle || !config.youtubeApiKey) return [];
-  return findYouTubeVideoCandidates({
-    title: event.videoTitle,
-    channel: event.channel,
-    channelId: event.channelId,
-    apiKey: config.youtubeApiKey,
-    limit: 2
-  }).catch(() => []);
+function buildUnregisteredRuns(events, matchCandidates) {
+  return events.map((event) =>
+    finishEventToUnregisteredRun(event, matchCandidates, event.youtubeCandidates || [])
+  );
 }
 
 function finishEventToUnregisteredRun(event, matchCandidates = [], youtubeCandidates = []) {

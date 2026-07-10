@@ -8,21 +8,30 @@ export default function HistoryPage({ session }) {
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => load(), 200);
-    return () => clearTimeout(timer);
+    const controller = new AbortController();
+    const timer = setTimeout(() => load(controller.signal), 200);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [search]);
 
-  async function load() {
+  async function load(signal) {
     setError("");
-    const response = await fetch(`/api/history?q=${encodeURIComponent(search)}`);
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "History failed.");
-      return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/history?q=${encodeURIComponent(search)}`, { signal });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "History failed.");
+      setItems(payload.items || []);
+    } catch (requestError) {
+      if (requestError.name !== "AbortError") setError(requestError.message || "Could not load history.");
+    } finally {
+      if (!signal?.aborted) setLoading(false);
     }
-    setItems(payload.items || []);
   }
 
   return (
@@ -58,10 +67,14 @@ export default function HistoryPage({ session }) {
                 <strong>{labelAction(item.action.action)}</strong>
                 <span>{item.action.actorName}</span>
                 <span>{formatDateTime(item.action.createdAt)}</span>
+                {item.studioUrl ? <a href={item.studioUrl} target="_blank" rel="noreferrer">Open Studio</a> : null}
               </div>
             </article>
           ))}
-          {!items.length ? <div className="empty-state">No completed actions yet.</div> : null}
+          {loading ? <div className="empty-state">Loading completed actions...</div> : null}
+          {!loading && !items.length ? (
+            <div className="empty-state">{search ? "No completed actions match this search." : "No completed actions yet."}</div>
+          ) : null}
         </section>
       </main>
     </AppShell>

@@ -1,24 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Clipboard, Download, ExternalLink, KeyRound, Plus, Save, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Clipboard, Download, ExternalLink, KeyRound, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
-import { defaultExtensionRuntimeConfigJson } from "@/lib/extension-runtime-config.mjs";
+import {
+  DEFAULT_EXTENSION_RUNTIME_CONFIG,
+  defaultExtensionRuntimeConfigJson,
+  normalizeExtensionRuntimeConfig
+} from "@/lib/extension-runtime-config.mjs";
 
 const DEFAULT_WATCHER_ROWS = [
   { label: "Jotform", target: "" },
   { label: "AI Agents Podcast", target: "" },
   { label: "AI Agents", target: "" }
 ];
-const QUICK_WATCHER_CHANNELS = ["Apps", "Sign", "Boards", "PDF Editor", "Workflow", "Noupe"];
+const QUICK_WATCHER_CHANNELS = ["Apps", "Sign", "Boards", "PDF Editor", "Workflow"];
 
 export default function ExtensionPage({ session }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({});
   const [watcherDraftRows, setWatcherDraftRows] = useState(DEFAULT_WATCHER_ROWS);
-  const [generatedToken, setGeneratedToken] = useState("");
+  const [deviceTokens, setDeviceTokens] = useState([]);
+  const [deviceLabel, setDeviceLabel] = useState(`${session?.actorName || "Reviewer"} Chrome`);
+  const [generatedToken, setGeneratedToken] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     load();
@@ -26,58 +34,145 @@ export default function ExtensionPage({ session }) {
 
   async function load() {
     setError("");
-    const response = await fetch("/api/config");
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Could not load extension settings.");
-      return;
+    try {
+      const [configResponse, tokenResponse] = await Promise.all([
+        fetch("/api/config", { cache: "no-store" }),
+        fetch("/api/connector/tokens", { cache: "no-store" })
+      ]);
+      const configPayload = await configResponse.json().catch(() => ({}));
+      const tokenPayload = await tokenResponse.json().catch(() => ({}));
+      if (!configResponse.ok || !configPayload.ok) {
+        throw new Error(configPayload.error || "Could not load extension settings.");
+      }
+      if (!tokenResponse.ok || !tokenPayload.ok) {
+        throw new Error(tokenPayload.error || "Could not load browser connections.");
+      }
+      setConfig(configPayload.config);
+      const values = configPayload.config.values || {};
+      setForm(values);
+      setWatcherDraftRows(
+        Array.isArray(configPayload.config.resolvedWatcherTabs) && configPayload.config.resolvedWatcherTabs.length
+          ? configPayload.config.resolvedWatcherTabs.map((item) => ({ label: item.label || "", target: item.url || "" }))
+          : parseWatcherRows(values.CONNECTOR_WATCHER_TABS || "")
+      );
+      setDeviceTokens(tokenPayload.tokens || []);
+    } catch (loadError) {
+      setError(loadError.message || "Could not load extension setup.");
+    } finally {
+      setLoading(false);
     }
-    setConfig(payload.config);
-    const values = payload.config.values || {};
-    setForm(values);
-    setWatcherDraftRows(parseWatcherRows(values.CONNECTOR_WATCHER_TABS || ""));
   }
 
   async function save(nextForm = form, successMessage = "Extension settings saved.") {
     setMessage("");
     setError("");
-    const response = await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(nextForm)
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      setError(payload.error || "Could not save extension settings.");
+    setBusy(true);
+    try {
+      const response = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextForm)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save extension settings.");
+      setConfig(payload.config);
+      setForm(payload.config.values || {});
+      setMessage(successMessage);
+      return true;
+    } catch (saveError) {
+      setError(saveError.message || "Could not save extension settings.");
       return false;
+    } finally {
+      setBusy(false);
     }
-    setConfig(payload.config);
-    setForm(payload.config.values || {});
-    setMessage(successMessage);
-    return true;
   }
 
-  async function generateSaveAndCopyToken() {
-    const token = generateConnectorToken();
-    const next = { ...form, CONNECTOR_TOKEN: token };
-    setGeneratedToken(token);
-    setForm(next);
-    const saved = await save(next, "New extension token saved. Paste it into the Chrome extension.");
-    if (saved) await copyText(token, "Token copied.");
+  async function createBrowserConnection() {
+    const label = deviceLabel.trim();
+    if (!label) {
+      setError("Name this browser, for example BG work Chrome.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await fetch("/api/connector/tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not create browser connection.");
+      setGeneratedToken(payload.token);
+      let copied = false;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(payload.token.token);
+          copied = true;
+        }
+      } catch {}
+      setMessage(
+        copied
+          ? "Browser connection created and token copied. Paste it into the extension Settings now; it will not be shown again after leaving this page."
+          : "Browser connection created. Copy the visible token now; it will not be shown again after leaving this page."
+      );
+      const tokenResponse = await fetch("/api/connector/tokens", { cache: "no-store" });
+      const tokenPayload = await tokenResponse.json().catch(() => ({}));
+      if (tokenResponse.ok && tokenPayload.ok) setDeviceTokens(tokenPayload.tokens || []);
+    } catch (createError) {
+      setError(createError.message || "Could not create browser connection.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeBrowserConnection(tokenId) {
+    setBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await fetch("/api/connector/tokens", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not disconnect browser.");
+      setDeviceTokens((current) => current.map((item) => item.tokenId === tokenId ? { ...item, active: false, revokedAt: new Date().toISOString() } : item));
+      setMessage("Browser connection revoked. Other browsers remain connected.");
+    } catch (revokeError) {
+      setError(revokeError.message || "Could not disconnect browser.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyToClipboard(value, successMessage) {
+    setError("");
+    setMessage("");
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable in this browser.");
+      await navigator.clipboard.writeText(value);
+      setMessage(successMessage);
+    } catch (copyError) {
+      setError(copyError.message || "Could not copy to the clipboard.");
+    }
   }
 
   const appUrl = typeof window === "undefined" ? "https://video-growth.vercel.app" : window.location.origin;
   const connectorStatus = config?.connectorStatus || [];
   const activeStatus = connectorStatus.find((item) => item.active) || connectorStatus[0] || null;
-  const connectorToken = form.CONNECTOR_TOKEN || "";
-  const usableToken = generatedToken || (connectorToken && connectorToken !== "********" ? connectorToken : "");
+  const usableToken = generatedToken?.token || "";
   const channels = form.CONNECTOR_CHANNELS || "Jotform, AI Agents Podcast, AI Agents";
   const watcherTabs = serializeWatcherRows(watcherDraftRows);
   const runtimeConfigJson = form.EXTENSION_RUNTIME_CONFIG_JSON || defaultExtensionRuntimeConfigJson();
+  const runtimeConfig = runtimeConfigFromJson(runtimeConfigJson);
+  const runtimePreset = runtimeConfig.deepScanFallbackEnabled || runtimeConfig.scrollRounds >= 5 ? "thorough" : "balanced";
   const openUrls = connectorStatus.flatMap((item) => item?.payload?.studioTabUrls || []).filter(Boolean);
   const copyValues = [
     `App URL: ${appUrl}`,
-    `Extension token: ${usableToken || "Generate a new token first"}`,
+    `Extension token: ${usableToken || "Create a browser connection first"}`,
     `Channels: ${channels}`,
     `Studio watchers:\n${watcherTabs || "Add watcher rows in this page"}`
   ].join("\n");
@@ -92,21 +187,44 @@ export default function ExtensionPage({ session }) {
     if (announce) setMessage(announce);
   }
 
+  function updateRuntimeConfig(patch) {
+    const next = normalizeExtensionRuntimeConfig({ ...runtimeConfig, ...patch });
+    setForm((current) => ({
+      ...current,
+      EXTENSION_RUNTIME_CONFIG_JSON: JSON.stringify(next, null, 2)
+    }));
+  }
+
+  function applyRuntimePreset(preset) {
+    updateRuntimeConfig(
+      preset === "thorough"
+        ? { waitForRowsMs: 7000, scrollRounds: 5, scrollDelayMs: 750, maxEvents: 100, deepScanFallbackEnabled: true }
+        : { waitForRowsMs: 4500, scrollRounds: 3, scrollDelayMs: 650, maxEvents: 60, deepScanFallbackEnabled: false }
+    );
+    setMessage(preset === "thorough" ? "Thorough detection selected. Scans may take a few seconds longer." : "Balanced detection selected.");
+    setError("");
+  }
+
   async function saveExtensionSetup() {
-    const missingTargets = watcherDraftRows.filter((row) => String(row.label || row.target || "").trim() && !String(row.target || "").trim());
-    if (missingTargets.length) {
+    const namedRows = watcherDraftRows.filter((row) => String(row.label || row.target || "").trim());
+    const duplicateLabels = duplicateWatcherLabels(namedRows);
+    if (duplicateLabels.length) {
       setMessage("");
-      setError(
-        `${missingTargets.length} watcher ${missingTargets.length === 1 ? "row needs" : "rows need"} a Studio URL or UC channel ID before it can be opened.`
-      );
+      setError(`Remove duplicate watcher ${duplicateLabels.length === 1 ? "channel" : "channels"}: ${duplicateLabels.join(", ")}.`);
       return;
     }
     const next = {
       ...form,
-      CONNECTOR_WATCHER_TABS: serializeWatcherRows(watcherDraftRows),
-      CONNECTOR_CHANNELS: mergeConnectorChannels(form.CONNECTOR_CHANNELS || channels, watcherDraftRows)
+      CONNECTOR_WATCHER_TABS: serializeWatcherRows(namedRows),
+      CONNECTOR_CHANNELS: mergeConnectorChannels(form.CONNECTOR_CHANNELS || channels, namedRows)
     };
-    const saved = await save(next, "Extension setup saved. Open the extension popup and click Open missing watcher tabs.");
+    const unresolved = namedRows.filter((row) => !String(row.target || "").trim()).length;
+    const saved = await save(
+      next,
+      unresolved
+        ? `Saved ${namedRows.length} watcher channels. The app will auto-detect ${unresolved} missing channel ${unresolved === 1 ? "ID" : "IDs"} from scanned YouTube metadata when possible.`
+        : `Saved ${namedRows.length} watcher channels. Open the extension popup and click Open missing watcher tabs.`
+    );
     if (saved) setWatcherDraftRows(parseWatcherRows(next.CONNECTOR_WATCHER_TABS || ""));
   }
 
@@ -133,7 +251,7 @@ export default function ExtensionPage({ session }) {
             />
             <StatusTile
               label="Latest version"
-              value={config?.latestExtensionVersion || "0.2.2"}
+              value={config?.latestExtensionVersion || "Unknown"}
               tone="neutral"
             />
             <StatusTile
@@ -144,48 +262,76 @@ export default function ExtensionPage({ session }) {
           </div>
         </section>
 
+        {loading ? <p className="settings-message full-width" role="status">Loading extension setup...</p> : null}
+        {error ? <p className="form-error full-width" role="alert">{error}</p> : null}
+        {message ? <p className="form-success full-width" role="status">{message}</p> : null}
+
         <section className="settings-panel extension-token-panel">
-          <p className="eyebrow">1. Token</p>
-          <h2>Generate and save token</h2>
+          <p className="eyebrow">1. Browser connection</p>
+          <h2>Connect this Chrome profile</h2>
           <p className="muted">
-            Use one shared extension token for the team. If the saved token is hidden as ********, generate a new one when setting up a new browser.
+            Create a separate connection for each teammate or Chrome profile. You can revoke one browser without disconnecting everyone else.
           </p>
           <label className="setting-field">
             <span>
-              Extension token
-              <em>{sourceLabel(config?.sources?.CONNECTOR_TOKEN)}</em>
+              Browser name
+              <em>{deviceTokens.filter((item) => item.active).length} active</em>
             </span>
             <input
-              type="password"
-              value={connectorToken}
-              placeholder="Click Generate, Save, Copy"
-              onChange={(event) => {
-                setGeneratedToken(event.target.value);
-                setForm((current) => ({ ...current, CONNECTOR_TOKEN: event.target.value }));
-              }}
+              value={deviceLabel}
+              placeholder="BG work Chrome"
+              onChange={(event) => setDeviceLabel(event.target.value)}
             />
           </label>
           {generatedToken ? (
             <div className="extension-token-reveal">
-              <strong>New token ready</strong>
-              <code>{generatedToken}</code>
+              <strong>Token copied. Paste it into the extension Settings.</strong>
+              <code>{generatedToken.token}</code>
             </div>
           ) : null}
           <div className="install-actions compact">
-            <button type="button" className="primary-button" onClick={generateSaveAndCopyToken}>
+            <button type="button" className="primary-button" onClick={createBrowserConnection} disabled={busy}>
               <KeyRound size={16} />
-              Generate, Save, Copy
+              Create and Copy Token
             </button>
             <button
               type="button"
               className="secondary-button"
-              disabled={!usableToken}
-              onClick={() => copyText(usableToken, "Token copied.")}
+              disabled={!usableToken || busy}
+              onClick={() => copyToClipboard(usableToken, "Token copied.")}
             >
               <Clipboard size={16} />
               Copy Token
             </button>
           </div>
+          {deviceTokens.length ? (
+            <div className="extension-device-list">
+              {deviceTokens.map((item) => (
+                <div className={`extension-device-row ${item.active ? "" : "revoked"}`} key={item.tokenId}>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <small>
+                      {item.active
+                        ? item.lastUsedAt ? `Last used ${formatDateTime(item.lastUsedAt)}` : "Created; not used yet"
+                        : "Disconnected"}
+                    </small>
+                  </div>
+                  {item.active ? (
+                    <button
+                      type="button"
+                      className="mini-remove-button"
+                      disabled={busy}
+                      onClick={() => revokeBrowserConnection(item.tokenId)}
+                      aria-label={`Disconnect ${item.label}`}
+                    >
+                      <Trash2 size={14} />
+                      Disconnect
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         <section className="settings-panel extension-token-panel">
@@ -201,7 +347,7 @@ export default function ExtensionPage({ session }) {
               <Download size={16} />
               Download Extension Zip
             </a>
-            <button type="button" className="secondary-button" onClick={() => copyText(copyValues, "Extension values copied.")}>
+            <button type="button" className="secondary-button" onClick={() => copyToClipboard(copyValues, "Extension setup values copied.")}>
               <Clipboard size={16} />
               Copy Setup Values
             </button>
@@ -211,7 +357,7 @@ export default function ExtensionPage({ session }) {
         <section className="settings-panel full-width">
           <p className="eyebrow">3. Watch channels</p>
           <h2>Studio watcher tabs</h2>
-          <p className="muted">Add the channels the extension should keep open. Use a YouTube channel ID or direct Studio channel URL so the friendly channel name is backed by a stable ID.</p>
+          <p className="muted">Add a channel name first. Paste its Studio channel URL or UC channel ID when available; rows without an ID are saved but clearly marked as not ready to open.</p>
           <WatcherRows
             rows={watcherDraftRows}
             openUrls={openUrls}
@@ -230,7 +376,7 @@ export default function ExtensionPage({ session }) {
             />
           </label>
           <div className="install-actions compact">
-            <button type="button" className="primary-button" onClick={saveExtensionSetup}>
+            <button type="button" className="primary-button" onClick={saveExtensionSetup} disabled={busy}>
               <Save size={16} />
               Save Extension Setup
             </button>
@@ -243,27 +389,73 @@ export default function ExtensionPage({ session }) {
 
         <section className="settings-panel full-width">
           <p className="eyebrow">4. Detection rules</p>
-          <h2>Runtime rules from the app</h2>
+          <h2>Detection reliability</h2>
           <p className="muted">
-            These rules are pulled by the extension before scans. Tune phrases, delays, scroll depth, and limits here without rebuilding the extension.
+            Changes are pulled by installed extensions automatically. Updating these settings does not require a new extension zip.
           </p>
           {config?.extensionRuntimeConfigError ? (
             <div className="settings-message error">
               Saved runtime rules could not be parsed. Safe defaults are being used until you save valid JSON.
             </div>
           ) : null}
-          <label className="setting-field">
-            <span>
-              Runtime config JSON
-              <em>{sourceLabel(config?.sources?.EXTENSION_RUNTIME_CONFIG_JSON)}</em>
-            </span>
-            <textarea
-              value={runtimeConfigJson}
-              rows={16}
-              spellCheck={false}
-              onChange={(event) => setForm((current) => ({ ...current, EXTENSION_RUNTIME_CONFIG_JSON: event.target.value }))}
-            />
-          </label>
+          <div className="runtime-preset-grid" role="group" aria-label="Detection depth">
+            <button
+              type="button"
+              className={`runtime-preset-button ${runtimePreset === "balanced" ? "active" : ""}`}
+              onClick={() => applyRuntimePreset("balanced")}
+            >
+              <strong>Balanced</strong>
+              <span>Best for normal daily checks</span>
+            </button>
+            <button
+              type="button"
+              className={`runtime-preset-button ${runtimePreset === "thorough" ? "active" : ""}`}
+              onClick={() => applyRuntimePreset("thorough")}
+            >
+              <strong>Thorough</strong>
+              <span>Waits longer and checks more notification rows</span>
+            </button>
+          </div>
+          <div className="runtime-toggle-list">
+            <label className="runtime-toggle-row">
+              <input
+                type="checkbox"
+                checked={runtimeConfig.openYoutubeFallback}
+                onChange={(event) => updateRuntimeConfig({ openYoutubeFallback: event.target.checked })}
+              />
+              <span>
+                <strong>Recover missing YouTube notification surfaces</strong>
+                <small>Allow the extension to reuse or open YouTube only when a bell surface cannot be found.</small>
+              </span>
+            </label>
+            <label className="runtime-toggle-row">
+              <input
+                type="checkbox"
+                checked={runtimeConfig.includeSeenOnManualScan}
+                onChange={(event) => updateRuntimeConfig({ includeSeenOnManualScan: event.target.checked })}
+              />
+              <span>
+                <strong>Recheck previously seen notifications on manual scans</strong>
+                <small>Safe duplicate protection remains active; this helps rematch older signals after sheet changes.</small>
+              </span>
+            </label>
+          </div>
+          <details className="runtime-advanced-details">
+            <summary>Advanced detection rules</summary>
+            <p className="muted">For troubleshooting only. Invalid or unsafe values are rejected and safe defaults remain active.</p>
+            <label className="setting-field">
+              <span>
+                Runtime config JSON
+                <em>{sourceLabel(config?.sources?.EXTENSION_RUNTIME_CONFIG_JSON)}</em>
+              </span>
+              <textarea
+                value={runtimeConfigJson}
+                rows={16}
+                spellCheck={false}
+                onChange={(event) => setForm((current) => ({ ...current, EXTENSION_RUNTIME_CONFIG_JSON: event.target.value }))}
+              />
+            </label>
+          </details>
           <div className="install-actions compact">
             <button type="button" className="primary-button" onClick={() => save()}>
               <Save size={16} />
@@ -310,8 +502,6 @@ export default function ExtensionPage({ session }) {
           </div>
         </section>
 
-        {error ? <p className="form-error full-width">{error}</p> : null}
-        {message ? <p className="form-success full-width">{message}</p> : null}
       </main>
     </AppShell>
   );
@@ -385,11 +575,6 @@ function WatcherRows({ rows, openUrls, quickChannels = [], onChange }) {
   );
 }
 
-async function copyText(value, fallbackMessage) {
-  await navigator.clipboard?.writeText(value);
-  return fallbackMessage;
-}
-
 function sourceLabel(source) {
   if (source === "app") return "Saved in app";
   if (source === "env") return "From env";
@@ -414,7 +599,31 @@ function parseWatcherRows(value) {
     }
     return { label: "", target: line };
   });
-  return rows.length ? rows : DEFAULT_WATCHER_ROWS;
+  return rows.length ? dedupeWatcherRows(rows) : DEFAULT_WATCHER_ROWS;
+}
+
+function dedupeWatcherRows(rows) {
+  const result = [];
+  const indexByTarget = new Map();
+  for (const row of rows) {
+    const key = watcherRowTargetKey(row.target);
+    if (!key || !indexByTarget.has(key)) {
+      if (key) indexByTarget.set(key, result.length);
+      result.push(row);
+      continue;
+    }
+    const existingIndex = indexByTarget.get(key);
+    if (!result[existingIndex].label && row.label) result[existingIndex] = row;
+  }
+  return result;
+}
+
+function watcherRowTargetKey(value) {
+  const target = String(value || "").trim();
+  if (!target) return "";
+  const channelId = target.match(/(UC[A-Za-z0-9_-]{10,})/i)?.[1];
+  if (channelId) return channelId.toLowerCase();
+  return target.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
 }
 
 function serializeWatcherRows(rows) {
@@ -422,11 +631,24 @@ function serializeWatcherRows(rows) {
     .map((row) => {
       const label = String(row.label || "").trim();
       const target = String(row.target || "").trim();
-      if (!target) return "";
+      if (!label && !target) return "";
       return label ? `${label} | ${target}` : target;
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function duplicateWatcherLabels(rows) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const row of rows) {
+    const label = String(row.label || "").trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) duplicates.add(label);
+    seen.add(key);
+  }
+  return Array.from(duplicates);
 }
 
 function mergeConnectorChannels(value, rows = []) {
@@ -442,7 +664,7 @@ function mergeConnectorChannels(value, rows = []) {
 
 function watcherStatus(row, openUrls) {
   const target = String(row?.target || "").trim();
-  if (!target) return { state: "missing", label: "Missing URL/ID" };
+  if (!target) return { state: "missing", label: "Auto-detect ID" };
   return isWatcherOpen(row, openUrls)
     ? { state: "open", label: "Watching" }
     : { state: "closed", label: "Open tab needed" };
@@ -466,15 +688,17 @@ function sameText(left, right) {
   return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
 }
 
-function generateConnectorToken() {
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return `ytab_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
-
 function formatDateTime(value) {
   return new Date(value).toLocaleString([], {
     dateStyle: "medium",
     timeStyle: "short"
   });
+}
+
+function runtimeConfigFromJson(value) {
+  try {
+    return normalizeExtensionRuntimeConfig(JSON.parse(value));
+  } catch {
+    return normalizeExtensionRuntimeConfig(DEFAULT_EXTENSION_RUNTIME_CONFIG);
+  }
 }

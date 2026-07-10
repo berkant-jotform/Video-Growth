@@ -29,7 +29,7 @@ open_app_browser() {
 }
 
 is_app_healthy() {
-  curl -fsS "$URL/api/status" 2>/dev/null | grep -q '"app": "YouTube A-B Tests"'
+  curl -fsS "$URL/api/status" 2>/dev/null | grep -Eq '"app"[[:space:]]*:[[:space:]]*"YouTube A/B Tests"'
 }
 
 is_port_busy() {

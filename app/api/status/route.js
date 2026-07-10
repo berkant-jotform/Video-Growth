@@ -3,7 +3,8 @@ import { getConnectorStatus, lastScanRun, lastSuccessfulScanRun } from "@/lib/re
 import { getAppConfig } from "@/lib/config.js";
 import { readSession } from "@/lib/auth.js";
 import { json } from "@/lib/http.js";
-import { LATEST_EXTENSION_VERSION } from "@/lib/app-version.js";
+import { APP_VERSION, LATEST_EXTENSION_VERSION } from "@/lib/app-version.js";
+import { hasActiveConnectorDeviceTokens } from "@/lib/connector-tokens.js";
 
 export const runtime = "nodejs";
 
@@ -22,16 +23,17 @@ export async function GET() {
   let databaseError = "";
   if (databaseConfigured()) {
     try {
-      const [scan, successfulScan, status, config] = await Promise.all([
+      const [scan, successfulScan, status, config, deviceTokensConfigured] = await Promise.all([
         lastScanRun(),
         lastSuccessfulScanRun(),
         getConnectorStatus(),
-        getAppConfig()
+        getAppConfig(),
+        hasActiveConnectorDeviceTokens()
       ]);
       lastScan = scan;
       lastSuccessfulScan = successfulScan;
       connectorStatus = status;
-      connectorConfigured = Boolean(config.connectorToken);
+      connectorConfigured = Boolean(config.connectorToken || deviceTokensConfigured);
       connector = {
         configured: connectorConfigured,
         channels: config.connectorChannels,
@@ -46,7 +48,7 @@ export async function GET() {
   return json({
     ok: true,
     app: "YouTube A/B Tests",
-    version: "3.0.0",
+    version: APP_VERSION,
     authenticated: Boolean(session),
     actorName: session?.actorName || "",
     configured: {

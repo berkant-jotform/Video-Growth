@@ -11,8 +11,8 @@
         <h1>YouTube A/B Tests Connector</h1>
         <span id="versionBadge" class="version-badge">v...</span>
       </div>
-      <p>Connect this Chrome profile to the cloud detector. The extension only reads visible YouTube Studio notification text.</p>
-      <p class="hint">Add or remove watcher channels in the website Settings page. After saving here, open the extension popup to choose which channel watcher tabs to open.</p>
+      <p>Connect this Chrome profile to the cloud detector. The extension only reads visible YouTube and Studio notification text.</p>
+      <p class="hint">Create a browser connection on the website Extension page, paste its token below, then save and check. Watched channels are managed on the website.</p>
       <label>
         Cloud app URL
         <input id="appUrl" placeholder="https://video-growth.vercel.app" />
@@ -25,13 +25,9 @@
         Reviewer initials
         <input id="actorName" placeholder="BG" />
       </label>
-      <label>
-        Monitored channels
-        <textarea id="channels" rows="4">Jotform, AI Agents Podcast, AI Agents</textarea>
-      </label>
       <div class="actions">
-        <button id="save">Save</button>
-        <button id="heartbeat" type="button">Send heartbeat</button>
+        <button id="save">Save and Check</button>
+        <button id="heartbeat" type="button">Check Connection</button>
       </div>
       <p id="status" class="status"></p>
     </main>

@@ -1,22 +1,25 @@
-const EXTENSION_VERSION = "0.2.2";
+const EXTENSION_VERSION = "0.3.1";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
-const APP_BRIDGE_MATCHES = ["https://*.vercel.app/*", "http://127.0.0.1:8770/*"];
+const APP_BRIDGE_MATCHES = ["https://video-growth.vercel.app/*", "http://127.0.0.1:8770/*"];
 const PENDING_EVENT_QUEUE_KEY = "pendingConnectorEvents";
 const RECENT_EVENT_KEYS_KEY = "recentConnectorEventKeys";
 const MAX_PENDING_EVENTS = 200;
 const RECENT_EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RUNTIME_CONFIG_STORAGE_KEY = "extensionRuntimeConfig";
 const DEFAULT_RUNTIME_CONFIG = {
-  version: "2026-07-09.2",
+  version: "2026-07-10.1",
   waitAfterOpenMs: 1200,
   waitForRowsMs: 4500,
   scrollRounds: 3,
   scrollDelayMs: 650,
   scanOrder: "youtube_first",
-  openYoutubeFallback: false,
+  openYoutubeFallback: true,
   deepScanFallbackEnabled: false,
   includeSeenOnManualScan: true,
+  notificationSelectors: [],
+  notificationButtonSelectors: [],
+  notificationSurfaceSelectors: [],
   minTextLength: 18,
   maxTextLength: 700,
   maxEvents: 60,
@@ -664,7 +667,7 @@ async function injectAppBridgeIntoAppTabs() {
 
 function isAppBridgeUrl(url) {
   const value = String(url || "");
-  return /^https:\/\/[^/]+\.vercel\.app(?:\/|$)/i.test(value) ||
+  return /^https:\/\/video-growth\.vercel\.app(?:\/|$)/i.test(value) ||
     /^http:\/\/127\.0\.0\.1:8770(?:\/|$)/i.test(value);
 }
 
@@ -729,7 +732,7 @@ async function postEvents(events, tabUrl, options = {}) {
 }
 
 async function sendEventsBatch(settings, events, tabUrl, options = {}) {
-  const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/events`, {
+  const response = await fetchWithTimeout(`${cleanAppUrl(settings.appUrl)}/api/connector/events`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -745,7 +748,7 @@ async function sendEventsBatch(settings, events, tabUrl, options = {}) {
       testTypeScope: options.testTypeScope || "all",
       events
     })
-  });
+  }, 20_000);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Connector event post failed: ${response.status}`);
   return { response, payload };
@@ -869,9 +872,23 @@ async function openWatcherTabs(requestedTargets = [], options = {}) {
   requireConfigured(settings);
   const config = await fetchConnectorConfig(settings);
   const watcherTabs = requestedTargets.length ? requestedTargets : config.watcherTabs || [];
-  const targets = watcherTabs.length
-    ? watcherTabs
-    : [{ label: "YouTube Studio", url: "https://studio.youtube.com" }];
+  const unconfigured = watcherTabs.filter((target) => !target?.url);
+  const targets = watcherTabs.filter((target) => target?.url);
+  if (!targets.length) {
+    const heartbeat = await sendHeartbeat().catch((error) => ({ ok: false, error: error.message }));
+    return {
+      ok: false,
+      error: watcherTabs.length
+        ? "Watcher channels are saved, but none has a Studio URL or UC channel ID yet. Add one on the website Extension page."
+        : "No watcher channels are configured. Add one on the website Extension page.",
+      opened: [],
+      alreadyOpen: 0,
+      totalTargets: 0,
+      unconfigured: unconfigured.length,
+      heartbeat,
+      scan: null
+    };
+  }
   const openStudioUrls = (await chrome.tabs.query({ url: "https://studio.youtube.com/*" }))
     .map((tab) => tab.url || "")
     .filter(Boolean);
@@ -900,6 +917,7 @@ async function openWatcherTabs(requestedTargets = [], options = {}) {
     opened,
     alreadyOpen: targets.length - targetsToOpen.length,
     totalTargets: targets.length,
+    unconfigured: unconfigured.length,
     heartbeat,
     scan
   };
@@ -963,11 +981,11 @@ async function reportMissedNotification() {
 }
 
 async function fetchConnectorConfig(settings) {
-  const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/config`, {
+  const response = await fetchWithTimeout(`${cleanAppUrl(settings.appUrl)}/api/connector/config`, {
     headers: {
       "Authorization": `Bearer ${settings.connectorToken}`
     }
-  });
+  }, 15_000);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Connector config failed: ${response.status}`);
   await chrome.storage.local.set({
@@ -1036,6 +1054,13 @@ async function deepScanActiveVideos(options = {}) {
 async function sendHeartbeat(extraPayload = {}) {
   const settings = await getSettings();
   requireConfigured(settings);
+  const remoteConfig = await fetchConnectorConfig(settings).catch(() => null);
+  const reportedChannels = Array.isArray(remoteConfig?.channels) && remoteConfig.channels.length
+    ? remoteConfig.channels
+    : splitChannels(settings.channels);
+  if (remoteConfig?.channels?.length) {
+    await chrome.storage.sync.set({ channels: remoteConfig.channels.join(", ") }).catch(() => {});
+  }
   const pendingFlush = await flushPendingEvents(settings).catch((error) => ({ ok: false, error: error.message }));
   const appBridge = await injectAppBridgeIntoAppTabs().catch(async (error) => {
     const payload = {
@@ -1093,7 +1118,7 @@ async function sendHeartbeat(extraPayload = {}) {
     ...extraPayload,
     lastStudioScan
   };
-  const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/heartbeat`, {
+  const response = await fetchWithTimeout(`${cleanAppUrl(settings.appUrl)}/api/connector/heartbeat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1103,11 +1128,11 @@ async function sendHeartbeat(extraPayload = {}) {
       connectorId: settings.connectorId,
       actorName: settings.actorName,
       version: EXTENSION_VERSION,
-      channels: splitChannels(settings.channels),
+      channels: reportedChannels,
       status: "online",
       ...heartbeatPayload
     })
-  });
+  }, 20_000);
   const responsePayload = await response.json().catch(() => ({}));
   await chrome.storage.local.set({
     lastHeartbeatAt: new Date().toISOString(),
@@ -1254,11 +1279,11 @@ async function runtimeConfigForScan() {
 }
 
 async function fetchRuntimeConfig(settings) {
-  const response = await fetch(`${cleanAppUrl(settings.appUrl)}/api/connector/runtime-config`, {
+  const response = await fetchWithTimeout(`${cleanAppUrl(settings.appUrl)}/api/connector/runtime-config`, {
     headers: {
       "Authorization": `Bearer ${settings.connectorToken}`
     }
-  });
+  }, 15_000);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Runtime config failed: ${response.status}`);
   return payload;
@@ -1285,9 +1310,21 @@ function normalizeRuntimeConfig(value = {}) {
     openYoutubeFallback: input.openYoutubeFallback === true,
     deepScanFallbackEnabled: input.deepScanFallbackEnabled === true,
     includeSeenOnManualScan: input.includeSeenOnManualScan !== false,
+    notificationSelectors: mergeRuntimeSelectors(input.notificationSelectors, 48),
+    notificationButtonSelectors: mergeRuntimeSelectors(input.notificationButtonSelectors, 48),
+    notificationSurfaceSelectors: mergeRuntimeSelectors(input.notificationSurfaceSelectors, 32),
     finishPhrases: mergeRuntimePhrases(DEFAULT_RUNTIME_CONFIG.finishPhrases, input.finishPhrases, 80),
     ignorePhrases: mergeRuntimePhrases(DEFAULT_RUNTIME_CONFIG.ignorePhrases, input.ignorePhrases, 100)
   };
+}
+
+function mergeRuntimeSelectors(value, maxItems) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value
+    .map((item) => String(item || "").trim())
+    .filter((item) => item.length >= 2 && item.length <= 180)
+    .filter((item) => !/[{};<>]/.test(item))))
+    .slice(0, maxItems);
 }
 
 function mergeRuntimePhrases(required, custom, maxItems) {
@@ -1398,4 +1435,17 @@ function minutesUntilNextHour() {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
