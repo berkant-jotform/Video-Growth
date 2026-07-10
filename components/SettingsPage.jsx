@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, CheckCircle2, Clipboard, Database, ExternalLink, Save, Settings2, ShieldCheck, Undo2, Youtube } from "lucide-react";
+import { Bell, CheckCircle2, Clipboard, Database, ExternalLink, EyeOff, Save, Settings2, ShieldCheck, TableProperties, Undo2, Youtube } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
+import { EXCLUDED_SHEET_TABS_KEY, parseExcludedSheetTabs, sourceTabKey, stringifyExcludedSheetTabs } from "@/lib/source-tabs.mjs";
 
 const DELETE_SECRET_VALUE = "__DELETE_SECRET__";
 
@@ -79,6 +80,7 @@ export default function SettingsPage({ session }) {
   const [config, setConfig] = useState(null);
   const [form, setForm] = useState({});
   const [savedForm, setSavedForm] = useState({});
+  const [sourceTabs, setSourceTabs] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -102,13 +104,18 @@ export default function SettingsPage({ session }) {
   async function load() {
     setError("");
     try {
-      const response = await fetch("/api/config", { cache: "no-store" });
+      const [response, statusResponse] = await Promise.all([
+        fetch("/api/config", { cache: "no-store" }),
+        fetch("/api/status", { cache: "no-store" })
+      ]);
       const payload = await response.json().catch(() => ({}));
+      const statusPayload = await statusResponse.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not load settings.");
       const values = payload.config.values || {};
       setConfig(payload.config);
       setForm(values);
       setSavedForm(values);
+      setSourceTabs(statusPayload.lastSuccessfulScan?.progress?.counts?.sheetTabs || []);
     } catch (loadError) {
       setError(loadError.message || "Could not load settings.");
     }
@@ -204,6 +211,11 @@ export default function SettingsPage({ session }) {
                 />
               ))}
             </fieldset>
+            <SourceTabManager
+              tabs={sourceTabs}
+              excludedJson={form[EXCLUDED_SHEET_TABS_KEY] || "[]"}
+              onChange={(value) => setForm((current) => ({ ...current, [EXCLUDED_SHEET_TABS_KEY]: value }))}
+            />
             <details className="settings-fieldset optional-settings">
               <summary>
                 <span>
@@ -357,6 +369,79 @@ export default function SettingsPage({ session }) {
       </main>
     </AppShell>
   );
+}
+
+function SourceTabManager({ tabs, excludedJson, onChange }) {
+  const configured = safeExcludedTabs(excludedJson);
+  const configuredKeys = new Set(configured.map((item) => sourceTabKey(item.sourceKind, item.sheetName)));
+  const visibleTabs = tabs.filter((tab) => tab.hasContent);
+
+  function toggle(tab) {
+    const key = sourceTabKey(tab.sourceKind, tab.title);
+    const next = configuredKeys.has(key)
+      ? configured.filter((item) => sourceTabKey(item.sourceKind, item.sheetName) !== key)
+      : [...configured, { sourceKind: tab.sourceKind, sheetName: tab.title }];
+    onChange(stringifyExcludedSheetTabs(next));
+  }
+
+  return (
+    <section className="source-tab-manager">
+      <div className="source-tab-manager-heading">
+        <span className="panel-icon"><TableProperties size={18} /></span>
+        <div>
+          <strong>Included sheet tabs</strong>
+          <p>Exclude notes, inventories, archives, or report tabs that are not real A/B test sources.</p>
+        </div>
+      </div>
+      {visibleTabs.length ? (
+        <div className="source-tab-list">
+          {visibleTabs.map((tab) => {
+            const configuredExcluded = configuredKeys.has(sourceTabKey(tab.sourceKind, tab.title));
+            const systemExcluded = tab.exclusionSource === "system";
+            const excluded = configuredExcluded || systemExcluded;
+            return (
+              <label className={`source-tab-row ${excluded ? "excluded" : ""}`} key={`${tab.sourceKind}:${tab.title}`}>
+                <input
+                  type="checkbox"
+                  checked={!excluded}
+                  disabled={systemExcluded}
+                  onChange={() => toggle(tab)}
+                />
+                <span>
+                  <strong>{tab.title}</strong>
+                  <em>{tab.sourceKind === "thumbnail" ? "Thumbnail sheet" : "Title sheet"}</em>
+                </span>
+                <small>
+                  {systemExcluded
+                    ? `Automatically excluded · ${tab.exclusionReason}`
+                    : configuredExcluded
+                      ? "Excluded from future scans"
+                      : tab.recognized
+                        ? "Included as A/B data"
+                        : tab.likelyTestData
+                          ? "Included, but headers need attention"
+                          : "Included auxiliary tab"}
+                </small>
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="settings-next-action">
+          <EyeOff size={18} />
+          <span>Run one Full refresh to discover tabs. They will appear here for inclusion control.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function safeExcludedTabs(value) {
+  try {
+    return parseExcludedSheetTabs(value);
+  } catch {
+    return [];
+  }
 }
 
 function SettingsSectionHeading({ number, title, description, ready, optional = false }) {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, History, LogOut, Moon, Puzzle, Settings, Sun, Upload, Youtube } from "lucide-react";
+import { Bell, History, ListChecks, LogOut, Moon, Puzzle, Settings, Sun, Upload, Youtube } from "lucide-react";
 
 const THEME_STORAGE_KEY = "youtube-ab-tests-theme";
 
@@ -11,6 +11,7 @@ export default function AppShell({ session, active, children }) {
   const [theme, setTheme] = useState("dark");
   const nav = [
     { href: "/", label: "Detector", key: "detector", icon: Youtube },
+    { href: "/review", label: "Review", key: "review", icon: ListChecks },
     { href: "/history", label: "History", key: "history", icon: History },
     { href: "/uploads", label: "Uploads", key: "uploads", icon: Upload },
     { href: "/extension", label: "Extension", key: "extension", icon: Puzzle },

@@ -992,6 +992,7 @@ function Summary({ summary }) {
   const items = [
     ["Conflicts", summary?.actionConflict || 0],
     ["Confirmed", summary?.confirmedFinished || summary?.newlyFinished || 0],
+    ["App Managed", summary?.appManagedRuns || 0],
     ["Unregistered", summary?.unregisteredSignals || 0],
     ["Observed", summary?.appliedChangeObserved || 0],
     ["Manual Check", summary?.pastDueCheck || 0],
@@ -1654,6 +1655,7 @@ function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSavin
           </div>
           <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
           <p>{outcomeLabel(run)}</p>
+          {isAppManagedRun(run) ? <span className="badge app-managed">App managed</span> : null}
           {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
           {run.unregistered && run.signalResolution?.bestSuggestion ? (
             <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span>
@@ -1818,6 +1820,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
       <CardVisual run={run} result={result} />
       <h4>{run.videoTitle || run.currentYoutubeTitle || run.videoId || "Untitled video"}</h4>
       <p className="outcome compact">{outcomeLabel(run)}</p>
+      {isAppManagedRun(run) ? <span className="badge app-managed">App managed</span> : null}
       {run.unregistered ? <span className="badge warning">Not in A/B sheet</span> : null}
       {run.unregistered && run.signalResolution?.bestSuggestion ? (
         <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span>
@@ -1945,7 +1948,7 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen, onAcceptMatch, quick
       </a>
       <div className="detail-grid">
         <Info label="Video ID" value={run.videoId || "Missing"} />
-        <Info label="Source row" value={run.unregistered ? "Not registered in A/B sheet" : `${run.sheetName} row ${run.rowNumber}`} />
+        <Info label="Source row" value={run.unregistered ? "Not registered in A/B sheet" : isAppManagedRun(run) ? "App registry · sheet independent" : `${run.sheetName} row ${run.rowNumber}`} />
         {run.duplicateCount ? <Info label="Merged copies" value={`${run.duplicateCount + 1} equivalent sheet rows`} /> : null}
         <Info label="Signal" value={signalSourceLabel(run)} />
         <Info label="Test lasted" value={testDurationLabel(run)} />
@@ -2402,6 +2405,7 @@ function tokenOverlap(a, b) {
 
 function outcomeLabel(run) {
   if (run.unregistered) return "Studio says this test finished, but no matching row exists in the configured A/B sheet.";
+  if (isAppManagedRun(run)) return "Studio confirmed this test finished. The app is tracking it independently and will link a sheet row later if one appears.";
   if (run.queueStatus === "action_conflict") return `Tool says ${run.latestAction}; sheet now says ${sheetResultText(run)}. Resolve before closing.`;
   if (run.queueStatus === "confirmed_finished") {
     if (run.finishEventSource === "studio_bell") return "Studio notification confirmed this test finished";
@@ -2416,6 +2420,10 @@ function outcomeLabel(run) {
   if (run.status === "sheet_marked_done") return "Marked done in sheet";
   if (run.status === "missing_data") return "Missing source data";
   return run.winnerReason || titleCase(run.status);
+}
+
+function isAppManagedRun(run) {
+  return run?.sourceKind === "app_registry";
 }
 
 function cardResult(run) {
@@ -2685,16 +2693,22 @@ function buildConnectorCoverage({ connectorConfig, connectorStatus, runs, select
     const channelStatus = activeStatuses.find((item) =>
       (item.channels || []).some((candidate) => sameChannel(candidate, channel))
     );
+    const latestChannelStatus = connectorStatus.find((item) =>
+      (item.channels || []).some((candidate) => sameChannel(candidate, channel)) ||
+      (item.payload?.studioTabs || []).some((tab) => sameChannel(tab.channel, channel))
+    );
     const hasHeartbeat = Boolean(channelStatus);
-    const scanFresh = isFreshExtensionScan(channelStatus?.payload?.lastStudioScan?.checkedAt);
+    const lastCheckedAt = channelStatus?.payload?.lastStudioScan?.checkedAt || latestChannelStatus?.payload?.lastStudioScan?.checkedAt || latestChannelStatus?.lastSeenAt || "";
+    const checkedAgo = relativeAgeShort(lastCheckedAt);
+    const scanFresh = isFreshExtensionScan(lastCheckedAt);
     if (hasOpenWatcher) {
-      if (!scanFresh) return { channel, state: "heartbeat", label: "Scan stale" };
-      return { channel, state: "watching", label: "Watching" };
+      if (!scanFresh) return { channel, state: "heartbeat", label: `Scan stale${checkedAgo ? ` · ${checkedAgo}` : ""}`, lastCheckedAt };
+      return { channel, state: "watching", label: `Watching${checkedAgo ? ` · ${checkedAgo}` : ""}`, lastCheckedAt };
     }
     if (hasHeartbeat) {
-      return { channel, state: "heartbeat", label: "Open Studio tab needed" };
+      return { channel, state: "heartbeat", label: `Open Studio tab needed${checkedAgo ? ` · ${checkedAgo}` : ""}`, lastCheckedAt };
     }
-    return { channel, state: "missing", label: "Extension not connected" };
+    return { channel, state: "missing", label: latestChannelStatus ? `Stale${checkedAgo ? ` · ${checkedAgo}` : ""}` : "Extension not connected", lastCheckedAt };
   });
 
   const watching = statuses.filter((item) => item.state === "watching").length;
@@ -2757,6 +2771,18 @@ function isFreshExtensionScan(value) {
   const time = new Date(value).valueOf();
   if (!Number.isFinite(time)) return false;
   return Date.now() - time < 2 * 60 * 60 * 1000;
+}
+
+function relativeAgeShort(value) {
+  if (!value) return "";
+  const time = new Date(value).valueOf();
+  if (!Number.isFinite(time)) return "";
+  const minutes = Math.max(0, Math.floor((Date.now() - time) / 60000));
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function coverageChannelNames({ connectorConfig, runs, selectedChannel, selectedChannels = [] }) {
