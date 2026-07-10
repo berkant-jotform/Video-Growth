@@ -10,6 +10,34 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const session = await readSession();
+  if (!session) {
+    return json(
+      {
+        ok: true,
+        app: "YouTube A/B Tests",
+        version: APP_VERSION,
+        authenticated: false,
+        actorName: "",
+        configured: {
+          database: databaseConfigured(),
+          databaseUrlPresent: databaseConfigured(),
+          sharedPassword: Boolean(process.env.APP_SHARED_PASSWORD_HASH),
+          connector: false
+        },
+        databaseError: "",
+        lastScan: null,
+        lastSuccessfulScan: null,
+        connector: {
+          configured: false,
+          channels: [],
+          watcherTabs: [],
+          latestExtensionVersion: LATEST_EXTENSION_VERSION
+        },
+        connectorStatus: []
+      },
+      { headers: { "Cache-Control": "private, no-store" } }
+    );
+  }
   let lastScan = null;
   let lastSuccessfulScan = null;
   let connectorStatus = [];
@@ -62,5 +90,5 @@ export async function GET() {
     lastSuccessfulScan,
     connector,
     connectorStatus
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }
