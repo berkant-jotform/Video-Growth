@@ -25,16 +25,16 @@ export async function POST(request) {
         note: body.note || "",
         metadata: { source: "unregistered_finish_signal", testRunId }
       });
-      return json({ ok: true, test: { testRunId, latestAction: action, resolution } });
+      return json({ ok: true, test: { testRunId, latestAction: action, resolution }, resolutionId: resolution.resolutionId });
     }
-    const test = await completeTestRun({
+    const result = await completeTestRun({
       testRunId,
       action,
       actorName: session.actorName,
       note: body.note || "",
       retestConfirmed: Boolean(body.retestConfirmed)
     });
-    return json({ ok: true, test });
+    return json({ ok: true, test: result.test, actionId: result.actionId, duplicate: result.duplicate });
   } catch (error) {
     return errorJson(error);
   }

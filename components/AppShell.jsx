@@ -3,16 +3,18 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, History, ListChecks, LogOut, Moon, Puzzle, Settings, Sun, Upload, Youtube } from "lucide-react";
+import { Bell, ChevronDown, History, ListChecks, LogOut, Moon, Puzzle, Settings, SlidersHorizontal, Sun, Upload, Youtube } from "lucide-react";
 
 const THEME_STORAGE_KEY = "youtube-ab-tests-theme";
 
 export default function AppShell({ session, active, children }) {
   const [theme, setTheme] = useState("dark");
-  const nav = [
+  const primaryNav = [
     { href: "/", label: "Detector", key: "detector", icon: Youtube },
     { href: "/review", label: "Review", key: "review", icon: ListChecks },
-    { href: "/history", label: "History", key: "history", icon: History },
+    { href: "/history", label: "History", key: "history", icon: History }
+  ];
+  const manageNav = [
     { href: "/uploads", label: "Uploads", key: "uploads", icon: Upload },
     { href: "/extension", label: "Extension", key: "extension", icon: Puzzle },
     { href: "/notifications", label: "Notifications", key: "notifications", icon: Bell },
@@ -83,8 +85,8 @@ export default function AppShell({ session, active, children }) {
           <span className="user-chip">{session?.actorName || "Reviewer"}</span>
         </div>
       </header>
-      <nav className="nav-tabs">
-        {nav.map((item) => {
+      <nav className="nav-tabs primary-nav-tabs">
+        {primaryNav.map((item) => {
           const Icon = item.icon;
           return (
             <Link
@@ -97,10 +99,35 @@ export default function AppShell({ session, active, children }) {
             </Link>
           );
         })}
+        <details className={`manage-nav ${manageNav.some((item) => item.key === active) ? "active" : ""}`}>
+          <summary className="nav-tab">
+            <SlidersHorizontal size={16} />
+            Manage
+            <ChevronDown size={14} />
+          </summary>
+          <div className="manage-nav-menu">
+            {manageNav.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link className={active === item.key ? "manage-nav-item active" : "manage-nav-item"} href={item.href} key={item.key}>
+                  <Icon size={16} />
+                  <span><strong>{item.label}</strong><small>{manageDescription(item.key)}</small></span>
+                </Link>
+              );
+            })}
+          </div>
+        </details>
       </nav>
       {children}
     </div>
   );
+}
+
+function manageDescription(key) {
+  if (key === "uploads") return "Thumbnail workbooks";
+  if (key === "extension") return "Studio detection";
+  if (key === "notifications") return "Team alerts";
+  return "Data sources and admin";
 }
 
 function applyTheme(theme) {

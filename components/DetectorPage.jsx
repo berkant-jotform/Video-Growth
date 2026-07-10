@@ -18,6 +18,7 @@ import {
 import AppShell from "@/components/AppShell.jsx";
 import { CHANNEL_PRIORITY, canonicalChannelName, compareChannels } from "@/lib/channels.mjs";
 import { isActionableQueueStatus } from "@/lib/queue-status.mjs";
+import { runFinishCheckWorkflow } from "@/lib/finish-check-workflow.mjs";
 
 const SECTION_ORDER = [
   "action_conflict",
@@ -68,6 +69,8 @@ const OPENED_STUDIO_STORAGE_KEY = "youtube-ab-opened-studio-runs";
 const COLLAPSED_CHANNELS_STORAGE_KEY = "youtube-ab-collapsed-channels";
 const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
+const SCAN_CHANNELS_STORAGE_KEY = "youtube-ab-scan-channels";
+const SCAN_TYPE_STORAGE_KEY = "youtube-ab-scan-type";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -103,6 +106,8 @@ export default function DetectorPage({ session }) {
   const [openedStudioRuns, setOpenedStudioRuns] = useState(() => new Set());
   const [collapsedChannels, setCollapsedChannels] = useState(() => new Set());
   const [extensionRequest, setExtensionRequest] = useState({ status: "idle", message: "" });
+  const [checkOperation, setCheckOperation] = useState(null);
+  const [undoAction, setUndoAction] = useState(null);
   const [extensionBridge, setExtensionBridge] = useState({
     status: "checking",
     version: "",
@@ -200,6 +205,33 @@ export default function DetectorPage({ session }) {
 
   useEffect(() => {
     try {
+      const storedChannels = JSON.parse(window.localStorage.getItem(SCAN_CHANNELS_STORAGE_KEY) || "[]");
+      const storedType = window.localStorage.getItem(SCAN_TYPE_STORAGE_KEY);
+      if (Array.isArray(storedChannels)) setScanChannels(storedChannels.filter(Boolean));
+      if (["all", "title", "thumbnail"].includes(storedType)) setScanType(storedType);
+    } catch {
+      setScanChannels([]);
+      setScanType("all");
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SCAN_CHANNELS_STORAGE_KEY, JSON.stringify(scanChannels));
+      window.localStorage.setItem(SCAN_TYPE_STORAGE_KEY, scanType);
+    } catch {
+      // Scan scope is a personal convenience only.
+    }
+  }, [scanChannels, scanType]);
+
+  useEffect(() => {
+    if (!undoAction) return undefined;
+    const timer = window.setTimeout(() => setUndoAction(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [undoAction]);
+
+  useEffect(() => {
+    try {
       window.localStorage.removeItem(OPENED_STUDIO_STORAGE_KEY);
       const stored = window.sessionStorage.getItem(OPENED_STUDIO_STORAGE_KEY);
       if (stored) setOpenedStudioRuns(new Set(JSON.parse(stored)));
@@ -284,6 +316,16 @@ export default function DetectorPage({ session }) {
     });
   }
 
+  async function checkForFinishedTests() {
+    if (scanning || checkOperation?.running) return;
+    setError("");
+    await runFinishCheckWorkflow({
+      checkSignals: () => sendExtensionCommand("check-studio-now", { quiet: true }),
+      refreshQueue: scanNow,
+      onStage: setCheckOperation
+    });
+  }
+
   async function fullRefresh() {
     return runScanRequest({
       channel: "all",
@@ -354,23 +396,28 @@ export default function DetectorPage({ session }) {
       }
       notifyBrowser("YouTube A/B Tests", `${payload.summary.total} items need attention.`);
       await refresh();
+      return { ok: true, payload };
     } catch (err) {
       setError(err.message);
       setLastScan(previousLastScan);
       await pollScanStatus();
+      return { ok: false, error: err.message || "Scan failed." };
     } finally {
       setScanning(false);
     }
   }
 
-  async function sendExtensionCommand(type) {
-    setExtensionRequest({ status: "running", message: extensionCommandLoadingText(type) });
+  async function sendExtensionCommand(type, { quiet = false } = {}) {
+    if (!quiet) setExtensionRequest({ status: "running", message: extensionCommandLoadingText(type) });
     try {
       const scopeChannels = type === "check-studio-now" ? scanChannels : [];
       if (type === "check-studio-now" && scopeChannels.length === 1) {
         setViewChannel(scopeChannels[0]);
       }
-      const response = await requestExtension(type, { payload: { channels: scopeChannels, testType: scanType } });
+      const response = await requestExtension(type, {
+        timeoutMs: quiet ? 3500 : 12000,
+        payload: { channels: scopeChannels, testType: scanType }
+      });
       if (!response?.ok) throw new Error(response?.error || "Extension did not complete the request.");
       setExtensionBridge((current) => ({
         status: "ready",
@@ -387,10 +434,11 @@ export default function DetectorPage({ session }) {
             : "Miss report sent with the latest scan diagnostics.";
       setExtensionRequest({ status: "ok", message });
       window.setTimeout(() => refresh(), 800);
+      return { ok: true, response, message };
     } catch (err) {
       if (isExtensionContextInvalidated(err.message)) {
         recoverInvalidatedExtensionContext();
-        return;
+        return { ok: false, error: err.message || "Extension was updated or reloaded." };
       }
       if (isBridgeOfflineMessage(err.message)) {
         setExtensionBridge({
@@ -412,6 +460,7 @@ export default function DetectorPage({ session }) {
           message: err.message || "Extension request failed."
         });
       }
+      return { ok: false, error: err.message || "Extension request failed." };
     }
   }
 
@@ -576,11 +625,35 @@ export default function DetectorPage({ session }) {
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save action.");
+      if (payload.actionId || payload.resolutionId) {
+        setUndoAction({ actionId: payload.actionId || "", resolutionId: payload.resolutionId || "", run, action, label: actionLabel(action) });
+      }
       await refresh();
     } catch (err) {
       setError(err.message);
     } finally {
       setQuickSaving("");
+    }
+  }
+
+  async function undoCompletedAction() {
+    if (!undoAction?.actionId && !undoAction?.resolutionId) return;
+    const current = undoAction;
+    setUndoAction((value) => value ? { ...value, busy: true } : value);
+    try {
+      const response = await fetch("/api/actions/undo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actionId: current.actionId, resolutionId: current.resolutionId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not undo action.");
+      setUndoAction(null);
+      setNotice(`${current.label} was undone. The test is back in the queue.`);
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Could not undo action.");
+      setUndoAction(null);
     }
   }
 
@@ -656,8 +729,8 @@ export default function DetectorPage({ session }) {
   return (
     <AppShell session={session} active="detector">
       <main className="workspace detector-workspace">
-        <section className="hero-row">
-          <div>
+        <section className="hero-row detector-command-hero">
+          <div className="detector-heading">
             <p className="eyebrow">Shared team queue</p>
             <h2>Real finish tracker</h2>
             <p className="muted">
@@ -681,117 +754,59 @@ export default function DetectorPage({ session }) {
               </button>
             </div>
           </div>
-          <div className="scan-scope-panel">
-            <div className="scan-command-grid">
-              <div className="scan-scope-fields">
-                <div className="scan-channel-control">
-                  <span className="filter-label">Scan channels</span>
-                  <div className="scan-channel-chips" aria-label="Scan channels">
-                    {primaryScanChannels.map((item) => {
-                      const active = item === "all" ? scanChannels.length === 0 : scanChannels.includes(item);
-                      return (
-                        <button
-                          key={item}
-                          type="button"
-                          className={active ? "active" : ""}
-                          style={scanChipStyle(item)}
-                          onClick={() => toggleScanChannel(item)}
-                        >
-                          {item === "all" ? "All channels" : item}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="scan-channel-meta">
-                    <span>{scanChannels.length ? `${scanChannels.length} selected` : "All configured channels"}</span>
-                    {extraScanChannels.length ? (
-                      <details className="more-scan-channels">
-                        <summary>More channels</summary>
-                        <div className="scan-channel-chips compact" aria-label="More scan channels">
-                          {extraScanChannels.map((item) => {
-                            const active = scanChannels.includes(item);
-                            return (
-                              <button
-                                key={item}
-                                type="button"
-                                className={active ? "active" : ""}
-                                style={scanChipStyle(item)}
-                                onClick={() => toggleScanChannel(item)}
-                              >
-                                {item}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </details>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="filter-control scan-type-control">
-                  <span className="filter-label">Scan type</span>
-                  <div className="segmented" aria-label="Scan type">
-                    {["all", "title", "thumbnail"].map((item) => (
-                      <button
-                        key={item}
-                        className={scanType === item ? "active" : ""}
-                        onClick={() => setScanType(item)}
-                        type="button"
-                      >
-                        {item === "all" ? "All" : titleCase(item)}
+          <div className="scan-scope-panel daily-check-panel">
+            <div className="daily-check-heading">
+              <div>
+                <span className="eyebrow">Daily command</span>
+                <h3>Check for finished tests</h3>
+              </div>
+              <span className="scope-summary">{scanScopeSummary(scanChannels, scanType)}</span>
+            </div>
+            <div className="scan-scope-fields compact-scope-fields">
+              <div className="scan-channel-control">
+                <span className="filter-label">Channels</span>
+                <div className="scan-channel-chips" aria-label="Scan channels">
+                  {primaryScanChannels.map((item) => {
+                    const active = item === "all" ? scanChannels.length === 0 : scanChannels.includes(item);
+                    return (
+                      <button key={item} type="button" className={active ? "active" : ""} style={scanChipStyle(item)} onClick={() => toggleScanChannel(item)}>
+                        {item === "all" ? "All" : item}
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
+                </div>
+                {extraScanChannels.length ? (
+                  <details className="more-scan-channels">
+                    <summary>More channels</summary>
+                    <div className="scan-channel-chips compact" aria-label="More scan channels">
+                      {extraScanChannels.map((item) => (
+                        <button key={item} type="button" className={scanChannels.includes(item) ? "active" : ""} style={scanChipStyle(item)} onClick={() => toggleScanChannel(item)}>{item}</button>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
+              </div>
+              <div className="filter-control scan-type-control">
+                <span className="filter-label">Test type</span>
+                <div className="segmented" aria-label="Scan type">
+                  {["all", "title", "thumbnail"].map((item) => (
+                    <button key={item} className={scanType === item ? "active" : ""} onClick={() => setScanType(item)} type="button">{item === "all" ? "All" : titleCase(item)}</button>
+                  ))}
                 </div>
               </div>
-              <ExtensionQuickCheck
-                request={extensionRequest}
-                bridge={extensionBridge}
-                extensionActive={connectorStatus.some((item) => item.active)}
-                onCheck={() => sendExtensionCommand("check-studio-now")}
-                onOpenNotifications={() => sendExtensionCommand("open-notification-page")}
-                onPasteMiss={() => setMissedTextModalOpen(true)}
-              />
             </div>
-            <div className="scan-action-row">
-              <button className="primary-button scan-button" onClick={scanNow} disabled={scanning}>
-                <RefreshCw size={18} className={scanning ? "spin" : ""} />
-                {scanning ? "Scanning" : scanButtonLabel(scanChannels, scanType, "Scan selected")}
-              </button>
-              <button className="secondary-button full-refresh-button" onClick={fullRefresh} disabled={scanning}>
-                <RefreshCw size={17} />
-                Full refresh
-              </button>
-              <label className="refresh-thumb-toggle">
-                <input
-                  type="checkbox"
-                  checked={refreshThumbnails}
-                  onChange={(event) => setRefreshThumbnails(event.target.checked)}
-                />
-                Rebuild thumbnail previews
-              </label>
-            </div>
-            <p className="scan-scope-help">
-              Selected scan is scoped. Full refresh scans all sheets and reconciles missing rows. Thumbnail rebuild is slower and only needed when previews look stale.
-            </p>
-            <ExtensionScanReceipt connectorStatus={connectorStatus} compact />
+            <button className="primary-button primary-check-button" onClick={checkForFinishedTests} disabled={scanning || checkOperation?.running}>
+              <BellRing size={19} className={scanning || checkOperation?.running ? "spin" : ""} />
+              {scanning || checkOperation?.running ? "Checking for finished tests" : "Check for finished tests"}
+            </button>
+            <p className="scan-scope-help">Checks Studio signals first, then always refreshes the selected Sheets and YouTube data.</p>
+            {checkOperation ? <UnifiedCheckStatus operation={checkOperation} /> : null}
           </div>
         </section>
 
-        <ConnectorCoveragePanel
-          connectorConfig={connectorConfig}
-          connectorStatus={connectorStatus}
-          runs={runs}
-          selectedChannels={scanChannels}
-        />
+        {scanning ? <ScanProgress scan={lastScan} lastSuccessfulScan={lastSuccessfulScan} progress={scanProgress} scanning /> : null}
 
-        <ScanProgress
-          scan={lastScan}
-          lastSuccessfulScan={lastSuccessfulScan}
-          progress={scanProgress}
-          scanning={scanning}
-        />
-
-        <Summary summary={summary} />
+        <Summary summary={summary} runs={runs} />
 
         <section className="filters">
           <label>
@@ -896,6 +911,36 @@ export default function DetectorPage({ session }) {
           </div>
         </section>
 
+        <details className="detector-operations-drawer">
+          <summary>
+            <span><InfoIcon size={17} /><strong>Scan health and advanced tools</strong></span>
+            <small>{connectorSummary(connectorStatus)} · Last update {lastSuccessfulScan?.completedAt ? formatDateTime(lastSuccessfulScan.completedAt) : "never"}</small>
+          </summary>
+          <div className="detector-operations-content">
+            <div className="advanced-scan-actions">
+              <button className="secondary-button full-refresh-button" onClick={fullRefresh} disabled={scanning || checkOperation?.running}>
+                <RefreshCw size={17} /> Full refresh all sources
+              </button>
+              <label className="refresh-thumb-toggle">
+                <input type="checkbox" checked={refreshThumbnails} onChange={(event) => setRefreshThumbnails(event.target.checked)} />
+                Rebuild thumbnail previews during full refresh
+              </label>
+              <p>Use Full refresh after changing sources or when rows disappear. Thumbnail rebuild is only needed when card images are stale.</p>
+            </div>
+            <ExtensionQuickCheck
+              request={extensionRequest}
+              bridge={extensionBridge}
+              extensionActive={connectorStatus.some((item) => item.active)}
+              onCheck={() => sendExtensionCommand("check-studio-now")}
+              onOpenNotifications={() => sendExtensionCommand("open-notification-page")}
+              onPasteMiss={() => setMissedTextModalOpen(true)}
+            />
+            <ConnectorCoveragePanel connectorConfig={connectorConfig} connectorStatus={connectorStatus} runs={runs} selectedChannels={scanChannels} />
+            {!scanning ? <ScanProgress scan={lastScan} lastSuccessfulScan={lastSuccessfulScan} progress={scanProgress} scanning={false} /> : null}
+            <ExtensionScanReceipt connectorStatus={connectorStatus} compact />
+          </div>
+        </details>
+
         {error ? <div className="error-banner">{error}</div> : null}
         {notice ? <div className="warning-banner">{notice}</div> : null}
         {scanInfo ? <div className="info-banner">{scanInfo}</div> : null}
@@ -968,7 +1013,11 @@ export default function DetectorPage({ session }) {
           run={modalRun}
           onClose={() => setModalRun(null)}
           initialAction={modalInitialAction}
-          onDone={async () => {
+          onDone={async (payload) => {
+            if (payload?.actionId || payload?.resolutionId) {
+              const savedAction = payload.savedAction || payload.test?.latestAction || modalInitialAction || "Done";
+              setUndoAction({ actionId: payload.actionId || "", resolutionId: payload.resolutionId || "", run: modalRun, action: savedAction, label: actionLabel(savedAction) });
+            }
             setModalRun(null);
             setModalInitialAction("");
             await refresh();
@@ -984,33 +1033,74 @@ export default function DetectorPage({ session }) {
           onImport={importMissedNotificationText}
         />
       ) : null}
+      {undoAction ? (
+        <div className="undo-toast" role="status">
+          <span><strong>{undoAction.label}</strong> saved for {undoAction.run?.videoTitle || undoAction.run?.videoId || "this test"}.</span>
+          <button type="button" onClick={undoCompletedAction} disabled={undoAction.busy}>{undoAction.busy ? "Undoing..." : "Undo"}</button>
+        </div>
+      ) : null}
     </AppShell>
   );
 }
 
-function Summary({ summary }) {
+function Summary({ summary, runs = [] }) {
   const items = [
-    ["Conflicts", summary?.actionConflict || 0],
-    ["Confirmed", summary?.confirmedFinished || summary?.newlyFinished || 0],
-    ["App Managed", summary?.appManagedRuns || 0],
-    ["Unregistered", summary?.unregisteredSignals || 0],
+    ["Ready to review", (summary?.actionConflict || 0) + (summary?.confirmedFinished || summary?.newlyFinished || 0), "ready"],
+    ["New today", countNewToday(runs), "new"],
+    ["App managed", summary?.appManagedRuns || 0, "managed"],
+    ["Coverage problems", summary?.uncovered || 0, "coverage"]
+  ];
+  const background = [
     ["Observed", summary?.appliedChangeObserved || 0],
-    ["Manual Check", summary?.pastDueCheck || 0],
-    ["Needs Signal", summary?.uncovered || 0],
+    ["Manual check", summary?.pastDueCheck || 0],
     ["Watching", summary?.watching || 0],
-    ["Missing", summary?.missingData || 0],
-    ["Total Active", summary?.total || 0]
+    ["Missing data", summary?.missingData || 0],
+    ["Unregistered", summary?.unregisteredSignals || 0],
+    ["Total active", summary?.total || 0]
   ];
   return (
-    <section className="summary-grid">
-      {items.map(([label, value]) => (
-        <div className="summary-card" key={label}>
-          <span>{label}</span>
-          <strong>{value}</strong>
-        </div>
-      ))}
+    <section className="queue-overview">
+      <div className="summary-grid compact-summary-grid">
+        {items.map(([label, value, tone]) => <div className={`summary-card ${tone}`} key={label}><span>{label}</span><strong>{value}</strong></div>)}
+      </div>
+      <details className="background-counts">
+        <summary>Background monitoring</summary>
+        <div>{background.map(([label, value]) => <span key={label}>{label} <strong>{value}</strong></span>)}</div>
+      </details>
     </section>
   );
+}
+
+function UnifiedCheckStatus({ operation }) {
+  return (
+    <div className={`unified-check-status ${operation.refresh === "error" ? "error" : operation.extension === "warn" ? "warn" : operation.running ? "running" : "ok"}`}>
+      <span>{operation.extension === "running" ? "Studio: checking" : operation.extension === "ok" ? "Studio: checked" : "Studio: unavailable"}</span>
+      <span>{operation.refresh === "pending" ? "Queue: waiting" : operation.refresh === "running" ? "Queue: updating" : operation.refresh === "ok" ? "Queue: updated" : "Queue: failed"}</span>
+      <strong>{operation.message}</strong>
+    </div>
+  );
+}
+
+function countNewToday(runs) {
+  const today = new Date().toLocaleDateString();
+  return runs.filter((run) => {
+    const value = run.finishEventOccurredAt || run.finishEventAt || run.effectiveFinishDate || run.finishDate;
+    if (!value || !["confirmed_finished", "action_conflict"].includes(run.queueStatus)) return false;
+    const date = new Date(value);
+    return !Number.isNaN(date.getTime()) && date.toLocaleDateString() === today;
+  }).length;
+}
+
+function scanScopeSummary(channels, testType) {
+  const channelText = channels.length ? channels.join(", ") : "All channels";
+  const typeText = testType === "all" ? "all tests" : `${testType} tests`;
+  return `${channelText} · ${typeText}`;
+}
+
+function actionLabel(action) {
+  if (["A", "B", "C"].includes(action)) return `Selected ${action}`;
+  if (action === "NO_CLEAR") return "Not enough views / No clear";
+  return titleCase(action || "Done");
 }
 
 function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
@@ -2080,7 +2170,7 @@ function DoneModal({ run, initialAction = "", onClose, onDone }) {
       setError(payload.error || "Could not save action.");
       return;
     }
-    onDone();
+    onDone({ ...payload, savedAction: action });
   }
 
   return (

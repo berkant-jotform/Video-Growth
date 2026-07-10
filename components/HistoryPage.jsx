@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ExternalLink, Search, Users } from "lucide-react";
+import { CheckCircle2, ExternalLink, Pencil, Search, Users, X } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 
 export default function HistoryPage({ session }) {
@@ -12,6 +12,9 @@ export default function HistoryPage({ session }) {
   const [testType, setTestType] = useState("all");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [correcting, setCorrecting] = useState("");
+  const [correction, setCorrection] = useState("A");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -58,6 +61,31 @@ export default function HistoryPage({ session }) {
     [items]
   );
 
+  async function saveCorrection(item) {
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/actions/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          testRunId: item.testRunId,
+          action: correction,
+          retestConfirmed: true,
+          note: `Corrected from History. Previous action: ${item.action?.action || "unknown"}`
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save correction.");
+      setCorrecting("");
+      await load();
+    } catch (saveError) {
+      setError(saveError.message || "Could not save correction.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <AppShell session={session} active="history">
       <main className="workspace history-workspace">
@@ -103,7 +131,7 @@ export default function HistoryPage({ session }) {
         {error ? <div className="error-banner">{error}</div> : null}
         <section className="history-list">
           {filtered.map((item) => (
-            <article className="history-item" key={`${item.action.actionId}-${item.testRunId}`}>
+            <article className={`history-item ${item.action.undoneAt ? "undone" : ""}`} key={`${item.action.actionId}-${item.testRunId}`}>
               <div className="history-item-main">
                 <div className="history-item-meta">
                   <span className={`type-pill ${item.testType || "title"}`}>{titleCase(item.testType || "test")}</span>
@@ -115,16 +143,32 @@ export default function HistoryPage({ session }) {
               <div className="history-action">
                 <span className={`history-outcome ${actionTone(item.action.action)}`}>
                   <CheckCircle2 size={15} />
-                  {labelAction(item.action.action)}
+                  {item.action.undoneAt ? `Undone: ${labelAction(item.action.action)}` : labelAction(item.action.action)}
                 </span>
                 <strong>{item.action.actorName || "Reviewer"}</strong>
                 <time>{formatDateTime(item.action.createdAt)}</time>
+                {!item.action.undoneAt ? (
+                  <button className="quiet-button compact-button" type="button" onClick={() => { setCorrecting(item.action.actionId); setCorrection(["A", "B", "C", "NO_CLEAR", "KEPT_CURRENT", "RETEST_LATER"].includes(item.action.action) ? item.action.action : "A"); }}>
+                    <Pencil size={14} /> Correct
+                  </button>
+                ) : <small>Undone by {item.action.undoneBy || "reviewer"}</small>}
                 {item.studioUrl ? (
                   <a className="secondary-button compact-button" href={item.studioUrl} target="_blank" rel="noreferrer">
                     <ExternalLink size={15} /> Open Studio
                   </a>
                 ) : null}
               </div>
+              {correcting === item.action.actionId ? (
+                <div className="history-correction">
+                  <strong>Record the corrected outcome</strong>
+                  <select value={correction} onChange={(event) => setCorrection(event.target.value)}>
+                    <option value="A">Selected A</option><option value="B">Selected B</option><option value="C">Selected C</option>
+                    <option value="NO_CLEAR">Not enough views / No clear</option><option value="KEPT_CURRENT">Kept current</option><option value="RETEST_LATER">Retest later</option>
+                  </select>
+                  <button className="primary-button compact-button" type="button" onClick={() => saveCorrection(item)} disabled={saving}>{saving ? "Saving..." : "Save correction"}</button>
+                  <button className="icon-button" type="button" onClick={() => setCorrecting("")} title="Cancel correction"><X size={16} /></button>
+                </div>
+              ) : null}
             </article>
           ))}
           {loading ? <div className="empty-state">Loading completed actions...</div> : null}

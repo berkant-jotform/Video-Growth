@@ -13,6 +13,8 @@ const OUTCOMES = [
   ["KEPT_CURRENT", "Kept current"],
   ["RETEST_LATER", "Retest later"]
 ];
+const REVIEW_CHANNEL_KEY = "youtube-ab-review-channel";
+const REVIEW_TYPE_KEY = "youtube-ab-review-type";
 
 export default function ReviewSessionPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -24,8 +26,31 @@ export default function ReviewSessionPage({ session }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
+  const [undoAction, setUndoAction] = useState(null);
+  const [openedStudioRun, setOpenedStudioRun] = useState("");
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    try {
+      setChannel(window.localStorage.getItem(REVIEW_CHANNEL_KEY) || "all");
+      const savedType = window.localStorage.getItem(REVIEW_TYPE_KEY);
+      if (["all", "title", "thumbnail"].includes(savedType)) setTestType(savedType);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(REVIEW_CHANNEL_KEY, channel);
+      window.localStorage.setItem(REVIEW_TYPE_KEY, testType);
+    } catch {}
+  }, [channel, testType]);
+
+  useEffect(() => {
+    if (!undoAction) return undefined;
+    const timer = window.setTimeout(() => setUndoAction(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [undoAction]);
 
   async function load() {
     setError("");
@@ -45,16 +70,32 @@ export default function ReviewSessionPage({ session }) {
     () => Array.from(new Set(runs.filter((run) => ["confirmed_finished", "action_conflict"].includes(run.queueStatus)).map((run) => run.channel).filter(Boolean))).sort(),
     [runs]
   );
+  useEffect(() => {
+    if (!loading && channel !== "all" && !channels.includes(channel)) setChannel("all");
+  }, [channels, channel, loading]);
   const queue = useMemo(
     () => buildReviewQueue(runs, { channel, testType, skippedIds: skipped }),
     [runs, channel, testType, skipped]
   );
   const safeIndex = queue.length ? Math.min(index, queue.length - 1) : 0;
   const run = queue[safeIndex] || null;
+  const nextRun = queue[safeIndex + 1] || null;
 
   useEffect(() => {
     if (index >= queue.length) setIndex(Math.max(0, queue.length - 1));
   }, [queue.length, index]);
+
+  useEffect(() => {
+    setOpenedStudioRun("");
+  }, [run?.testRunId]);
+
+  useEffect(() => {
+    if (!nextRun || typeof window === "undefined") return;
+    [nextRun.currentYoutubeThumbnailUrl, ...Object.values(nextRun.thumbnailPreviews || {})].filter(Boolean).forEach((src) => {
+      const image = new window.Image();
+      image.src = src;
+    });
+  }, [nextRun?.testRunId]);
 
   async function complete(action) {
     if (!run) return;
@@ -68,12 +109,35 @@ export default function ReviewSessionPage({ session }) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save outcome.");
+      if (payload.actionId || payload.resolutionId) setUndoAction({ actionId: payload.actionId || "", resolutionId: payload.resolutionId || "", run, action });
       setRuns((current) => current.filter((item) => item.testRunId !== run.testRunId));
       setHandled((value) => value + 1);
     } catch (saveError) {
       setError(saveError.message || "Could not save outcome.");
     } finally {
       setSaving("");
+    }
+  }
+
+  async function undoComplete() {
+    if (!undoAction?.actionId && !undoAction?.resolutionId) return;
+    const current = undoAction;
+    setUndoAction((value) => value ? { ...value, busy: true } : value);
+    setError("");
+    try {
+      const response = await fetch("/api/actions/undo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actionId: current.actionId, resolutionId: current.resolutionId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not undo outcome.");
+      setRuns((items) => items.some((item) => item.testRunId === current.run.testRunId) ? items : [...items, current.run]);
+      setHandled((value) => Math.max(0, value - 1));
+      setUndoAction(null);
+    } catch (undoError) {
+      setError(undoError.message || "Could not undo outcome.");
+      setUndoAction(null);
     }
   }
 
@@ -120,7 +184,7 @@ export default function ReviewSessionPage({ session }) {
             <CheckCircle2 size={34} />
             <h2>Review queue complete</h2>
             <p>{skipped.length ? `${skipped.length} skipped item${skipped.length === 1 ? " is" : "s are"} hidden for this session.` : "No confirmed tests remain in this scope."}</p>
-            {skipped.length ? <button className="secondary-button" type="button" onClick={() => setSkipped([])}>Show skipped items</button> : <a className="secondary-button" href="/">Return to Detector</a>}
+            {skipped.length ? <button className="secondary-button" type="button" onClick={() => setSkipped([])}>Review skipped items</button> : <a className="secondary-button" href="/">Return to Detector</a>}
           </section>
         ) : null}
 
@@ -143,7 +207,7 @@ export default function ReviewSessionPage({ session }) {
                 <p className="eyebrow">Video</p>
                 <h2>{run.videoTitle || run.currentYoutubeTitle || run.videoId}</h2>
                 <p className="review-signal-reason">{run.sourceKind === "app_registry" ? "Confirmed by Studio and tracked independently by the app." : run.finishEventSource?.includes("studio") ? "Confirmed by a real Studio finish signal." : "Finished according to the configured sheet."}</p>
-                <a className="studio-button review-studio-button" href={run.studioUrl || "#"} target="_blank" rel="noreferrer"><ExternalLink size={18} />Open Studio</a>
+                <a className={`studio-button review-studio-button ${openedStudioRun === run.testRunId ? "opened" : ""}`} href={run.studioUrl || "#"} target="_blank" rel="noreferrer" onClick={() => setOpenedStudioRun(run.testRunId)}><ExternalLink size={18} />{openedStudioRun === run.testRunId ? "Studio opened" : "Open Studio"}</a>
               </div>
               <ReviewOptions run={run} />
             </div>
@@ -162,9 +226,37 @@ export default function ReviewSessionPage({ session }) {
             </footer>
           </article>
         ) : null}
+
+        {skipped.length ? (
+          <details className="review-skipped-drawer">
+            <summary>{skipped.length} skipped in this session</summary>
+            <div>
+              {skipped.map((testRunId) => {
+                const item = runs.find((candidate) => candidate.testRunId === testRunId);
+                return (
+                  <button type="button" key={testRunId} onClick={() => setSkipped((current) => current.filter((id) => id !== testRunId))}>
+                    <span>{item?.videoTitle || item?.videoId || "Skipped test"}</span><strong>Restore</strong>
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+        ) : null}
       </main>
+      {undoAction ? (
+        <div className="undo-toast" role="status">
+          <span><strong>{labelOutcome(undoAction.action)}</strong> saved. Moving to the next test.</span>
+          <button type="button" onClick={undoComplete} disabled={undoAction.busy}>{undoAction.busy ? "Undoing..." : "Undo"}</button>
+        </div>
+      ) : null}
     </AppShell>
   );
+}
+
+function labelOutcome(action) {
+  if (["A", "B", "C"].includes(action)) return `Selected ${action}`;
+  if (action === "NO_CLEAR") return "Not enough views / No clear";
+  return titleCase(action);
 }
 
 function ReviewOptions({ run }) {

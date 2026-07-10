@@ -375,6 +375,14 @@ function SourceTabManager({ tabs, excludedJson, onChange }) {
   const configured = safeExcludedTabs(excludedJson);
   const configuredKeys = new Set(configured.map((item) => sourceTabKey(item.sourceKind, item.sheetName)));
   const visibleTabs = tabs.filter((tab) => tab.hasContent);
+  const includedRows = visibleTabs.reduce((sum, tab) => {
+    const excluded = configuredKeys.has(sourceTabKey(tab.sourceKind, tab.title)) || tab.exclusionSource === "system";
+    return sum + (excluded ? 0 : Number(tab.testRows || 0));
+  }, 0);
+  const excludedRows = visibleTabs.reduce((sum, tab) => {
+    const excluded = configuredKeys.has(sourceTabKey(tab.sourceKind, tab.title)) || tab.exclusionSource === "system";
+    return sum + (excluded ? Number(tab.testRows || 0) : 0);
+  }, 0);
 
   function toggle(tab) {
     const key = sourceTabKey(tab.sourceKind, tab.title);
@@ -392,6 +400,12 @@ function SourceTabManager({ tabs, excludedJson, onChange }) {
           <strong>Included sheet tabs</strong>
           <p>Exclude notes, inventories, archives, or report tabs that are not real A/B test sources.</p>
         </div>
+        {visibleTabs.length ? (
+          <div className="source-impact-summary">
+            <strong>{includedRows} active rows</strong>
+            <span>{excludedRows} excluded</span>
+          </div>
+        ) : null}
       </div>
       {visibleTabs.length ? (
         <div className="source-tab-list">
@@ -413,14 +427,14 @@ function SourceTabManager({ tabs, excludedJson, onChange }) {
                 </span>
                 <small>
                   {systemExcluded
-                    ? `Automatically excluded · ${tab.exclusionReason}`
+                    ? `Automatically excluded · ${tab.exclusionReason} · ${rowCountLabel(tab.testRows)}`
                     : configuredExcluded
-                      ? "Excluded from future scans"
+                      ? `Excluded from future scans · removes ${rowCountLabel(tab.testRows)}`
                       : tab.recognized
-                        ? "Included as A/B data"
+                        ? `Included as A/B data · ${rowCountLabel(tab.testRows)}`
                         : tab.likelyTestData
-                          ? "Included, but headers need attention"
-                          : "Included auxiliary tab"}
+                          ? `Included, but headers need attention · ${rowCountLabel(tab.testRows)}`
+                          : `Included auxiliary tab · ${rowCountLabel(tab.testRows)}`}
                 </small>
               </label>
             );
@@ -434,6 +448,11 @@ function SourceTabManager({ tabs, excludedJson, onChange }) {
       )}
     </section>
   );
+}
+
+function rowCountLabel(value) {
+  const count = Number(value || 0);
+  return `${count} test row${count === 1 ? "" : "s"}`;
 }
 
 function safeExcludedTabs(value) {
