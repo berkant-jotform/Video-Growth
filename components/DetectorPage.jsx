@@ -17,6 +17,11 @@ import {
 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 import { CHANNEL_PRIORITY, canonicalChannelName, compareChannels } from "@/lib/channels.mjs";
+import {
+  finishSignalSourceName,
+  hasFreshConnectorData,
+  isStudioFinishSignalSource
+} from "@/lib/finish-signal-source.mjs";
 import { isActionableQueueStatus } from "@/lib/queue-status.mjs";
 import { runFinishCheckWorkflow } from "@/lib/finish-check-workflow.mjs";
 
@@ -725,6 +730,7 @@ export default function DetectorPage({ session }) {
   );
   const primaryScanChannels = channels.filter((item) => item === "all" || isPrimaryScanChannel(item));
   const extraScanChannels = channels.filter((item) => item !== "all" && !isPrimaryScanChannel(item));
+  const recentPassiveStudioData = hasFreshConnectorData(connectorStatus, scanChannels);
 
   return (
     <AppShell session={session} active="detector">
@@ -783,7 +789,7 @@ export default function DetectorPage({ session }) {
           </div>
           <div className="command-footer">
             <span>{scanScopeSummary(scanChannels, scanType)} · Studio signals, Sheets, and YouTube metadata</span>
-            {checkOperation ? <UnifiedCheckStatus operation={checkOperation} /> : null}
+            {checkOperation ? <UnifiedCheckStatus operation={checkOperation} recentPassiveStudioData={recentPassiveStudioData} /> : null}
           </div>
         </section>
 
@@ -791,7 +797,7 @@ export default function DetectorPage({ session }) {
 
         <section className="review-queue-panel">
           <Summary summary={summary} runs={runs} />
-          <QueueTrustState operation={checkOperation} scan={lastSuccessfulScan || lastScan} />
+          <QueueTrustState operation={checkOperation} scan={lastSuccessfulScan || lastScan} recentPassiveStudioData={recentPassiveStudioData} />
 
         <section className="filters">
           <label>
@@ -1060,7 +1066,7 @@ function Summary({ summary, runs = [] }) {
   );
 }
 
-function QueueTrustState({ operation, scan }) {
+function QueueTrustState({ operation, scan, recentPassiveStudioData = false }) {
   const cachedWarnings = (scan?.warnings || []).filter(isCachedSourceWarning);
   const studioUnavailable = operation?.extension === "warn" && operation?.refresh === "ok";
   if (!studioUnavailable && !cachedWarnings.length) return null;
@@ -1068,8 +1074,10 @@ function QueueTrustState({ operation, scan }) {
     <div className="queue-trust-state" role="status">
       {studioUnavailable ? (
         <span className="studio-incomplete">
-          <strong>Sheet-only refresh</strong>
-          Studio signals were unavailable, so newly finished tests may be missing.
+          <strong>{recentPassiveStudioData ? "Live Studio check missed" : "Sheet-only refresh"}</strong>
+          {recentPassiveStudioData
+            ? "Recent passive Studio signals are included, but this click did not perform a fresh bell read."
+            : "Studio signals were unavailable, so newly finished tests may be missing."}
         </span>
       ) : null}
       {cachedWarnings.length ? (
@@ -1082,12 +1090,15 @@ function QueueTrustState({ operation, scan }) {
   );
 }
 
-function UnifiedCheckStatus({ operation }) {
+function UnifiedCheckStatus({ operation, recentPassiveStudioData = false }) {
+  const liveCheckUnavailable = operation.extension === "warn";
   return (
     <div className={`unified-check-status ${operation.refresh === "error" ? "error" : operation.extension === "warn" ? "warn" : operation.running ? "running" : "ok"}`}>
-      <span>{operation.extension === "running" ? "Studio: checking" : operation.extension === "ok" ? "Studio: checked" : "Studio: unavailable"}</span>
+      <span>{operation.extension === "running" ? "Studio: checking" : operation.extension === "ok" ? "Studio: checked" : recentPassiveStudioData ? "Studio: recent data" : "Studio: unavailable"}</span>
       <span>{operation.refresh === "pending" ? "Queue: waiting" : operation.refresh === "running" ? "Queue: updating" : operation.refresh === "ok" ? "Queue: updated" : "Queue: failed"}</span>
-      <strong>{operation.message}</strong>
+      <strong>{liveCheckUnavailable && recentPassiveStudioData && operation.refresh === "ok"
+        ? "Queue updated with recent passive Studio signals. The live bell check did not respond."
+        : operation.message}</strong>
     </div>
   );
 }
@@ -2529,8 +2540,8 @@ function outcomeLabel(run) {
   if (isAppManagedRun(run)) return "Confirmed by Studio; no matching A/B sheet row was found.";
   if (run.queueStatus === "action_conflict") return `Tool says ${run.latestAction}; sheet now says ${sheetResultText(run)}. Resolve before closing.`;
   if (run.queueStatus === "confirmed_finished") {
-    if (run.finishEventSource === "studio_bell") return "Studio notification confirmed this test finished";
     if (run.finishEventSource === "studio_page_status") return "Studio edit page says this test finished";
+    if (isStudioFinishSignalSource(run.finishEventSource)) return "Studio notification confirmed this test finished";
     return "Explicit sheet finish/result signal";
   }
   if (run.queueStatus === "applied_change_observed") return "Visible YouTube metadata changed to a B/C option";
@@ -2723,9 +2734,8 @@ function finishSignalTimeLabel(run) {
 
 function signalSourceLabel(run) {
   if (run.unregistered) return "Studio signal only";
-  if (run.finishEventSource === "studio_bell") return "Studio extension";
-  if (run.finishEventSource === "studio_page_status") return "Studio page status";
-  if (run.finishEventSource === "metadata") return "Metadata observed";
+  const eventSource = finishSignalSourceName(run.finishEventSource);
+  if (eventSource) return eventSource;
   if (run.queueStatus === "past_due_check") return "Manual backup";
   if (run.queueStatus === "confirmed_finished" && run.effectiveFinishDate) return "Sheet finish date";
   if (run.queueStatus === "watching") return "Watching";
