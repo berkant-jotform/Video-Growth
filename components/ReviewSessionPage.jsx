@@ -80,6 +80,8 @@ export default function ReviewSessionPage({ session }) {
   const safeIndex = queue.length ? Math.min(index, queue.length - 1) : 0;
   const run = queue[safeIndex] || null;
   const nextRun = queue[safeIndex + 1] || null;
+  const sessionTotal = Math.max(queue.length + handled, handled);
+  const progressPercent = sessionTotal ? Math.min(100, Math.round((handled / sessionTotal) * 100)) : 100;
 
   useEffect(() => {
     if (index >= queue.length) setIndex(Math.max(0, queue.length - 1));
@@ -157,15 +159,24 @@ export default function ReviewSessionPage({ session }) {
     <AppShell session={session} active="review">
       <main className="workspace review-workspace">
         <section className="page-intro review-intro">
-          <div>
+          <div className="review-intro-copy">
             <p className="eyebrow">Focused workflow</p>
             <h2>Review session</h2>
             <p className="muted">Handle confirmed finishes one at a time without Watching, Missing Data, or setup noise.</p>
           </div>
-          <div className="review-session-stats">
-            <span><strong>{queue.length}</strong> remaining</span>
-            <span><strong>{handled}</strong> handled now</span>
-            <button className="icon-button" type="button" title="Restart session" onClick={resetSession}><RotateCcw size={17} /></button>
+          <div className="review-session-progress">
+            <div className="review-session-stats">
+              <span><strong>{queue.length}</strong> remaining</span>
+              <span><strong>{handled}</strong> handled now</span>
+              <button className="icon-button" type="button" title="Restart session" onClick={resetSession}><RotateCcw size={17} /></button>
+            </div>
+            <div className="review-progress-meta">
+              <span>{handled ? `${progressPercent}% complete` : "Ready to begin"}</span>
+              <strong>{sessionTotal} in this session</strong>
+            </div>
+            <div className="review-progress-track" aria-label={`Review session ${progressPercent}% complete`}>
+              <span style={{ width: `${progressPercent}%` }} />
+            </div>
           </div>
         </section>
 

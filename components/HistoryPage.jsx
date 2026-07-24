@@ -60,6 +60,19 @@ export default function HistoryPage({ session }) {
     () => new Set(items.map((item) => item.action?.actorName).filter(Boolean)).size,
     [items]
   );
+  const activeFilterCount = [
+    Boolean(search.trim()),
+    channel !== "all",
+    action !== "all",
+    testType !== "all"
+  ].filter(Boolean).length;
+
+  function clearFilters() {
+    setSearch("");
+    setChannel("all");
+    setAction("all");
+    setTestType("all");
+  }
 
   async function saveCorrection(item) {
     setSaving(true);
@@ -131,6 +144,15 @@ export default function HistoryPage({ session }) {
                 <button type="button" className={testType === value ? "active" : ""} key={value} onClick={() => setTestType(value)}>{label}</button>
               ))}
             </div>
+          </div>
+          <div className="history-filter-feedback" role="status">
+            <span><strong>{filtered.length}</strong> matching action{filtered.length === 1 ? "" : "s"}</span>
+            {activeFilterCount ? (
+              <button className="quiet-button compact-button" type="button" onClick={clearFilters}>
+                <X size={14} />
+                Reset {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}
+              </button>
+            ) : <em>Showing the complete team record</em>}
           </div>
         </section>
 

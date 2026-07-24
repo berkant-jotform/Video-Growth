@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowRight,
   BellRing,
   Check,
   ChevronDown,
@@ -723,6 +724,26 @@ export default function DetectorPage({ session }) {
       return true;
     });
   }, [runs, viewChannel, viewType, resultFilter, finishWindow, retestFilter, advancedStatus, search]);
+  const activeViewFilterCount = [
+    viewChannel !== "all",
+    viewType !== "all",
+    resultFilter !== "actionable",
+    finishWindow !== "all",
+    retestFilter !== "all",
+    advancedStatus !== "all",
+    Boolean(search.trim())
+  ].filter(Boolean).length;
+
+  function clearViewFilters() {
+    setViewChannel("all");
+    setViewType("all");
+    setResultFilter("actionable");
+    setFinishWindow("all");
+    setRetestFilter("all");
+    setAdvancedStatus("all");
+    setSearch("");
+    setAdvancedOpen(false);
+  }
 
   const grouped = useMemo(
     () => groupRuns(filtered, { groupOtherChannels: viewChannel === "all" }),
@@ -742,10 +763,11 @@ export default function DetectorPage({ session }) {
               <h2>Real finish tracker</h2>
             </div>
             <div className="detector-command-meta">
-              <span>
-                Last scan {lastSuccessfulScan?.completedAt ? formatDateTime(lastSuccessfulScan.completedAt) : "not completed"}
-                <em>·</em> {connectorSummary(connectorStatus)}
-              </span>
+              <DetectorHealthIndicators
+                lastSuccessfulScan={lastSuccessfulScan}
+                connectorStatus={connectorStatus}
+                connectorConfigured={connectorConfig?.configured}
+              />
               <div className="detector-view-toggle segmented" aria-label="Detector view">
                 <button className={detectorView === "classic" ? "active" : ""} onClick={() => setViewMode("classic")} type="button">Classic</button>
                 <button className={detectorView === "board" ? "active" : ""} onClick={() => setViewMode("board")} type="button">Channel Board</button>
@@ -901,9 +923,18 @@ export default function DetectorPage({ session }) {
               </div>
             ) : null}
           </div>
+          <div className="queue-filter-feedback" role="status">
+            <span><strong>{filtered.length}</strong> of {runs.length} active tests shown</span>
+            {activeViewFilterCount ? (
+              <button className="quiet-button compact-button" type="button" onClick={clearViewFilters}>
+                <X size={14} />
+                Reset {activeViewFilterCount} filter{activeViewFilterCount === 1 ? "" : "s"}
+              </button>
+            ) : <em>Default review view</em>}
+          </div>
         </section>
 
-        <details className="detector-operations-drawer">
+        <details className="detector-operations-drawer" id="scan-health">
           <summary>
             <span><InfoIcon size={17} /><strong>Scan health and advanced tools</strong></span>
             <small>{connectorSummary(connectorStatus)} · Last update {lastSuccessfulScan?.completedAt ? formatDateTime(lastSuccessfulScan.completedAt) : "never"}</small>
@@ -939,8 +970,14 @@ export default function DetectorPage({ session }) {
         {scanInfo ? <div className="info-banner">{scanInfo}</div> : null}
         {loading ? <div className="empty-state">Loading queue</div> : null}
         {!loading && filtered.length === 0 ? (
-          <div className="empty-state">
-            No active test runs match the current filters. Run a scan or check History.
+          <div className="empty-state queue-empty-state">
+            <strong>No tests match this view</strong>
+            <span>{activeViewFilterCount ? "Reset the view filters to return to the active queue." : "Run a scan or check History for completed work."}</span>
+            {activeViewFilterCount ? (
+              <button className="secondary-button compact-button" type="button" onClick={clearViewFilters}>
+                Reset filters
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -1058,11 +1095,55 @@ function Summary({ summary, runs = [] }) {
         <span className="managed"><strong>{summary?.appManagedRuns || 0}</strong> Studio-only</span>
         <span className="coverage"><strong>{summary?.uncovered || 0}</strong> need coverage</span>
       </div>
+      {ready ? (
+        <a className="queue-review-button" href="/review">
+          Review now
+          <ArrowRight size={16} />
+        </a>
+      ) : <span className="queue-clear-indicator"><Check size={15} /> Queue clear</span>}
       <details className="background-counts queue-background-counts">
         <summary>Monitoring totals</summary>
         <div>{background.map(([label, value]) => <span key={label}>{label} <strong>{value}</strong></span>)}</div>
       </details>
     </section>
+  );
+}
+
+function DetectorHealthIndicators({ lastSuccessfulScan, connectorStatus = [], connectorConfigured = false }) {
+  const scanAt = lastSuccessfulScan?.completedAt || "";
+  const scanAge = scanAt ? Date.now() - new Date(scanAt).valueOf() : Number.POSITIVE_INFINITY;
+  const cachedSourceCount = (lastSuccessfulScan?.warnings || []).filter(isCachedSourceWarning).length;
+  const scanTone = !scanAt || scanAge > 24 * 60 * 60 * 1000 || cachedSourceCount ? "warn" : "ok";
+  const scanLabel = !scanAt
+    ? "Queue not scanned"
+    : scanAge > 24 * 60 * 60 * 1000
+      ? "Queue is stale"
+      : cachedSourceCount
+        ? "Queue has cached data"
+        : "Queue is fresh";
+  const active = connectorStatus.filter((item) => item.active);
+  const coveredChannels = new Set(active.flatMap((item) => item.channels || []).filter(Boolean));
+  const studioTone = active.length ? "ok" : connectorConfigured ? "warn" : "neutral";
+  const studioLabel = active.length
+    ? `Studio active · ${coveredChannels.size || active.length} channel${(coveredChannels.size || active.length) === 1 ? "" : "s"}`
+    : connectorConfigured
+      ? "Studio extension offline"
+      : "Studio setup needed";
+
+  return (
+    <div className="detector-health-block">
+      <div className="detector-health-indicators" aria-label="Detector health">
+        <span className={`health-indicator ${scanTone}`} title={scanAt ? `Last successful scan: ${formatDateTime(scanAt)}` : "No successful scan recorded"}>
+          <i />
+          {scanLabel}
+        </span>
+        <span className={`health-indicator ${studioTone}`} title={active.length ? "Recent extension data is available." : "Live Studio-only finishes may be missing until the extension reconnects."}>
+          <i />
+          {studioLabel}
+        </span>
+      </div>
+      <small>Last scan {scanAt ? `${relativeAgeShort(scanAt)} · ${formatDateTime(scanAt)}` : "not completed"}</small>
+    </div>
   );
 }
 
@@ -1794,13 +1875,13 @@ function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSavin
         <div className="quick-actions" aria-label="Quick outcome actions">
           {quickActions.map((action) => (
             <button
-              className={`quick-action ${action.toLowerCase()}`}
+              className={`quick-action ${action.toLowerCase()}${isRecommendedQuickAction(result, action) ? " recommended" : ""}`}
               key={action}
-              title={`Mark ${action} done`}
+              title={`Mark ${quickActionLabel(action)} done`}
               disabled={Boolean(quickSaving)}
               onClick={() => onQuickAction(run, action)}
             >
-              {quickSaving === `${run.testRunId}:${action}` ? "..." : action}
+              {quickSaving === `${run.testRunId}:${action}` ? "..." : quickActionLabel(action)}
             </button>
           ))}
         </div>
@@ -1970,13 +2051,13 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
           <div className="quick-actions" aria-label="Quick outcome actions">
             {quickActions.map((action) => (
               <button
-                className={`quick-action ${action.toLowerCase()}`}
+                className={`quick-action ${action.toLowerCase()}${isRecommendedQuickAction(result, action) ? " recommended" : ""}`}
                 key={action}
-                title={`Mark ${action} done`}
+                title={`Mark ${quickActionLabel(action)} done`}
                 disabled={Boolean(quickSaving)}
                 onClick={() => onQuickAction(run, action)}
               >
-                {quickSaving === `${run.testRunId}:${action}` ? "..." : action}
+                {quickSaving === `${run.testRunId}:${action}` ? "..." : quickActionLabel(action)}
               </button>
             ))}
           </div>
@@ -1984,7 +2065,7 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
         <div className="card-secondary-actions">
           <button className="done-button" onClick={() => onDone(run)}>
             <Check size={17} />
-            Done with another result
+            More outcomes
           </button>
           <button
             className="ignore-button"
@@ -2663,7 +2744,18 @@ function noClearReasonLabel(run) {
 function quickActionOptions(run) {
   const available = Object.keys(run.options || {}).filter((key) => ["A", "B", "C"].includes(key));
   const base = available.length ? available : ["A", "B"];
-  return base.includes("C") ? ["A", "B", "C"] : ["A", "B"];
+  const options = base.includes("C") ? ["A", "B", "C"] : ["A", "B"];
+  return [...options, "NO_CLEAR"];
+}
+
+function quickActionLabel(action) {
+  return action === "NO_CLEAR" ? "No clear" : action;
+}
+
+function isRecommendedQuickAction(result, action) {
+  if (result?.key === "no_clear") return action === "NO_CLEAR";
+  if (result?.key !== "winner") return false;
+  return result.label === `Winner ${action}`;
 }
 
 function matchesFinishWindow(run, windowValue) {
@@ -2783,9 +2875,9 @@ function dateOnlyText(value) {
 
 function connectorSummary(items = []) {
   const active = items.filter((item) => item.active);
-  if (!active.length) return "not connected";
+  if (!active.length) return "Studio extension offline";
   const channels = new Set(active.flatMap((item) => item.channels || []));
-  return `${channels.size} channel${channels.size === 1 ? "" : "s"} checked recently`;
+  return `Studio active · ${channels.size} channel${channels.size === 1 ? "" : "s"}`;
 }
 
 function latestExtensionScanReceipt(items = []) {

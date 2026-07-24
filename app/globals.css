@@ -5807,3 +5807,211 @@ select,
 
 .queue-trust-state > span + span { border-left: 1px solid var(--border); }
 .queue-trust-state strong { color: var(--amber); font-weight: 700; white-space: nowrap; }
+
+/* Workflow confidence and faster review actions. */
+.detector-health-block {
+  align-items: flex-end;
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.detector-health-block > small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.detector-health-indicators {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.health-indicator {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 7px;
+  min-height: 27px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.health-indicator i {
+  background: var(--muted);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted) 12%, transparent);
+  height: 7px;
+  width: 7px;
+}
+
+.health-indicator.ok {
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+  color: color-mix(in srgb, var(--green) 82%, var(--text));
+}
+
+.health-indicator.ok i {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 13%, transparent);
+}
+
+.health-indicator.warn {
+  border-color: color-mix(in srgb, var(--amber) 36%, var(--border));
+  color: color-mix(in srgb, var(--amber) 84%, var(--text));
+}
+
+.health-indicator.warn i {
+  background: var(--amber);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 14%, transparent);
+}
+
+.review-queue-panel .queue-overview {
+  grid-template-columns: minmax(260px, 1fr) auto auto auto;
+}
+
+.queue-review-button,
+.queue-clear-indicator {
+  align-items: center;
+  border-radius: 7px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 7px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.queue-review-button {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #ffffff;
+}
+
+.queue-review-button:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.queue-clear-indicator {
+  background: color-mix(in srgb, var(--green) 7%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--green) 28%, var(--border));
+  color: var(--green);
+}
+
+.queue-filter-feedback,
+.history-filter-feedback {
+  align-items: center;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  gap: 12px;
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  min-height: 33px;
+  padding-top: 9px;
+}
+
+.queue-filter-feedback strong,
+.history-filter-feedback strong { color: var(--text); }
+.queue-filter-feedback em,
+.history-filter-feedback em { font-style: normal; }
+
+.queue-empty-state {
+  gap: 8px;
+  justify-items: center;
+}
+
+.queue-empty-state strong { color: var(--text); font-size: 16px; }
+.queue-empty-state span { color: var(--muted); }
+
+.quick-action.no_clear {
+  aspect-ratio: auto;
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--amber) 48%, var(--border));
+  border-radius: 999px;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--amber) 84%, var(--text));
+  min-width: 72px;
+  padding: 0 10px;
+}
+
+.quick-action.recommended {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px color-mix(in srgb, currentColor 34%, transparent);
+}
+
+.card-primary-actions { flex-wrap: wrap; }
+
+.review-session-progress {
+  display: grid;
+  gap: 8px;
+  min-width: 310px;
+}
+
+.review-session-progress .review-session-stats { justify-content: flex-end; }
+
+.review-progress-meta {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 600;
+  justify-content: space-between;
+}
+
+.review-progress-meta strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.review-progress-track {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 7px;
+  overflow: hidden;
+}
+
+.review-progress-track > span {
+  background: var(--green);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  min-width: 0;
+  transition: width 180ms ease;
+}
+
+.history-toolbar .history-filter-feedback { padding-top: 10px; }
+
+.board-card {
+  grid-template-columns: minmax(0, 1fr) minmax(430px, 0.72fr);
+}
+
+.board-card-actions {
+  min-width: 0;
+}
+
+.board-card-actions .quick-action.no_clear {
+  min-width: 68px;
+  padding-inline: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-progress-track > span,
+  .spin {
+    animation: none;
+    transition: none;
+  }
+}
