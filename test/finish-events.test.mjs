@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  alignFinishEventToMatchedRun,
   detectAppliedChange,
   detectNotificationOutcome,
   consolidateUnmatchedFinishEvents,
@@ -10,6 +11,7 @@ import {
   extractFinishNotificationSnippets,
   isLikelyFinishNotification,
   matchFinishEventToRun,
+  notificationTitleMatchesVideoMetadata,
   parseWatcherTabs,
   parseStudioNotification,
   resolveWatcherTabsFromRuns,
@@ -26,6 +28,48 @@ test("parses Studio notification video IDs and no-clear outcome", () => {
   assert.equal(event.videoId, "abc123XYZ_9");
   assert.equal(event.detectedOutcome, "no_clear");
   assert.equal(event.channel, "Jotform");
+});
+
+test("rejects an unrelated Studio page video while accepting the real notification video", () => {
+  const event = {
+    videoId: "wrong-video",
+    videoTitle: "What Is Stratified Random Sampling?",
+    rawText: "A/B test performed well for all What Is Stratified Random Sampling?: Results with very similar performance."
+  };
+  assert.equal(
+    notificationTitleMatchesVideoMetadata(event, {
+      title: "Enterprise Newsletter: June 2026 | Announcing Jotform AI App Builder"
+    }),
+    false
+  );
+  assert.equal(
+    notificationTitleMatchesVideoMetadata(event, {
+      title: "Stratified Random Sampling: How It Works"
+    }),
+    true
+  );
+});
+
+test("replaces a contaminated page video ID after a confident title match", () => {
+  const aligned = alignFinishEventToMatchedRun(
+    { videoId: "wrong-video", videoTitle: "Example test" },
+    {
+      run: { videoId: "correct-video" },
+      matchedConfidence: "title_after_video_id_conflict:title_channel_id"
+    }
+  );
+  assert.equal(aligned.videoId, "correct-video");
+});
+
+test("removes a contaminated page video ID from a title-only app record", () => {
+  const aligned = alignFinishEventToMatchedRun(
+    { videoId: "wrong-page-video", videoTitle: "Unregistered test" },
+    {
+      run: { videoId: "", sourceKind: "app_registry" },
+      matchedConfidence: "app_registry"
+    }
+  );
+  assert.equal(aligned.videoId, "");
 });
 
 test("keeps named watcher channels before their Studio IDs are configured", () => {

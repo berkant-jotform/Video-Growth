@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { appManagedRunIdentity, inferFinishEventTestType } from "../lib/app-registry.mjs";
+import {
+  appManagedRunIdentity,
+  inferFinishEventTestType,
+  sameAppManagedDecisionIdentity
+} from "../lib/app-registry.mjs";
 
 test("app registry reuses a stable run across repeated notification scans", () => {
   const event = { videoId: "video-1", rawText: "A/B test inconclusive Example", occurredAt: "2026-07-10T08:00:00Z" };
@@ -16,4 +20,38 @@ test("app registry does not invent a retest from a later repeated signal", () =>
 test("app registry infers thumbnail signals without requiring a sheet", () => {
   assert.equal(inferFinishEventTestType({ rawText: "Thumbnail test completed" }), "thumbnail");
   assert.equal(inferFinishEventTestType({ rawText: "A/B test won Example" }), "title");
+});
+
+test("app registry carries decisions across duplicate Studio-only records", () => {
+  assert.equal(
+    sameAppManagedDecisionIdentity(
+      { videoId: "video-1", testType: "title", videoTitle: "Original title" },
+      { videoId: "video-1", testType: "title", videoTitle: "Winning title" }
+    ),
+    true
+  );
+  assert.equal(
+    sameAppManagedDecisionIdentity(
+      { testType: "title", videoTitle: "Example Video", channel: "Jotform" },
+      { testType: "title", currentYoutubeTitle: "Example Video", channel: "Jotform" }
+    ),
+    true
+  );
+});
+
+test("app registry does not close a different video or test type", () => {
+  assert.equal(
+    sameAppManagedDecisionIdentity(
+      { videoId: "video-1", testType: "title" },
+      { videoId: "video-2", testType: "title" }
+    ),
+    false
+  );
+  assert.equal(
+    sameAppManagedDecisionIdentity(
+      { videoId: "video-1", testType: "title" },
+      { videoId: "video-1", testType: "thumbnail" }
+    ),
+    false
+  );
 });
