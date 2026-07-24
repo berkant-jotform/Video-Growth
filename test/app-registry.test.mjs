@@ -55,3 +55,13 @@ test("app registry does not close a different video or test type", () => {
     false
   );
 });
+
+test("app registry keeps same-title videos separate when both IDs are known", () => {
+  assert.equal(
+    sameAppManagedDecisionIdentity(
+      { videoId: "video-1", testType: "title", videoTitle: "Repeated title" },
+      { videoId: "video-2", testType: "title", videoTitle: "Repeated title" }
+    ),
+    false
+  );
+});
