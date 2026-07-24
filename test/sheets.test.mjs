@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   extractLinkedSpreadsheetIds,
   extractPublicSheetTitles,
+  normalizeSheetCellValue,
   parsePublicCsvValues
 } from "../lib/sheets.js";
 
@@ -25,4 +26,10 @@ test("extracts linked workbook IDs from reference tabs", () => {
 test("parses quoted public CSV values without breaking commas", async () => {
   const values = await parsePublicCsvValues('"Title","Notes"\n"A/B test","two, values"');
   assert.deepEqual(values, [["Title", "Notes"], ["A/B test", "two, values"]]);
+});
+
+test("normalizes supported spreadsheet cell objects without leaking object text", () => {
+  assert.equal(normalizeSheetCellValue({ richText: [{ text: "No clear " }, { text: "winner" }] }), "No clear winner");
+  assert.equal(normalizeSheetCellValue({ formula: "=A1", result: "42%" }), "42%");
+  assert.equal(normalizeSheetCellValue({ error: "#N/A" }), "");
 });

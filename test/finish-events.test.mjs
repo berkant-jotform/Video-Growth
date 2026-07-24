@@ -61,6 +61,37 @@ test("replaces a contaminated page video ID after a confident title match", () =
   assert.equal(aligned.videoId, "correct-video");
 });
 
+test("replaces a stale page video ID when a title match did not see an exact conflicting run", () => {
+  const aligned = alignFinishEventToMatchedRun(
+    {
+      videoId: "unrelated-open-page",
+      videoTitle: "How to Reset Your Password",
+      rawText: "A/B test inconclusive How to Reset Your Password: Not enough views to determine a winner."
+    },
+    {
+      run: {
+        videoId: "actual-test-video",
+        videoTitle: "How to Reset Your Password",
+        currentYoutubeTitle: "How to Reset Your Password",
+        options: {}
+      },
+      matchedConfidence: "title_channel_id"
+    }
+  );
+  assert.equal(aligned.videoId, "actual-test-video");
+});
+
+test("does not replace an exact video-id match", () => {
+  const aligned = alignFinishEventToMatchedRun(
+    { videoId: "exact-video", videoTitle: "Example" },
+    {
+      run: { videoId: "other-video", videoTitle: "Example", options: {} },
+      matchedConfidence: "video_id"
+    }
+  );
+  assert.equal(aligned.videoId, "exact-video");
+});
+
 test("removes a contaminated page video ID from a title-only app record", () => {
   const aligned = alignFinishEventToMatchedRun(
     { videoId: "wrong-page-video", videoTitle: "Unregistered test" },
