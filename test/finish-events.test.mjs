@@ -10,6 +10,7 @@ import {
   extractAccessibleFinishEventsFromScan,
   extractFinishNotificationSnippets,
   isLikelyFinishNotification,
+  isPromotableStudioFinishEvent,
   matchFinishEventToRun,
   notificationTitleMatchesVideoMetadata,
   parseWatcherTabs,
@@ -28,6 +29,44 @@ test("parses Studio notification video IDs and no-clear outcome", () => {
   assert.equal(event.videoId, "abc123XYZ_9");
   assert.equal(event.detectedOutcome, "no_clear");
   assert.equal(event.channel, "Jotform");
+});
+
+test("does not promote truncated Studio fragments without a resolved identity", () => {
+  assert.equal(
+    isPromotableStudioFinishEvent({
+      rawText: "A/B test inconclusive How to Desi",
+      videoTitle: "How to Desi",
+      channel: "Unknown source"
+    }),
+    false
+  );
+  assert.equal(
+    isPromotableStudioFinishEvent({
+      rawText: "A/B test performed well for all How Cha",
+      videoTitle: "How Cha"
+    }),
+    false
+  );
+});
+
+test("promotes complete Studio results and resolved accessibility labels", () => {
+  assert.equal(
+    isPromotableStudioFinishEvent({
+      rawText:
+        "A/B test inconclusive How to Design Your App with AI: Not enough views to determine a winner.",
+      videoTitle: "How to Design Your App with AI"
+    }),
+    true
+  );
+  assert.equal(
+    isPromotableStudioFinishEvent({
+      rawText: "A/B test inconclusive Supporting All Students as Creators in",
+      videoTitle: "Supporting All Students as Creators in Today’s Classrooms | EP24",
+      videoId: "vkijuCdQQ50",
+      channelId: "UCBJEl0zzmz_r-CRfUam5e9g"
+    }),
+    true
+  );
 });
 
 test("rejects an unrelated Studio page video while accepting the real notification video", () => {
