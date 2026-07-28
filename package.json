@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 8770",
     "test": "node --test test/*.test.mjs",
+    "migration:results:dry-run": "node --env-file=.env.production.local scripts/result-semantics-migration.mjs",
     "hash-password": "node scripts/hash-password.mjs",
     "package-extension": "scripts/package_chrome_extension.sh"
   },

@@ -25,6 +25,10 @@ import {
 } from "@/lib/finish-signal-source.mjs";
 import { isActionableQueueStatus } from "@/lib/queue-status.mjs";
 import { runFinishCheckWorkflow } from "@/lib/finish-check-workflow.mjs";
+import {
+  highestShareDescription,
+  resultDisplayLabel
+} from "@/lib/result-semantics.mjs";
 
 const SECTION_ORDER = [
   "action_conflict",
@@ -718,7 +722,7 @@ export default function DetectorPage({ session }) {
       if (retestFilter === "hide" && run.possibleRetest) return false;
       if (advancedStatus !== "all" && statusKey(run) !== advancedStatus) return false;
       if (query) {
-        const haystack = `${run.videoTitle} ${runChannel} ${run.channel} ${run.videoId} ${run.suggestedWinner}`.toLowerCase();
+        const haystack = `${run.videoTitle} ${runChannel} ${run.channel} ${run.videoId} ${run.result} ${run.explicitWinnerVariant} ${run.highestShareVariant}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
       return true;
@@ -858,10 +862,10 @@ export default function DetectorPage({ session }) {
               <option value="past_due_check">Needs manual check</option>
               <option value="watching">Watching</option>
               <option value="uncovered">Needs signal</option>
-              <option value="not_determined">Not determined</option>
               <option value="missing_data">Cannot determine</option>
-              <option value="winner">Winner known</option>
-              <option value="no_clear">No clear</option>
+              <option value="winner">YouTube winner</option>
+              <option value="no_clear">Inconclusive / performed similarly</option>
+              <option value="unknown_result">Result unknown</option>
             </select>
           </label>
           <label>
@@ -2147,8 +2151,15 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen, onAcceptMatch, quick
       <h2>{run.videoTitle || run.currentYoutubeTitle || run.videoId}</h2>
       <div className="detail-status">
         <span className={`badge ${statusKey(run)}`}>{SECTION_LABELS[statusKey(run)] || titleCase(statusKey(run))}</span>
-        {run.suggestedWinner ? <strong>{run.suggestedWinner}</strong> : null}
+        <strong>
+          {run.result === "winner" && run.explicitWinnerVariant
+            ? `YouTube winner ${run.explicitWinnerVariant}`
+            : resultDisplayLabel(run.result)}
+        </strong>
       </div>
+      {run.result === "unknown" && run.highestShareVariant ? (
+        <p className="muted">{highestShareDescription(run.highestShareVariant)}</p>
+      ) : null}
       <a
         className={`studio-button wide${opened ? " opened" : ""}`}
         href={run.studioUrl || "#"}
@@ -2264,7 +2275,13 @@ function DetailDrawer({ run, onClose, opened, onStudioOpen, onAcceptMatch, quick
 
 function DoneModal({ run, initialAction = "", onClose, onDone }) {
   const [action, setAction] = useState(
-    initialAction || (run.suggestedWinner?.match(/^[ABC]$/) ? run.suggestedWinner : "")
+    initialAction ||
+      (
+        run.result === "winner" &&
+        run.explicitWinnerVariant?.match(/^[ABC]$/)
+          ? run.explicitWinnerVariant
+          : ""
+      )
   );
   const needsRetestConfirmation = requiresRetestConfirmation(run);
   const [retestConfirmed, setRetestConfirmed] = useState(!needsRetestConfirmation);
@@ -2645,35 +2662,38 @@ function isCachedSourceWarning(value) {
 }
 
 function cardResult(run) {
+  const canonical = canonicalResultCard(run);
   if (run.unregistered) {
-    const detected = detectedOutcomeLabel(run.finishEventOutcome || run.detectedOutcome);
-    const noClearReason = noClearReasonLabel(run);
     return {
-      key: detected.key === "no_clear" ? "no_clear" : detected.key === "winner" ? "winner" : "unregistered",
-      label: detected.label || "Unregistered",
-      value: detected.key === "no_clear" ? noClearReason : "Not in A/B sheet",
-      tone: detected.tone || "warning"
+      key: canonical.key === "unknown_result" ? "unregistered" : canonical.key,
+      label: canonical.label,
+      value: canonical.key === "unknown_result" ? "Not in A/B sheet" : canonical.value,
+      tone: canonical.tone
     };
   }
   if (run.queueStatus === "action_conflict") {
     return { key: "action_conflict", label: "Conflict", value: "Tool vs sheet", tone: "danger" };
   }
   if (run.queueStatus === "confirmed_finished") {
-    const detected = detectedOutcomeLabel(run.finishEventOutcome || run.detectedOutcome);
-    const noClearReason = noClearReasonLabel(run);
-    return {
-      key: detected.key === "winner" ? "winner" : detected.key === "no_clear" ? "no_clear" : "confirmed",
-      label: detected.label || "Confirmed",
-      value: detected.key === "no_clear" ? noClearReason : signalSourceLabel(run),
-      tone: detected.tone || "success"
-    };
+    return canonical.key === "unknown_result"
+      ? {
+          key: "confirmed",
+          label: "Confirmed · result unknown",
+          value:
+            highestShareDescription(run.highestShareVariant) ||
+            signalSourceLabel(run),
+          tone: "success"
+        }
+      : canonical;
   }
   if (run.queueStatus === "applied_change_observed") {
-    const detected = detectedOutcomeLabel(run.finishEventOutcome);
+    const applied = run.youtubeAppliedVariant ||
+      String(run.finishEventOutcome || "").match(/^applied_([abc])$/i)?.[1]?.toUpperCase() ||
+      "";
     return {
       key: "observed",
-      label: detected.label || "B/C observed",
-      value: "Not final proof",
+      label: applied ? `Applied ${applied} observed` : "B/C observed",
+      value: "Applied variant, not a YouTube result",
       tone: "info"
     };
   }
@@ -2689,27 +2709,24 @@ function cardResult(run) {
   if (run.status === "missing_data") {
     return { key: "missing_data", label: "Cannot determine", value: "Missing data", tone: "danger" };
   }
-  if (run.suggestedWinner?.match(/^[ABC]$/)) {
-    return { key: "winner", label: `Winner ${run.suggestedWinner}`, value: `Option ${run.suggestedWinner}`, tone: "success" };
-  }
-  if (run.detectedOutcome === "no_clear" || run.suggestedWinner === "No clear winner") {
-    return { key: "no_clear", label: "No clear", value: noClearReasonLabel(run), tone: "warning" };
-  }
+  if (canonical.key !== "unknown_result") return canonical;
   if (run.status === "result_logged") {
     return { key: "logged", label: "Logged", value: "Already in sheet", tone: "neutral" };
   }
   if (run.status === "sheet_marked_done") {
     return { key: "logged", label: "Done", value: "Marked in sheet", tone: "neutral" };
   }
-  return { key: "not_determined", label: "Not determined", value: "Review in Studio", tone: "neutral" };
+  return {
+    key: "unknown_result",
+    label: "Result unknown",
+    value: highestShareDescription(run.highestShareVariant) || "Review in Studio",
+    tone: "neutral"
+  };
 }
 
 function sheetResultText(run) {
-  const outcome = String(run.detectedOutcome || "");
-  const winner = outcome.match(/^winner_([abc])$/i)?.[1];
-  if (winner) return winner.toUpperCase();
-  if (outcome === "no_clear" || run.suggestedWinner === "No clear winner") return "No Clear";
-  return run.suggestedWinner || "a different result";
+  if (run.result === "winner" && run.explicitWinnerVariant) return run.explicitWinnerVariant;
+  return resultDisplayLabel(run.result);
 }
 
 function detectedOutcomeLabel(outcome) {
@@ -2719,12 +2736,59 @@ function detectedOutcomeLabel(outcome) {
     const option = winner[1].toUpperCase();
     return { key: "winner", label: `Winner ${option}`, tone: "success" };
   }
-  if (text === "no_clear") return { key: "no_clear", label: "No clear", tone: "warning" };
-  if (text === "finished_unknown") return { key: "confirmed", label: "Confirmed", tone: "success" };
+  if (text === "no_clear" || text === "inconclusive") return { key: "no_clear", label: "Inconclusive", tone: "warning" };
+  if (text === "performed_same") return { key: "no_clear", label: "Performed similarly", tone: "warning" };
+  if (text === "winner") return { key: "winner", label: "YouTube winner", tone: "success" };
+  if (text === "finished_unknown") return { key: "unknown_result", label: "Result unknown", tone: "neutral" };
+  const applied = text.match(/^applied_([abc])$/i);
+  if (applied) return { key: "observed", label: `Applied ${applied[1].toUpperCase()} observed`, tone: "info" };
   return { key: "", label: "", tone: "" };
 }
 
+function canonicalResultCard(run) {
+  if (run.result === "winner") {
+    return {
+      key: "winner",
+      label: run.explicitWinnerVariant
+        ? `YouTube winner ${run.explicitWinnerVariant}`
+        : "YouTube winner",
+      value: "Explicit YouTube result",
+      tone: "success"
+    };
+  }
+  if (run.result === "performed_same") {
+    return {
+      key: "no_clear",
+      label: "Performed similarly",
+      value: "Explicit YouTube result",
+      tone: "warning"
+    };
+  }
+  if (run.result === "inconclusive") {
+    return {
+      key: "no_clear",
+      label: "Inconclusive",
+      value: noClearReasonLabel(run),
+      tone: "warning"
+    };
+  }
+  if (run.result === "cancelled") {
+    return { key: "cancelled", label: "Cancelled", value: "Explicit result", tone: "neutral" };
+  }
+  if (run.result === "running") {
+    return { key: "running", label: "Running", value: "Explicit status", tone: "neutral" };
+  }
+  return {
+    key: "unknown_result",
+    label: "Result unknown",
+    value: highestShareDescription(run.highestShareVariant) || "No explicit YouTube result",
+    tone: "neutral"
+  };
+}
+
 function noClearReasonLabel(run) {
+  if (run.inconclusiveReason === "insufficient_views") return "Not enough views";
+  if (run.result === "performed_same") return "Similar performance";
   const text = [
     run.finishEventText,
     run.winnerReason,
@@ -2755,7 +2819,7 @@ function quickActionLabel(action) {
 function isRecommendedQuickAction(result, action) {
   if (result?.key === "no_clear") return action === "NO_CLEAR";
   if (result?.key !== "winner") return false;
-  return result.label === `Winner ${action}`;
+  return result.label?.endsWith(` ${action}`);
 }
 
 function matchesFinishWindow(run, windowValue) {

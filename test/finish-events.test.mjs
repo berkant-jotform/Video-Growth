@@ -21,14 +21,16 @@ import {
 } from "../lib/finish-events.mjs";
 import { inspectWorkbookSheets, parseSheetRecords } from "../lib/domain.mjs";
 
-test("parses Studio notification video IDs and no-clear outcome", () => {
+test("parses Studio notification video IDs and explicit inconclusive outcome", () => {
   const event = parseStudioNotification({
     rawText: "Your Test & Compare result is ready. Not enough impressions to declare a winner.",
     url: "https://studio.youtube.com/video/abc123XYZ_9/edit",
     channel: "Jotform"
   });
   assert.equal(event.videoId, "abc123XYZ_9");
-  assert.equal(event.detectedOutcome, "no_clear");
+  assert.equal(event.detectedOutcome, "inconclusive");
+  assert.equal(event.result, "inconclusive");
+  assert.equal(event.inconclusiveReason, "insufficient_views");
   assert.equal(event.channel, "Jotform");
 });
 
@@ -303,7 +305,7 @@ test("recognizes current YouTube Studio A/B notification wording", () => {
   );
   assert.equal(
     detectNotificationOutcome("A/B test won How to Configure Zoom Settings & AI Companion: We updated your video to use the winner"),
-    "finished_unknown"
+    "winner"
   );
   assert.equal(
     isLikelyFinishNotification("A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance"),
@@ -311,7 +313,7 @@ test("recognizes current YouTube Studio A/B notification wording", () => {
   );
   assert.equal(
     detectNotificationOutcome("A/B test performed well for all Introducing Jotform AI App Builder: Results with very similar performance"),
-    "no_clear"
+    "performed_same"
   );
   assert.equal(
     isLikelyFinishNotification("A/B test inconclusive How to Share a PowerPoint or Google Slides Presentation in Zoom: The test completed with no winner"),
@@ -319,7 +321,7 @@ test("recognizes current YouTube Studio A/B notification wording", () => {
   );
   assert.equal(
     detectNotificationOutcome("A/B test inconclusive How to Share a PowerPoint or Google Slides Presentation in Zoom: The test completed with no winner"),
-    "no_clear"
+    "inconclusive"
   );
   assert.equal(
     isLikelyFinishNotification("A/B test inconclusive Excel Tutorial for Beginners: Not enough views to determine a winner"),
@@ -327,7 +329,7 @@ test("recognizes current YouTube Studio A/B notification wording", () => {
   );
   assert.equal(
     detectNotificationOutcome("A/B test inconclusive Excel Tutorial for Beginners: Not enough views to determine a winner"),
-    "no_clear"
+    "inconclusive"
   );
 });
 
@@ -811,7 +813,9 @@ test("B/C title metadata change creates applied-change event, but A does not", (
     currentYoutubeTitle: "Better title"
   };
   const event = detectAppliedChange(base);
-  assert.equal(event.detectedOutcome, "winner_b");
+  assert.equal(event.detectedOutcome, "applied_b");
+  assert.equal(event.result, "unknown");
+  assert.equal(event.youtubeAppliedVariant, "B");
   assert.equal(event.source, "metadata");
   assert.equal(detectAppliedChange({ ...base, currentYoutubeTitle: "Original title" }), null);
 });

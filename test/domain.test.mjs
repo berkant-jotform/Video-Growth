@@ -40,11 +40,26 @@ test("parses dates and falls back safely", () => {
   assert.deepEqual(parseDate(""), { date: "", present: false });
 });
 
-test("infers numeric winner and no-clear result", () => {
-  assert.deepEqual(inferWinner({ A: 0.45, B: 0.55 }).suggestedWinner, "B");
+test("keeps highest numeric share descriptive and preserves explicit no-clear result", () => {
+  const shares = inferWinner({ A: 0.45, B: 0.55 }, { A: "Title A", B: "Title B" });
+  assert.equal(shares.suggestedWinner, "");
+  assert.equal(shares.result, "unknown");
+  assert.equal(shares.highestShareVariant, "B");
+  assert.match(shares.winnerReason, /not a YouTube result/i);
   const noClear = inferWinner({ A: "no_clear_winner", B: null });
   assert.equal(noClear.detectedOutcome, "no_clear");
   assert.equal(noClear.resultEntered, true);
+});
+
+test("accepts an explicit sheet winner without deriving it from shares", () => {
+  const winner = inferWinner(
+    { A: "Winner", B: null },
+    { A: "Original", B: "Alternative" }
+  );
+  assert.equal(winner.result, "winner");
+  assert.equal(winner.resultEvidence, "sheet_explicit");
+  assert.equal(winner.explicitWinnerVariant, "A");
+  assert.equal(winner.suggestedWinner, "A");
 });
 
 test("hybrid detection treats entered percentages as already logged", () => {
@@ -78,7 +93,9 @@ test("hybrid detection treats entered percentages as already logged", () => {
   });
   assert.equal(records.length, 1);
   assert.equal(records[0].status, "result_logged");
-  assert.equal(records[0].suggestedWinner, "B");
+  assert.equal(records[0].suggestedWinner, "");
+  assert.equal(records[0].result, "unknown");
+  assert.equal(records[0].highestShareVariant, "B");
 });
 
 test("hybrid detection treats not-enough-impressions text as already logged", () => {

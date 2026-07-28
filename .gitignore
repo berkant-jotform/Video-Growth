@@ -2,6 +2,7 @@
 .env
 .env.local
 .env*.local
+.local-migrations/
 data/
 __pycache__/
 *.pyc

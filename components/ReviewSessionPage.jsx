@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, ListChecks, RotateCcw, Type } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 import { buildReviewQueue } from "@/lib/review-session.mjs";
+import { highestShareDescription, resultDisplayLabel } from "@/lib/result-semantics.mjs";
 
 const OUTCOMES = [
   ["A", "A"],
@@ -283,7 +284,9 @@ function ReviewOptions({ run }) {
         <div className={`review-option option-${key.toLowerCase()}`} key={key}>
           <span>{key}</span>
           {run.thumbnailPreviews?.[key] ? <img src={run.thumbnailPreviews[key]} alt={`Thumbnail ${key}`} /> : <strong>{run.options?.[key]}</strong>}
-          {run.watchTimeShare?.[key] !== null && run.watchTimeShare?.[key] !== undefined ? <em>{run.watchTimeShare[key]}%</em> : null}
+          {run.watchTimeShare?.[key] !== null && run.watchTimeShare?.[key] !== undefined
+            ? <em>{formatShare(run.watchTimeShare[key])}</em>
+            : null}
         </div>
       ))}
     </aside>
@@ -291,9 +294,19 @@ function ReviewOptions({ run }) {
 }
 
 function outcomeLabel(run) {
-  if (run.detectedOutcome === "no_clear" || run.finishEventOutcome === "no_clear") return "No clear winner";
-  if (run.suggestedWinner && /^[ABC]$/.test(run.suggestedWinner)) return `Suggested ${run.suggestedWinner}`;
+  if (run.result === "winner") {
+    return run.explicitWinnerVariant
+      ? `YouTube winner ${run.explicitWinnerVariant}`
+      : "YouTube winner";
+  }
+  if (run.result && run.result !== "unknown") return resultDisplayLabel(run.result);
+  if (run.highestShareVariant) return highestShareDescription(run.highestShareVariant);
   return run.queueStatus === "action_conflict" ? "Action conflict" : "Confirmed finished";
+}
+
+function formatShare(value) {
+  if (!Number.isFinite(Number(value))) return String(value || "");
+  return `${(Number(value) * 100).toFixed(1)}%`;
 }
 
 function channelInitials(value) {
