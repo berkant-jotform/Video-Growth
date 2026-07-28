@@ -311,6 +311,25 @@ export default function SettingsPage({ session }) {
                 onChange={(value) => setForm((current) => ({ ...current, BLOB_READ_WRITE_TOKEN: value }))}
               />
             </fieldset>
+            <fieldset className="settings-fieldset" disabled={!databaseReady}>
+              <legend>History exports</legend>
+              <label className="settings-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={String(form.HISTORY_EXPORTS_ENABLED || "false") === "true"}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      HISTORY_EXPORTS_ENABLED: event.target.checked ? "true" : "false"
+                    }))
+                  }
+                />
+                <span>
+                  <strong>Enable Export tests on History</strong>
+                  <em>Off by default. Exports are read-only and use the current app database.</em>
+                </span>
+              </label>
+            </fieldset>
             <div className="readiness-list">
               {BOOTSTRAP_ITEMS.map((item) => (
                 <SetupRow

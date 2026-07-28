@@ -1,6 +1,6 @@
 {
   "name": "youtube-ab-tests-detector",
-  "version": "4.7.1",
+  "version": "5.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 8770",
     "test": "node --test test/*.test.mjs",
+    "verify:history-export": "node --env-file=.env.production.local scripts/verify-history-export.mjs",
     "migration:results:dry-run": "node --env-file=.env.production.local scripts/result-semantics-migration.mjs",
     "hash-password": "node scripts/hash-password.mjs",
     "package-extension": "scripts/package_chrome_extension.sh"
@@ -17,6 +18,7 @@
     "@vercel/blob": "^2.6.1",
     "exceljs": "^4.4.0",
     "googleapis": "^173.0.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",
     "next": "^15.5.20",
     "nodemailer": "^9.0.3",
@@ -24,7 +26,6 @@
     "react-dom": "^19.0.0",
     "sharp": "^0.34.0"
   },
-  "devDependencies": {},
   "overrides": {
     "postcss": "^8.5.10",
     "uuid": "^11.1.1"

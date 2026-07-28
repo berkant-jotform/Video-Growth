@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { enrichWithYouTubeMetadata, fetchYouTubeVideoMetadata, findYouTubeVideoCandidates } from "../lib/youtube.js";
+import {
+  enrichWithYouTubeMetadata,
+  fetchYouTubeVideoContexts,
+  fetchYouTubeVideoMetadata,
+  findYouTubeVideoCandidates,
+  parseIsoDurationSeconds
+} from "../lib/youtube.js";
 
 test("finds and caches YouTube video candidates by title", async () => {
   const originalFetch = globalThis.fetch;
@@ -133,6 +139,73 @@ test("enriches an unregistered signal directly from its YouTube video ID", async
     assert.equal(first["unregistered-video-411"].channelTitle, "Jotform Apps");
     assert.equal(first["unregistered-video-411"].thumbnailUrl, "https://img.example/high.jpg");
     assert.deepEqual(second, first);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("normal scan enrichment keeps its existing snippet-only request contract", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return {
+      ok: true,
+      async json() {
+        return {
+          items: [{
+            id: "video-contract",
+            snippet: {
+              title: "Current title",
+              channelId: "UCcontract",
+              channelTitle: "Jotform",
+              thumbnails: {}
+            }
+          }]
+        };
+      }
+    };
+  };
+  try {
+    const output = await enrichWithYouTubeMetadata(
+      [{ videoId: "video-contract", channel: "Jotform", troubles: [] }],
+      { youtubeApiKey: "test-key" }
+    );
+    assert.match(requestedUrl, /part=snippet/);
+    assert.doesNotMatch(requestedUrl, /contentDetails/);
+    assert.deepEqual(Object.keys(output).sort(), ["records", "warnings"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("export-only video context parses duration and current video status", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        items: [{
+          id: "video-context",
+          snippet: { publishedAt: "2026-07-01T10:00:00Z" },
+          contentDetails: { definition: "hd", duration: "PT1H2M3S" },
+          liveStreamingDetails: {
+            actualStartTime: "2026-07-01T10:00:00Z",
+            actualEndTime: "2026-07-01T11:02:03Z"
+          },
+          status: { madeForKids: false, privacyStatus: "public" }
+        }]
+      };
+    }
+  });
+  try {
+    const [context] = await fetchYouTubeVideoContexts(["video-context"], "test-key");
+    assert.equal(context.durationSeconds, 3723);
+    assert.equal(context.liveArchive, true);
+    assert.equal(context.madeForKids, false);
+    assert.equal(context.privacyStatus, "public");
+    assert.equal(parseIsoDurationSeconds("P1DT2H3M4S"), 93784);
+    assert.equal(parseIsoDurationSeconds("not-a-duration"), null);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ExternalLink, Pencil, Search, Users, X } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, Pencil, Search, Users, X } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
+import HistoryExportDrawer from "@/components/HistoryExportDrawer.jsx";
 
 export default function HistoryPage({ session }) {
   const [items, setItems] = useState([]);
@@ -15,6 +16,8 @@ export default function HistoryPage({ session }) {
   const [correcting, setCorrecting] = useState("");
   const [correction, setCorrection] = useState("A");
   const [saving, setSaving] = useState(false);
+  const [exportStatus, setExportStatus] = useState({ enabled: false, recent: [] });
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -24,6 +27,15 @@ export default function HistoryPage({ session }) {
       controller.abort();
     };
   }, [search]);
+
+  useEffect(() => {
+    fetch("/api/history/export/status", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (payload.ok) setExportStatus(payload);
+      })
+      .catch(() => {});
+  }, []);
 
   async function load(signal) {
     setError("");
@@ -108,14 +120,28 @@ export default function HistoryPage({ session }) {
             <h2>Completed actions</h2>
             <p className="muted">Every decision made in the detector, with the reviewer and Studio link preserved.</p>
           </div>
-          <div className="history-summary" aria-label="History summary">
-            <span><strong>{items.length}</strong> actions</span>
-            <span><strong>{reviewerCount}</strong> reviewers</span>
-            <span><strong>{channels.length}</strong> channels</span>
+          <div className="history-intro-actions">
+            <div className="history-summary" aria-label="History summary">
+              <span><strong>{items.length}</strong> actions</span>
+              <span><strong>{reviewerCount}</strong> reviewers</span>
+              <span><strong>{channels.length}</strong> channels</span>
+            </div>
+            {exportStatus.enabled ? (
+              <button
+                className="primary-button history-export-button"
+                type="button"
+                onClick={() => setExportOpen(true)}
+                disabled={loading}
+                title="Export tests and analysis data"
+              >
+                <Download size={17} />
+                Export tests
+              </button>
+            ) : null}
           </div>
         </section>
 
-        <section className="history-toolbar" aria-label="History filters">
+        <section className="history-toolbar" id="history-filters" aria-label="History filters">
           <label className="history-search-field">
             <span>Search</span>
             <span className="search-box history-search">
@@ -209,6 +235,32 @@ export default function HistoryPage({ session }) {
           ) : null}
         </section>
       </main>
+      {exportOpen ? (
+        <HistoryExportDrawer
+          actorName={session?.actorName || "Reviewer"}
+          inheritedFilters={{ search, channel, action, testType }}
+          recent={exportStatus.recent || []}
+          onClose={() => setExportOpen(false)}
+          onRecentChange={(recent) =>
+            setExportStatus((current) => ({ ...current, recent }))
+          }
+          onRerunFilters={(filters = {}) => {
+            setSearch(filters.search || "");
+            setChannel(filters.channel || "all");
+            setAction(filters.action || "all");
+            setTestType(filters.testType || "all");
+          }}
+          onChangeScope={() => {
+            setExportOpen(false);
+            requestAnimationFrame(() =>
+              document.getElementById("history-filters")?.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+              })
+            );
+          }}
+        />
+      ) : null}
     </AppShell>
   );
 }

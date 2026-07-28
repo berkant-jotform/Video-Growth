@@ -1,6 +1,6 @@
 # Result Semantics Migration Dry-Run
 
-Status: **APPROVED FOR MIGRATION - no production data was changed by this report**
+Status: **APPLIED AND VERIFIED IN PRODUCTION**
 
 Generated from the live production database on 2026-07-28 using the read-only
 mode of `scripts/result-semantics-migration.mjs`.
@@ -11,10 +11,11 @@ mode of `scripts/result-semantics-migration.mjs`.
 - Plan checksum: `3d4e4afe779326ea5fb6ba40057f93e93e16ad1f238de339c39f141d0d90fdef`
 - Pre-migration checksum: `d19c61fe62883aa4ff3a9dbd9b27fff0b0078fa97921849dd2c8d88db1939dac`
 - Local plan: `.local-migrations/result_semantics_20260728102828/plan.json`
-- Database writes: **0**
+- Production application: **complete**
 
 The local plan is intentionally ignored by Git because it contains a complete
-snapshot of internal records.
+snapshot of internal records. The migration was applied only after the dry-run,
+snapshot, and rollback rehearsal passed.
 
 ## Source Reconciliation
 
@@ -37,21 +38,47 @@ snapshot of internal records.
 | Winner | Studio explicit | 4 | 4 | Yes |
 
 `result=winner AND result_evidence=inferred_legacy` returns **0** tests after
-the planned repair.
+the applied repair.
+
+## Applied Migration
+
+- Raw test-run updates: **1,946**
+- Finish-event updates: **983**
+- Reviewer actions linked to persisted logical tests: **104**
+- Production result distribution: **4 winner / 76 performed_same /
+  366 inconclusive / 829 unknown = 1,275**
+- Lifecycle distribution: **882 finished / 278 unknown with
+  missing_finish_evidence / 115 unknown with
+  missing_start_and_finish_evidence**
+
+The 1,946 updates are raw records, while the acceptance distribution is one row
+per persisted logical sheet test. The rollup is:
+
+| Result | Raw records updated | Logical sheet tests |
+| --- | ---: | ---: |
+| Winner | 8 | 4 |
+| Performed similarly | 139 | 76 |
+| Inconclusive | 524 | 366 |
+| Unknown | 1,221 | 829 |
+| Total | 1,892 sheet records | 1,275 sheet tests |
+
+The remaining **54 raw records** roll up to **29 app-managed logical tests**.
+They are exported as a separate grain and are not part of the 1,275-test
+migration acceptance distribution.
 
 ## Coverage
 
 The earlier 891 denominator is stale. No defensible evidence rule produces it.
 The strict terminal-evidence population is 882 and is retained as one reporting
-denominator, not frozen as the final coverage denominator. Phase E will also
-show the wider denominator of 882 plus non-terminal tests that started more
-than three weeks before the export's as-of date.
+denominator, not frozen as the final coverage denominator. Phase E also shows
+the wider denominator of 882 plus non-terminal tests whose stored start date is
+at least 21 days before the export's as-of date.
 
 | Metric | Expected | Actual | Actual coverage | Match |
 | --- | ---: | ---: | ---: | --- |
 | Terminal tests | 891 | 882 | - | No |
 | Explicit result evidence | 446 | 446 | 50.6% of 882 | Yes count |
-| Shares present | 453 | 453 | 51.4% of 882 | Yes count |
+| Shares present | 453 raw rows | 364 logical tests | 41.3% of 882 | Grain corrected |
 | Strictly validated shares | 362 | 362 | 41.0% of 882 | Yes count |
 
 The 393 non-terminal logical tests contain:
@@ -70,8 +97,8 @@ both groups at `lifecycle_status=unknown`, `result=unknown`:
 Reviewer choices remain `operational_decision` only. Counting all 13 as
 terminal would produce 895, not 891. Selecting nine of those thirteen would
 match the expected denominator, but there is no documented evidence rule that
-supports that choice. The migration therefore remains blocked instead of
-guessing.
+supports that choice. The migration did not invent a terminal state for any of
+these tests.
 
 ## Visible Result Changes
 
@@ -90,32 +117,35 @@ row eligible for result-entry workflow, but they never create a YouTube Winner.
 ## Safety Gates
 
 - Google Sheets and YouTube remain read-only.
-- The dry-run does not call schema initialization or write to the database.
+- The dry-run did not call schema initialization or write to the database.
 - Applying requires the exact migration ID, plan checksum, unchanged source
   checksum, and a fully passing acceptance report.
 - The apply path uses one serializable transaction with a pre-migration
   snapshot and append-only field audit.
 - Rollback is keyed by migration ID and verifies the restored snapshot checksum.
-- The current acceptance mismatch prevents `--apply`.
+- Production apply required the unchanged source checksum and exact approved
+  migration identity.
 
 ## Denominator Decision
 
-The migration is not blocked by the denominator. It will report how many of the
-278 started tests are more than three weeks old and will publish coverage under:
+The migration is not blocked by the denominator. It reports how many of the 278
+started tests have a stored start date at least 21 days old and publishes
+coverage under:
 
 1. Strict terminal evidence: 882.
-2. Strict terminal evidence plus the over-three-weeks group.
+2. Strict terminal evidence plus the `stored_start_age_days >= 21` group.
 
 Phase E computes coverage bands from the selected denominator. It does not
 hardcode the expected band.
 
-As of 2026-07-28, **247** of the 278 started tests are more than three weeks
-old. This diagnostic does not promote those tests or gate the migration.
+As of 2026-07-28, **247** of the 278 started tests are 21 days old or older.
+The rule is `stored_start_age_days >= 21`. It is a reporting definition, not a
+measured finish event, and does not promote those tests or gate the migration.
 
 | Metric | Strict terminal evidence (882) | Terminal + over-three-weeks (1,129) |
 | --- | ---: | ---: |
 | Explicit result evidence | 446 (50.6%) | 446 (39.5%) |
-| Shares present | 453 (51.4%) | 453 (40.1%) |
+| Shares present | 364 (41.3%) | 364 (32.2%) |
 | Strictly validated shares | 362 (41.0%) | 362 (32.1%) |
 
 ## Rollback Rehearsal
@@ -130,3 +160,9 @@ before the production run:
 - Restored checksum:
   `d19c61fe62883aa4ff3a9dbd9b27fff0b0078fa97921849dd2c8d88db1939dac`
 - Production rows changed by rehearsal: 0
+
+## Reviewer Action Count
+
+The earlier audit saw **102** reviewer actions. The migration linked **104**
+because two new BG actions were recorded after that audit, at 2026-07-28
+06:50:44 UTC and 06:58:11 UTC. This is new activity, not a grain mismatch.
