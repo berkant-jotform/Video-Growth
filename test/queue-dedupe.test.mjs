@@ -33,12 +33,13 @@ test("preserves real retests when date or options change", () => {
   assert.equal(result.every((run) => run.possibleRetest), true);
 });
 
-test("does not collapse separate rows from the same source tab", () => {
+test("collapses separate rows from the same source tab when material identity is identical", () => {
   const result = dedupeQueueRuns([
     { ...base, testRunId: "row-4", spreadsheetId: "main", sheetName: "Jotform", rowNumber: 4 },
     { ...base, testRunId: "row-5", spreadsheetId: "main", sheetName: "Jotform", rowNumber: 5 }
   ]);
-  assert.equal(result.length, 2);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].duplicateCount, 1);
 });
 
 test("collapses stale IDs for the exact same source row", () => {

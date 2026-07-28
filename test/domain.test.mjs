@@ -35,6 +35,8 @@ test("extracts spreadsheet IDs from URLs or raw IDs", () => {
 test("parses dates and falls back safely", () => {
   assert.deepEqual(parseDate("2026-06-15"), { date: "2026-06-15", present: true });
   assert.deepEqual(parseDate("06/15/2026"), { date: "2026-06-15", present: true });
+  assert.deepEqual(parseDate("July 23", "2026-07-28"), { date: "2026-07-23", present: true });
+  assert.deepEqual(parseDate("December 15", "2026-01-10"), { date: "2025-12-15", present: true });
   assert.deepEqual(parseDate(""), { date: "", present: false });
 });
 

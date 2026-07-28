@@ -9,6 +9,7 @@ import {
   expandConnectorEventInputs,
   extractAccessibleFinishEventsFromScan,
   extractFinishNotificationSnippets,
+  finishEventHash,
   isLikelyFinishNotification,
   isPromotableStudioFinishEvent,
   matchFinishEventToRun,
@@ -29,6 +30,46 @@ test("parses Studio notification video IDs and no-clear outcome", () => {
   assert.equal(event.videoId, "abc123XYZ_9");
   assert.equal(event.detectedOutcome, "no_clear");
   assert.equal(event.channel, "Jotform");
+});
+
+test("keeps the same Studio notification stable across rescans and duplicate sheet rows", () => {
+  const rawText =
+    "A/B test performed well for all Google Calendar Guide: Settings & Share Options in 2 Minutes: Results with very similar performance.";
+  const first = finishEventHash({
+    source: "studio_accessibility_label",
+    testRunId: "row-72",
+    videoId: "yH0BR8dF0xs",
+    channelId: "UCh04CepWeaJT7wJUIgnmzJQ",
+    videoTitle: "Google Calendar Guide: Settings & Share Options in 2 Minutes",
+    rawText,
+    detectedOutcome: "no_clear",
+    observedAt: "2026-07-27T11:01:05.486Z",
+    notificationAge: "3 hours ago"
+  });
+  const later = finishEventHash({
+    source: "studio_bell",
+    testRunId: "row-66",
+    videoId: "yH0BR8dF0xs",
+    channelId: "UCh04CepWeaJT7wJUIgnmzJQ",
+    videoTitle: "Google Calendar Guide: Settings & Share Options in 2 Minutes",
+    rawText,
+    detectedOutcome: "no_clear",
+    observedAt: "2026-07-28T05:57:58.520Z",
+    notificationAge: "22 hours ago"
+  });
+  assert.equal(first, later);
+  assert.notEqual(
+    first,
+    finishEventHash({
+      source: "studio_bell",
+      videoId: "yH0BR8dF0xs",
+      channelId: "UCh04CepWeaJT7wJUIgnmzJQ",
+      videoTitle: "Google Calendar Guide: Settings & Share Options in 2 Minutes",
+      rawText,
+      detectedOutcome: "no_clear",
+      occurredAt: "2026-08-20T08:00:00.000Z"
+    })
+  );
 });
 
 test("does not promote truncated Studio fragments without a resolved identity", () => {
