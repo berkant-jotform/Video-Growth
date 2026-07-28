@@ -67,6 +67,7 @@ console.log(JSON.stringify({
     appManagedLogicalTests: exportData.coverage.population.appManagedLogicalTests,
     sourceRecords: exportData.datasets.sourceRecords.length,
     variants: exportData.datasets.variants.length,
+    variantDistribution: variantCountDistribution(exportData.datasets.tests),
     actions: exportData.datasets.actions.length,
     finishSignals: exportData.datasets.finishSignals.length,
     videos: exportData.datasets.videoContext.length
@@ -102,8 +103,25 @@ function verifyDataContract(data) {
   );
 
   const testIds = new Set(data.datasets.tests.map((test) => test.test_id));
+  const variantCountByTest = new Map(
+    data.datasets.tests.map((test) => [test.test_id, 0])
+  );
+  for (const variant of data.datasets.variants) {
+    variantCountByTest.set(
+      variant.test_id,
+      (variantCountByTest.get(variant.test_id) || 0) + 1
+    );
+  }
   const videoIds = new Set(data.datasets.tests.map((test) => test.video_id).filter(Boolean));
   assert.equal(data.datasets.variants.every((row) => testIds.has(row.test_id)), true);
+  assert.equal(
+    data.datasets.tests.every(
+      (test) =>
+        Number(test.exported_variant_count || 0) ===
+        Number(variantCountByTest.get(test.test_id) || 0)
+    ),
+    true
+  );
   assert.equal(data.datasets.actions.every((row) => testIds.has(row.test_id)), true);
   assert.equal(
     data.datasets.videoContext.every((row) => videoIds.has(row.video_id)),
@@ -195,6 +213,14 @@ async function verifyAuditPackage(buffer, workbookName, data) {
     manifest.coverage.addedStartedWithoutFinishEvidence,
     data.coverage.overThreeWeeksCount
   );
+  assert.deepEqual(
+    manifest.variantReconciliation.testCountByExportedVariantRows,
+    variantCountDistribution(data.datasets.tests)
+  );
+  assert.equal(
+    manifest.variantReconciliation.totalVariantRows,
+    data.datasets.variants.length
+  );
   return {
     bytes: buffer.length,
     sha256: sha256(buffer),
@@ -215,6 +241,16 @@ function formulaCellCount(workbook) {
     });
   }
   return count;
+}
+
+function variantCountDistribution(tests = []) {
+  const distribution = { "0": 0, "1": 0, "2": 0, "3": 0, other: 0 };
+  for (const test of tests) {
+    const count = Number(test.exported_variant_count || 0);
+    const key = count >= 0 && count <= 3 ? String(count) : "other";
+    distribution[key] += 1;
+  }
+  return distribution;
 }
 
 function compactCoverage(rows) {

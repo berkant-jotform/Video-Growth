@@ -114,12 +114,68 @@ test("history filters and reviewer-note privacy are enforced in the dataset", ()
   assert.equal(exportData.datasets.actions[0].reviewer_note_included, false);
 });
 
-test("coverage bands are data-driven with forty percent marked low", () => {
+test("coverage bands render 39.9 percent low and 40.1 percent partial", () => {
   assert.equal(coverageBand(0.399), "low");
-  assert.equal(coverageBand(0.4), "low");
+  assert.equal(coverageBand(0.4), "partial");
   assert.equal(coverageBand(0.401), "partial");
   assert.equal(coverageBand(0.6), "partial");
   assert.equal(coverageBand(0.601), "good");
+});
+
+test("share-only A/B slots remain exportable and variant gaps are explicit", () => {
+  const source = fixtureSource();
+  source.tests[0] = {
+    ...source.tests[0],
+    options: {},
+    thumbnailPreviews: {},
+    watchTimeShare: { A: 0.45, B: 0.55 }
+  };
+  source.tests[1] = {
+    ...source.tests[1],
+    options: {},
+    thumbnailPreviews: {},
+    watchTimeShare: {}
+  };
+  source.tests[2] = {
+    ...source.tests[2],
+    options: { A: "Only option" },
+    thumbnailPreviews: {},
+    watchTimeShare: {}
+  };
+  const exportData = buildHistoryExport({
+    source,
+    request: { rows: "everything" },
+    generatedAtUtc: "2026-07-28T09:00:00.000Z"
+  });
+  const shareOnly = exportData.datasets.tests.find(
+    (item) => item.test_id === "test_title"
+  );
+  const missing = exportData.datasets.dataQuality.find(
+    (item) => item.test_id === "test_old"
+  );
+  const incomplete = exportData.datasets.dataQuality.find(
+    (item) => item.test_id === "test_missing"
+  );
+  const variants = exportData.datasets.variants.filter(
+    (item) => item.test_id === "test_title"
+  );
+
+  assert.equal(shareOnly.share_present, true);
+  assert.equal(shareOnly.configured_variant_count, 0);
+  assert.equal(shareOnly.exported_variant_count, 2);
+  assert.equal(shareOnly.variant_data_quality, "content_missing");
+  assert.deepEqual(variants.map((item) => item.variant_slot), ["A", "B"]);
+  assert.equal(variants.every((item) => item.variant_content_present === false), true);
+  assert.equal(
+    variants.every((item) => item.variant_evidence === "watch_time_share"),
+    true
+  );
+  assert.equal(
+    variants.every((item) => item.share_included_in_strict_analysis === false),
+    true
+  );
+  assert.equal(missing.issue_codes.includes("missing_variant_rows"), true);
+  assert.equal(incomplete.issue_codes.includes("incomplete_variant_set"), true);
 });
 
 test("duration fields stay numeric or blank and preserve uncertainty bounds", () => {

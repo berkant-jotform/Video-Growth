@@ -64,6 +64,11 @@ test("audit package includes the ExcelJS workbook, manifest, records, and checks
     "stored_start_age_days_greater_than_or_equal_to_threshold"
   );
   assert.equal(manifest.coverage.addedStartedWithoutFinishEvidence, 0);
+  assert.deepEqual(
+    manifest.variantReconciliation.testCountByExportedVariantRows,
+    { "0": 0, "1": 0, "2": 1, "3": 0, other: 0 }
+  );
+  assert.equal(manifest.variantReconciliation.totalVariantRows, 2);
   const checksums = await zip.file("checksums.sha256").async("string");
   assert.match(checksums, /history\.xlsx/);
   assert.match(checksums, /audit\/finish_signals\.ndjson/);

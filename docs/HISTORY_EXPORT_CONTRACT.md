@@ -68,8 +68,8 @@ band, and denominator type. Denominators are computed from selected data.
   `missing_finish_evidence` whose stored start is at least 21 days before the
   export as-of time.
 - Dates do not promote lifecycle status.
-- Low: 40% or lower.
-- Partial: above 40% through 60%.
+- Low: below 40%.
+- Partial: 40% through 60%.
 - Good: above 60%.
 
 Production-shaped QA on 2026-07-28:
@@ -77,15 +77,37 @@ Production-shaped QA on 2026-07-28:
 | Metric | Strict: 882 | Wider: 1,129 |
 | --- | ---: | ---: |
 | Explicit result evidence | 446 (50.6%, partial) | 446 (39.5%, low) |
-| Shares present | 364 (41.3%, partial) | 364 (32.2%, low) |
+| Shares present | 453 (51.4%, partial) | 453 (40.1%, partial) |
 | Strict title shares | 362 (41.0%, partial) | 362 (32.1%, low) |
 
 The wider population adds tests whose stored start date is **21 days old or
 older** (`stored_start_age_days >= 21`) and whose finish was not captured. This
 is an explicit reporting definition, not a measured finish event, and it never
 changes lifecycle status. On 2026-07-28 it adds 247 tests. Share counts are
-logical-test counts. The earlier 453 figure was a raw-record count and must not
-be used as the logical-test numerator.
+logical-test counts. Share-present coverage includes any logical test with a
+numeric A/B/C share. Strict title-share coverage additionally requires at least
+two stored variant-content slots and a valid 1.00 +/- 0.01 total.
+
+## Variant Reconciliation
+
+Variants exports one row for every A/B/C slot supported by stored option
+content, a thumbnail preview, or a numeric watch-time share. Share-only rows
+remain useful for analysis but are marked `variant_content_present=false`.
+
+Production-shaped QA on 2026-07-28:
+
+| Exported variant rows per test | Logical tests |
+| --- | ---: |
+| 0 | 186 |
+| 1 | 2 |
+| 2 | 1,104 |
+| 3 | 12 |
+
+The 1,304 Tests rows reconcile to 2,246 Variants rows. Tests with zero rows are
+flagged `missing_variant_rows`; tests with one row are flagged
+`incomplete_variant_set`; share-only rows are flagged
+`variant_content_missing`. `Tests.exported_variant_count` must equal the number
+of Variants rows for that `test_id`.
 
 ## Date Quality
 

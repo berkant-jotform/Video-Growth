@@ -78,7 +78,7 @@ at least 21 days before the export's as-of date.
 | --- | ---: | ---: | ---: | --- |
 | Terminal tests | 891 | 882 | - | No |
 | Explicit result evidence | 446 | 446 | 50.6% of 882 | Yes count |
-| Shares present | 453 raw rows | 364 logical tests | 41.3% of 882 | Grain corrected |
+| Shares present | 453 raw rows | 453 logical tests | 51.4% of 882 | Share-only thumbnail slots retained |
 | Strictly validated shares | 362 | 362 | 41.0% of 882 | Yes count |
 
 The 393 non-terminal logical tests contain:
@@ -145,7 +145,7 @@ measured finish event, and does not promote those tests or gate the migration.
 | Metric | Strict terminal evidence (882) | Terminal + over-three-weeks (1,129) |
 | --- | ---: | ---: |
 | Explicit result evidence | 446 (50.6%) | 446 (39.5%) |
-| Shares present | 364 (41.3%) | 364 (32.2%) |
+| Shares present | 453 (51.4%) | 453 (40.1%) |
 | Strictly validated shares | 362 (41.0%) | 362 (32.1%) |
 
 ## Rollback Rehearsal
