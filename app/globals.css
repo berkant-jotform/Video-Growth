@@ -5898,6 +5898,12 @@ select,
   font-style: normal;
 }
 
+.history-export-footer .export-storage-notice {
+  color: var(--amber);
+  font-size: 10px;
+  font-weight: 720;
+}
+
 @keyframes export-skeleton {
   from { opacity: .45; }
   to { opacity: 1; }

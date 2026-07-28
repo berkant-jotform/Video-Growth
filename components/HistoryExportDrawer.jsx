@@ -65,6 +65,7 @@ export default function HistoryExportDrawer({
   const [generating, setGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState("");
   const [downloadError, setDownloadError] = useState("");
+  const [downloadNotice, setDownloadNotice] = useState("");
   const previewSequence = useRef(0);
 
   const request = useMemo(
@@ -114,6 +115,7 @@ export default function HistoryExportDrawer({
   async function generate() {
     setGenerating(true);
     setDownloadError("");
+    setDownloadNotice("");
     setGenerationStep("Preparing the selected logical tests");
     const stageTimer = setTimeout(
       () => setGenerationStep("Building the verified workbook"),
@@ -135,6 +137,7 @@ export default function HistoryExportDrawer({
         parseDownloadName(response.headers.get("Content-Disposition")) ||
         "YT_AB_Tests.xlsx";
       downloadBlob(blob, fileName);
+      setDownloadNotice(response.headers.get("X-Export-Storage-Warning") || "");
       await refreshRecent();
       setGenerationStep("Downloaded");
     } catch (error) {
@@ -358,6 +361,7 @@ export default function HistoryExportDrawer({
             <strong>{generationStep || `${actorName} will be recorded as creator`}</strong>
             <span>{contents === "workbook_audit" ? "Downloads a ZIP with workbook and audit records." : "Downloads an Excel workbook."}</span>
             {downloadError ? <em>{downloadError}</em> : null}
+            {downloadNotice ? <span className="export-storage-notice">{downloadNotice}</span> : null}
           </div>
           <button className="primary-button" type="button" disabled={disabled} onClick={generate}>
             {generating ? <RefreshCw className="spin" size={17} /> : <Download size={17} />}
@@ -377,7 +381,7 @@ function PreviewMetrics({ preview }) {
     <>
       <div className="export-preview-metrics">
         <div><span>Tests</span><strong>{preview.logicalTests}</strong><em>from {preview.sourceRecords} records</em></div>
-        <div><span>Variants</span><strong>{preview.variants}</strong><em>configured options</em></div>
+        <div><span>Variants</span><strong>{preview.variants}</strong><em>A/B/C evidence rows</em></div>
         <div className="coverage"><span>Shares present</span><strong>{preview.sharesPresent} <b>({shareRate})</b></strong><em>manual coverage</em></div>
         <div><span>Actions</span><strong>{preview.actions}</strong><em>review decisions</em></div>
         <div><span>Signals</span><strong>{preview.signals}</strong><em>finish evidence</em></div>

@@ -15,15 +15,20 @@ export async function POST(request) {
       request: body,
       actorName: session.actorName
     });
+    const headers = {
+      "Content-Type": file.contentType,
+      "Content-Disposition": contentDisposition(file.fileName),
+      "Content-Length": String(file.buffer.length),
+      "X-Export-Id": file.exportId,
+      "X-Export-Stored": String(file.stored)
+    };
+    if (file.storageWarning) {
+      headers["X-Export-Storage-Warning"] =
+        "Cloud archive unavailable; workbook download succeeded.";
+    }
     return new Response(file.buffer, {
       status: 200,
-      headers: {
-        "Content-Type": file.contentType,
-        "Content-Disposition": contentDisposition(file.fileName),
-        "Content-Length": String(file.buffer.length),
-        "X-Export-Id": file.exportId,
-        "X-Export-Stored": String(file.stored)
-      }
+      headers
     });
   } catch (error) {
     return errorJson(error);
