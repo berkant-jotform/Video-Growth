@@ -259,6 +259,7 @@ export default function HistoryPage({ session }) {
               })
             );
           }}
+          onWidenScope={clearFilters}
         />
       ) : null}
     </AppShell>

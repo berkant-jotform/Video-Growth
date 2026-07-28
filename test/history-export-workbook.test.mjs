@@ -37,6 +37,17 @@ test("ExcelJS workbook has the required flat, typed, formula-free tabs", async (
   );
   assert.equal(typeof tests.getCell(2, headers.test_duration_hours).value, "number");
   assert.equal(tests.getCell(2, headers.video_title).value, "=Formula-looking title");
+  const videoContext = workbook.getWorksheet("Video Context");
+  const contextHeaders = Object.fromEntries(
+    videoContext.getRow(1).values.slice(1).map((value, index) => [value, index + 1])
+  );
+  assert.equal(videoContext.rowCount - 1, exportData.datasets.videoContext.length);
+  assert.equal(videoContext.getCell(2, contextHeaders.video_id).value, "video_1");
+  assert.equal(videoContext.getCell(2, contextHeaders.definition).value, "hd");
+  assert.equal(
+    typeof videoContext.getCell(2, contextHeaders.duration_seconds).value,
+    "number"
+  );
   assert.equal(formulaCellCount(workbook), 0);
 });
 

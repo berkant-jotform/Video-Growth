@@ -7,6 +7,10 @@ import {
   normalizeHistoryExportRequest
 } from "../lib/history-export.mjs";
 
+test("history exports default to all completed tests", () => {
+  assert.equal(normalizeHistoryExportRequest({}).rows, "all_completed");
+});
+
 test("history export keeps sheet and app grains separate and computes both denominators", () => {
   const exportData = buildHistoryExport({
     source: fixtureSource(),
@@ -30,6 +34,44 @@ test("history export keeps sheet and app grains separate and computes both denom
   assert.equal(exportData.coverage.strict[0].eligibleN, 1);
   assert.equal(exportData.coverage.wider[0].eligibleN, 2);
   assert.equal(exportData.coverage.period.some((item) => item.dimension === "2026-06"), true);
+});
+
+test("preview compares every scope with the full population and warns below twenty-five percent", () => {
+  const source = fixtureSource();
+  source.tests.push({
+    ...source.tests[1],
+    testId: "test_extra",
+    primaryTestRunId: "run_extra_1",
+    videoId: "video_extra",
+    videoTitle: "Extra open test"
+  });
+  source.sourceRecords.push(sourceRecord("run_extra_1", "test_extra", "video_extra"));
+  const exportData = buildHistoryExport({
+    source,
+    request: { rows: "current_view" },
+    generatedAtUtc: "2026-07-28T09:00:00.000Z"
+  });
+
+  assert.deepEqual(exportData.preview.fullPopulation, {
+    logicalTests: 5,
+    sourceRecords: 6,
+    sharesPresent: 5
+  });
+  assert.deepEqual(exportData.preview.rowScopes.current_view, {
+    logicalTests: 1,
+    sourceRecords: 2,
+    sharesPresent: 1
+  });
+  assert.equal(exportData.preview.rowScopes.all_completed.logicalTests, 2);
+  assert.equal(exportData.preview.rowScopes.everything.logicalTests, 5);
+  assert.equal(exportData.preview.scopeCoverage.logicalTests, 0.2);
+  assert.equal(exportData.preview.scopeCoverage.sharesPresent, 0.2);
+  assert.equal(
+    exportData.preview.warnings.some(
+      (item) => item.level === "degrading" && item.action === "widen_scope"
+    ),
+    true
+  );
 });
 
 test("production logical source kinds classify title and thumbnail as sheet-backed", () => {

@@ -16,14 +16,14 @@ import {
 
 const ROW_OPTIONS = [
   {
-    value: "current_view",
-    title: "Current History view",
-    description: "Only tests represented by the filtered actions you can see."
-  },
-  {
     value: "all_completed",
     title: "All completed tests",
     description: "Every finished test or test with a reviewer decision."
+  },
+  {
+    value: "current_view",
+    title: "Tests with reviewer actions only",
+    description: "A narrow operational subset, not the complete test history."
   },
   {
     value: "everything",
@@ -54,9 +54,10 @@ export default function HistoryExportDrawer({
   onClose,
   onRecentChange,
   onRerunFilters,
-  onChangeScope
+  onChangeScope,
+  onWidenScope
 }) {
-  const [rows, setRows] = useState("current_view");
+  const [rows, setRows] = useState("all_completed");
   const [contents, setContents] = useState("workbook");
   const [includeReviewerNotes, setIncludeReviewerNotes] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -76,6 +77,10 @@ export default function HistoryExportDrawer({
       filters: inheritedFilters
     }),
     [rows, contents, includeReviewerNotes, inheritedFilters]
+  );
+  const rowOptions = useMemo(
+    () => rowOptionsForPreview(preview),
+    [preview]
   );
 
   useEffect(() => {
@@ -179,12 +184,16 @@ export default function HistoryExportDrawer({
   function rerun(item) {
     const next = item.request || {};
     onRerunFilters(next.filters || {});
-    setRows(next.rows || "current_view");
+    setRows(next.rows || "all_completed");
     setContents(next.contents || "workbook");
     setIncludeReviewerNotes(Boolean(next.includeReviewerNotes));
   }
 
   const disabled = previewLoading || preview?.blocking || !preview?.logicalTests || generating;
+  function widenScope() {
+    setRows((current) => current === "current_view" ? "all_completed" : current);
+    onWidenScope?.();
+  }
 
   return (
     <div className="history-export-layer" role="presentation">
@@ -211,10 +220,24 @@ export default function HistoryExportDrawer({
             <div className="export-section-heading">
               <div>
                 <span>Live preview</span>
-                <strong>{previewLoading ? "Calculating scope" : `${preview?.logicalTests || 0} logical tests`}</strong>
+                <strong>
+                  {previewLoading
+                    ? "Calculating scope"
+                    : scopeCountLabel(
+                      preview?.logicalTests,
+                      preview?.fullPopulation?.logicalTests,
+                      "logical tests"
+                    )}
+                </strong>
               </div>
               {!previewLoading && preview ? (
-                <em>{preview.sourceRecords} source records</em>
+                <em>
+                  {scopeCountLabel(
+                    preview.sourceRecords,
+                    preview.fullPopulation?.sourceRecords,
+                    "source records"
+                  )}
+                </em>
               ) : null}
             </div>
             {previewLoading ? <PreviewSkeleton /> : null}
@@ -234,6 +257,7 @@ export default function HistoryExportDrawer({
                   key={`${warning.level}-${warning.message}-${index}`}
                   warning={warning}
                   onChangeScope={onChangeScope}
+                  onWidenScope={widenScope}
                 />
               ))}
             </section>
@@ -243,7 +267,7 @@ export default function HistoryExportDrawer({
             <div className="export-section-heading">
               <div>
                 <span>Inherited filters</span>
-                <strong>Current History scope</strong>
+                <strong>History filters only</strong>
               </div>
             </div>
             <div className="export-filter-chips">
@@ -253,7 +277,7 @@ export default function HistoryExportDrawer({
             </div>
             <details className="export-override-help">
               <summary>Override filters</summary>
-              <p>Close this drawer and change the History filters above. The export always inherits that visible scope, so totals stay reconcilable.</p>
+              <p>The channel, outcome, type, and search filters are inherited. The Rows choice below controls the population independently.</p>
               <button className="secondary-button compact-button" type="button" onClick={onChangeScope}>
                 Change History filters
               </button>
@@ -268,7 +292,7 @@ export default function HistoryExportDrawer({
               </div>
             </div>
             <div className="export-choice-grid rows">
-              {ROW_OPTIONS.map((option) => (
+              {rowOptions.map((option) => (
                 <ChoiceCard
                   key={option.value}
                   option={option}
@@ -374,15 +398,24 @@ export default function HistoryExportDrawer({
 }
 
 function PreviewMetrics({ preview }) {
-  const shareRate = Number.isFinite(preview.shareCoverage)
-    ? `${Math.round(preview.shareCoverage * 100)}%`
-    : "No denominator";
+  const fullTests = preview.fullPopulation?.logicalTests || 0;
+  const fullShares = preview.fullPopulation?.sharesPresent || 0;
+  const testRate = formatPercent(preview.scopeCoverage?.logicalTests);
+  const shareRate = formatPercent(preview.scopeCoverage?.sharesPresent);
   return (
     <>
       <div className="export-preview-metrics">
-        <div><span>Tests</span><strong>{preview.logicalTests}</strong><em>from {preview.sourceRecords} records</em></div>
+        <div>
+          <span>Tests</span>
+          <strong>{formatCount(preview.logicalTests)} <b>of {formatCount(fullTests)}</b></strong>
+          <em>{testRate} of the full logical-test population</em>
+        </div>
         <div><span>Variants</span><strong>{preview.variants}</strong><em>A/B/C evidence rows</em></div>
-        <div className="coverage"><span>Shares present</span><strong>{preview.sharesPresent} <b>({shareRate})</b></strong><em>manual coverage</em></div>
+        <div className="coverage">
+          <span>Shares present</span>
+          <strong>{formatCount(preview.sharesPresent)} <b>of {formatCount(fullShares)}</b></strong>
+          <em>{shareRate} of all share-bearing tests</em>
+        </div>
         <div><span>Actions</span><strong>{preview.actions}</strong><em>review decisions</em></div>
         <div><span>Signals</span><strong>{preview.signals}</strong><em>finish evidence</em></div>
         <div><span>Date span</span><strong>{formatSpan(preview.dateSpan)}</strong><em>available evidence</em></div>
@@ -437,7 +470,7 @@ function CoverageList({ title, rows = [] }) {
   );
 }
 
-function ExportWarning({ warning, onChangeScope }) {
+function ExportWarning({ warning, onChangeScope, onWidenScope }) {
   const Icon =
     warning.level === "blocking"
       ? ShieldAlert
@@ -447,7 +480,8 @@ function ExportWarning({ warning, onChangeScope }) {
   const actionLabel = {
     refresh_sources: "Refresh sources",
     review_conflicts: "Review conflicts",
-    change_scope: "Change scope"
+    change_scope: "Change scope",
+    widen_scope: "Widen scope"
   }[warning.action] || "Review";
   const href =
     warning.action === "refresh_sources"
@@ -455,19 +489,47 @@ function ExportWarning({ warning, onChangeScope }) {
       : warning.action === "review_conflicts"
         ? "/review"
         : "";
+  const action = warning.action === "widen_scope" ? onWidenScope : onChangeScope;
   return (
     <div className={`export-warning ${warning.level}`}>
       <Icon size={17} />
       <span>{warning.message}</span>
-      {href ? (
+      {warning.action === "none" ? null : href ? (
         <a className="quiet-button compact-button" href={href}>{actionLabel}</a>
       ) : (
-        <button className="quiet-button compact-button" type="button" onClick={onChangeScope}>
+        <button className="quiet-button compact-button" type="button" onClick={action}>
           {actionLabel}
         </button>
       )}
     </div>
   );
+}
+
+function rowOptionsForPreview(preview) {
+  const full = preview?.fullPopulation?.logicalTests;
+  const actionOnly = preview?.rowScopes?.current_view?.logicalTests;
+  return ROW_OPTIONS.map((option) => {
+    if (option.value !== "current_view" || !Number.isFinite(full) || !Number.isFinite(actionOnly)) {
+      return option;
+    }
+    return {
+      ...option,
+      title: `Tests with reviewer actions only (${formatCount(actionOnly)} of ${formatCount(full)})`
+    };
+  });
+}
+
+function scopeCountLabel(value, full, unit) {
+  if (!Number.isFinite(full)) return `${formatCount(value)} ${unit}`;
+  return `${formatCount(value)} of ${formatCount(full)} ${unit}`;
+}
+
+function formatCount(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function formatPercent(value) {
+  return Number.isFinite(value) ? `${Math.round(value * 100)}%` : "No denominator";
 }
 
 function ChoiceCard({ option, selected, onSelect, name }) {
