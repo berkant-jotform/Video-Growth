@@ -36,7 +36,7 @@ const CONTENT_OPTIONS = [
   {
     value: "workbook",
     title: "Analysis workbook",
-    description: "Seven clean Excel and Google Sheets-ready tabs.",
+    description: "Essential Results plus structured analysis and audit-ready tabs.",
     icon: FileSpreadsheet
   },
   {

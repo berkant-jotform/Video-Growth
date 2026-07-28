@@ -15,6 +15,7 @@ test("ExcelJS workbook has the required flat, typed, formula-free tabs", async (
   await workbook.xlsx.load(buffer);
 
   assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), [
+    "Essential Results",
     "Summary",
     "Tests",
     "Variants",
@@ -23,13 +24,51 @@ test("ExcelJS workbook has the required flat, typed, formula-free tabs", async (
     "Data Quality",
     "Data Dictionary"
   ]);
-  for (const name of ["Tests", "Variants", "Actions", "Video Context", "Data Quality"]) {
+  for (const name of [
+    "Essential Results",
+    "Tests",
+    "Variants",
+    "Actions",
+    "Video Context",
+    "Data Quality"
+  ]) {
     const sheet = workbook.getWorksheet(name);
     assert.equal(sheet.views[0].ySplit, 1);
     assert.ok(sheet.autoFilter);
     assert.equal(Object.keys(sheet._merges || {}).length, 0);
     assert.equal(sheet.getRow(1).actualCellCount > 0, true);
   }
+
+  const essential = workbook.getWorksheet("Essential Results");
+  const essentialHeaders = Object.fromEntries(
+    essential.getRow(1).values.slice(1).map((value, index) => [value, index + 1])
+  );
+  assert.equal(essential.rowCount - 1, exportData.datasets.tests.length);
+  assert.equal(essential.getCell(2, essentialHeaders["Studio Video ID"]).value, "video_1");
+  assert.equal(essential.getCell(2, essentialHeaders["Test Type"]).value, "Title");
+  assert.equal(essential.getCell(2, essentialHeaders["Option A"]).value, "+Original");
+  assert.equal(essential.getCell(2, essentialHeaders["Option B"]).value, "-Alternative");
+  assert.equal(essential.getCell(2, essentialHeaders.Result).value, "Winner");
+  assert.equal(essential.getCell(2, essentialHeaders["Winning Option"]).value, "B");
+  assert.equal(essential.getCell(2, essentialHeaders["Winning Share"]).value, 0.6);
+  assert.equal(essential.getCell(2, essentialHeaders["A Share"]).value, 0.4);
+  assert.equal(essential.getCell(2, essentialHeaders["B Share"]).value, 0.6);
+  assert.equal(
+    essential.getCell(2, essentialHeaders["Duration Days"]).value,
+    exportData.datasets.tests[0].test_duration_hours / 24
+  );
+  assert.equal(
+    essential.getCell(2, essentialHeaders["Studio URL"]).value.hyperlink,
+    "https://studio.youtube.com/video/video_1/edit"
+  );
+  assert.equal(
+    essential.getCell(2, essentialHeaders["Test Start"]).value instanceof Date,
+    true
+  );
+  assert.equal(
+    essential.getCell(2, essentialHeaders["Test Finish"]).value instanceof Date,
+    true
+  );
 
   const tests = workbook.getWorksheet("Tests");
   const headers = Object.fromEntries(
@@ -51,6 +90,28 @@ test("ExcelJS workbook has the required flat, typed, formula-free tabs", async (
   assert.equal(formulaCellCount(workbook), 0);
 });
 
+test("Essential Results never turns the highest share into a winner", async () => {
+  const exportData = sampleExportData();
+  exportData.datasets.tests[0] = {
+    ...exportData.datasets.tests[0],
+    result: "performed_same",
+    explicit_winner_variant: "",
+    highest_share_variant: "B"
+  };
+  const buffer = await buildHistoryWorkbook(exportData);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.getWorksheet("Essential Results");
+  const headers = Object.fromEntries(
+    sheet.getRow(1).values.slice(1).map((value, index) => [value, index + 1])
+  );
+
+  assert.equal(sheet.getCell(2, headers.Result).value, "Performed similarly");
+  assert.equal(sheet.getCell(2, headers["Winning Option"]).value || "", "");
+  assert.equal(sheet.getCell(2, headers["Winning Share"]).value || "", "");
+  assert.equal(sheet.getCell(2, headers["B Share"]).value, 0.6);
+});
+
 test("audit package includes the ExcelJS workbook, manifest, records, and checksums", async () => {
   const exportData = sampleExportData();
   const workbookBuffer = await buildHistoryWorkbook(exportData);
@@ -68,6 +129,8 @@ test("audit package includes the ExcelJS workbook, manifest, records, and checks
   assert.equal(names.includes("audit/source_records.ndjson"), true);
   const manifest = JSON.parse(await zip.file("manifest.json").async("string"));
   assert.equal(manifest.counts.logicalTests, 1);
+  assert.equal(manifest.counts.essentialResults, 1);
+  assert.equal(manifest.grains.essentialResults, "one clean row per persisted logical test_id");
   assert.equal(manifest.grains.videoContext, "one row per video_id");
   assert.equal(manifest.coverage.widerThresholdDays, 21);
   assert.equal(

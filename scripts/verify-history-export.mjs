@@ -139,6 +139,7 @@ async function verifyWorkbook(buffer, data) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), [
+    "Essential Results",
     "Summary",
     "Tests",
     "Variants",
@@ -147,13 +148,48 @@ async function verifyWorkbook(buffer, data) {
     "Data Quality",
     "Data Dictionary"
   ]);
-  for (const name of ["Tests", "Variants", "Actions", "Video Context", "Data Quality"]) {
+  for (const name of [
+    "Essential Results",
+    "Tests",
+    "Variants",
+    "Actions",
+    "Video Context",
+    "Data Quality"
+  ]) {
     const sheet = workbook.getWorksheet(name);
     assert.equal(sheet.views[0]?.ySplit, 1);
     assert.ok(sheet.autoFilter);
     assert.equal(Object.keys(sheet._merges || {}).length, 0);
   }
   assert.equal(formulaCellCount(workbook), 0);
+
+  const essentialSheet = workbook.getWorksheet("Essential Results");
+  const essentialHeaders = Object.fromEntries(
+    essentialSheet.getRow(1).values.slice(1).map((value, index) => [value, index + 1])
+  );
+  assert.equal(essentialSheet.rowCount - 1, data.datasets.tests.length);
+  for (const header of [
+    "Studio Video ID",
+    "Test Type",
+    "Video Title",
+    "Option A",
+    "Option B",
+    "Result",
+    "Winning Option",
+    "Winning Share",
+    "A Share",
+    "B Share",
+    "Test Start",
+    "Test Finish",
+    "Duration Days"
+  ]) {
+    assert.ok(essentialHeaders[header], `${header} must exist`);
+  }
+  for (let row = 2; row <= essentialSheet.rowCount; row += 1) {
+    const result = essentialSheet.getCell(row, essentialHeaders.Result).value;
+    const winner = essentialSheet.getCell(row, essentialHeaders["Winning Option"]).value;
+    if (winner) assert.equal(result, "Winner");
+  }
 
   const testsSheet = workbook.getWorksheet("Tests");
   const headers = Object.fromEntries(

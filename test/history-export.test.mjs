@@ -156,6 +156,28 @@ test("history filters and reviewer-note privacy are enforced in the dataset", ()
   assert.equal(exportData.datasets.actions[0].reviewer_note_included, false);
 });
 
+test("history export channel filters use canonical channel identity", () => {
+  const source = fixtureSource();
+  source.tests[0] = {
+    ...source.tests[0],
+    channel: "Jotform - A/B"
+  };
+  const exportData = buildHistoryExport({
+    source,
+    request: {
+      rows: "everything",
+      filters: { channel: "Jotform" }
+    },
+    generatedAtUtc: "2026-07-28T09:00:00.000Z"
+  });
+
+  assert.equal(exportData.datasets.tests.length, 2);
+  assert.deepEqual(
+    exportData.datasets.tests.map((item) => item.channel),
+    ["Jotform", "Jotform"]
+  );
+});
+
 test("coverage bands render 39.9 percent low and 40.1 percent partial", () => {
   assert.equal(coverageBand(0.399), "low");
   assert.equal(coverageBand(0.4), "partial");

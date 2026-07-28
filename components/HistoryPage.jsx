@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, ExternalLink, Pencil, Search, Users, X } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 import HistoryExportDrawer from "@/components/HistoryExportDrawer.jsx";
+import {
+  displayHistoryChannel,
+  filterHistoryItems,
+  historyFilterOptions
+} from "@/lib/history-filters.mjs";
 
 export default function HistoryPage({ session }) {
   const [items, setItems] = useState([]);
@@ -21,12 +26,11 @@ export default function HistoryPage({ session }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const timer = setTimeout(() => load(controller.signal), 200);
+    load(controller.signal);
     return () => {
-      clearTimeout(timer);
       controller.abort();
     };
-  }, [search]);
+  }, []);
 
   useEffect(() => {
     fetch("/api/history/export/status", { cache: "no-store" })
@@ -41,7 +45,7 @@ export default function HistoryPage({ session }) {
     setError("");
     setLoading(true);
     try {
-      const response = await fetch(`/api/history?q=${encodeURIComponent(search)}`, { signal });
+      const response = await fetch("/api/history", { signal, cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "History failed.");
       setItems(payload.items || []);
@@ -52,21 +56,12 @@ export default function HistoryPage({ session }) {
     }
   }
 
-  const channels = useMemo(
-    () => Array.from(new Set(items.map((item) => item.channel).filter(Boolean))).sort(),
-    [items]
-  );
-  const actions = useMemo(
-    () => Array.from(new Set(items.map((item) => item.action?.action).filter(Boolean))).sort(),
-    [items]
-  );
+  const filterOptions = useMemo(() => historyFilterOptions(items), [items]);
+  const channels = filterOptions.channels;
+  const actions = filterOptions.actions;
   const filtered = useMemo(
-    () => items.filter((item) =>
-      (channel === "all" || item.channel === channel) &&
-      (action === "all" || item.action?.action === action) &&
-      (testType === "all" || item.testType === testType)
-    ),
-    [items, channel, action, testType]
+    () => filterHistoryItems(items, { search, channel, action, testType }),
+    [items, search, channel, action, testType]
   );
   const reviewerCount = useMemo(
     () => new Set(items.map((item) => item.action?.actorName).filter(Boolean)).size,
@@ -189,7 +184,7 @@ export default function HistoryPage({ session }) {
               <div className="history-item-main">
                 <div className="history-item-meta">
                   <span className={`type-pill ${item.testType || "title"}`}>{titleCase(item.testType || "test")}</span>
-                  <span>{item.channel || "Unknown channel"}</span>
+                  <span>{displayHistoryChannel(item.channel)}</span>
                 </div>
                 <h3>{item.videoTitle || item.currentYoutubeTitle || item.videoId}</h3>
                 <p>{item.videoId || "Video ID unavailable"}</p>
