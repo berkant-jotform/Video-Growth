@@ -38,6 +38,87 @@ test("moving a sheet row does not change identity when content is unchanged", ()
   assert.equal(resolved.testId, "test_existing");
 });
 
+test("reused sheet rows do not override a matching content identity", () => {
+  const current = baseRecord({ rowNumber: 42 });
+  const aliases = identityAliases(current);
+  const sheetAlias = aliases.find((alias) => alias.startsWith("sheet:"));
+  const contentAlias = aliases.find((alias) => alias.startsWith("content:"));
+  const aliasToTestId = new Map([
+    [sheetAlias, "test_previous_row_occupant"],
+    [contentAlias, "test_current_video"]
+  ]);
+  const aliasTargets = new Map([
+    [sheetAlias, {
+      testId: "test_previous_row_occupant",
+      videoId: "differentVideoId",
+      testType: "title"
+    }],
+    [contentAlias, {
+      testId: "test_current_video",
+      videoId: current.videoId,
+      testType: current.testType,
+      contentHash: testContentHash(current)
+    }]
+  ]);
+
+  const resolved = resolvePersistedTestId({
+    record: current,
+    aliasToTestId,
+    aliasTargets
+  });
+
+  assert.equal(resolved.testId, "test_current_video");
+  assert.equal(resolved.match, "alias");
+  assert.equal(resolved.ambiguous, false);
+});
+
+test("reused sheet rows fall back to the matching existing video identity", () => {
+  const current = baseRecord({ rowNumber: 42 });
+  const sheetAlias = identityAliases(current).find((alias) => alias.startsWith("sheet:"));
+  const aliasToTestId = new Map([[sheetAlias, "test_previous_row_occupant"]]);
+  const aliasTargets = new Map([[sheetAlias, {
+    testId: "test_previous_row_occupant",
+    videoId: "differentVideoId",
+    testType: "title"
+  }]]);
+
+  const resolved = resolvePersistedTestId({
+    record: current,
+    aliasToTestId,
+    aliasTargets,
+    existingTests: [{
+      testId: "test_current_video",
+      videoId: current.videoId,
+      testType: current.testType,
+      contentHash: testContentHash(current),
+      startDate: current.startDate
+    }]
+  });
+
+  assert.equal(resolved.testId, "test_current_video");
+  assert.equal(resolved.match, "existing_test");
+  assert.equal(resolved.ambiguous, false);
+});
+
+test("conflicting immutable aliases remain ambiguous", () => {
+  const current = baseRecord();
+  const aliases = identityAliases(current);
+  const contentAlias = aliases.find((alias) => alias.startsWith("content:"));
+  const datedAlias = aliases.find((alias) => alias.startsWith("video-date:"));
+  const resolved = resolvePersistedTestId({
+    record: current,
+    aliasToTestId: new Map([
+      [contentAlias, "test_content"],
+      [datedAlias, "test_date"]
+    ])
+  });
+
+  assert.equal(resolved.testId, "");
+  assert.equal(resolved.match, "ambiguous_alias");
+  assert.equal(resolved.ambiguous, true);
+  assert.deepEqual(resolved.conflictingTestIds.toSorted(), ["test_content", "test_date"]);
+});
+
 test("a genuinely different dated test can receive a new surrogate ID", () => {
   const initial = baseRecord();
   const existingTests = [{
