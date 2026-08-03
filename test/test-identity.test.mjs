@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  dedupeIdentityAliasesForPersistence,
   identityAliases,
   resolvePersistedTestId,
   testContentHash
@@ -36,6 +37,28 @@ test("moving a sheet row does not change identity when content is unchanged", ()
   const resolved = resolvePersistedTestId({ record: moved, aliasToTestId });
   assert.equal(testContentHash(moved), testContentHash(initial));
   assert.equal(resolved.testId, "test_existing");
+});
+
+test("duplicate persistence aliases with the same owner collapse to one row", () => {
+  const rows = [
+    { alias_value: "content:video:title:hash", test_id: "test_existing" },
+    { alias_value: "content:video:title:hash", test_id: "test_existing" }
+  ];
+  assert.deepEqual(dedupeIdentityAliasesForPersistence(rows), [rows[0]]);
+});
+
+test("duplicate persistence aliases with different owners fail closed", () => {
+  assert.throws(
+    () => dedupeIdentityAliasesForPersistence([
+      { alias_value: "content:video:title:hash", test_id: "test_one" },
+      { alias_value: "content:video:title:hash", test_id: "test_two" }
+    ]),
+    (error) => {
+      assert.equal(error.code, "ambiguous_identity_alias_batch");
+      assert.deepEqual(error.identityConflict.conflictingTestIds, ["test_one", "test_two"]);
+      return true;
+    }
+  );
 });
 
 test("reused sheet rows do not override a matching content identity", () => {
