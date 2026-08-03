@@ -25,6 +25,7 @@ import {
 } from "@/lib/finish-signal-source.mjs";
 import { isActionableQueueStatus } from "@/lib/queue-status.mjs";
 import { runFinishCheckWorkflow } from "@/lib/finish-check-workflow.mjs";
+import { matchesDetectorSearch } from "@/lib/detector-filters.mjs";
 import {
   highestShareDescription,
   resultDisplayLabel
@@ -721,10 +722,7 @@ export default function DetectorPage({ session }) {
       if (retestFilter === "only" && !run.possibleRetest) return false;
       if (retestFilter === "hide" && run.possibleRetest) return false;
       if (advancedStatus !== "all" && statusKey(run) !== advancedStatus) return false;
-      if (query) {
-        const haystack = `${run.videoTitle} ${runChannel} ${run.channel} ${run.videoId} ${run.result} ${run.explicitWinnerVariant} ${run.highestShareVariant}`.toLowerCase();
-        if (!haystack.includes(query)) return false;
-      }
+      if (!matchesDetectorSearch(run, runChannel, query)) return false;
       return true;
     });
   }, [runs, viewChannel, viewType, resultFilter, finishWindow, retestFilter, advancedStatus, search]);
