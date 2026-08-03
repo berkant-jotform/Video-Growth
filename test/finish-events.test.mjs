@@ -16,6 +16,8 @@ import {
   notificationTitleMatchesVideoMetadata,
   parseWatcherTabs,
   parseStudioNotification,
+  choosePreferredQueueFinishEvent,
+  queueFinishEventPriority,
   resolveWatcherTabsFromRuns,
   suggestFinishEventMatches
 } from "../lib/finish-events.mjs";
@@ -32,6 +34,39 @@ test("parses Studio notification video IDs and explicit inconclusive outcome", (
   assert.equal(event.result, "inconclusive");
   assert.equal(event.inconclusiveReason, "insufficient_views");
   assert.equal(event.channel, "Jotform");
+});
+
+test("explicit Studio results outrank newer generic page-status observations", () => {
+  const explicit = {
+    source: "studio_accessibility_label",
+    result: "performed_same",
+    resultEvidence: "studio_explicit",
+    detectedOutcome: "performed_same",
+    observedAt: "2026-08-03T12:00:00.000Z"
+  };
+  const generic = {
+    source: "studio_page_status",
+    result: "unknown",
+    resultEvidence: "unknown",
+    detectedOutcome: "finished_unknown",
+    observedAt: "2026-08-03T13:00:00.000Z"
+  };
+
+  assert.ok(queueFinishEventPriority(explicit) < queueFinishEventPriority(generic));
+  assert.equal(choosePreferredQueueFinishEvent([generic, explicit]), explicit);
+});
+
+test("newest explicit Studio result wins when signal quality is equal", () => {
+  const older = {
+    source: "studio_bell",
+    result: "inconclusive",
+    resultEvidence: "studio_explicit",
+    detectedOutcome: "inconclusive",
+    observedAt: "2026-08-02T12:00:00.000Z"
+  };
+  const newer = { ...older, observedAt: "2026-08-03T12:00:00.000Z" };
+
+  assert.equal(choosePreferredQueueFinishEvent([older, newer]), newer);
 });
 
 test("keeps the same Studio notification stable across rescans and duplicate sheet rows", () => {
