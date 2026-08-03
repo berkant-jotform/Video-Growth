@@ -23,6 +23,26 @@ test("result enum storage uses performed_same while UI uses a display label", ()
   assert.equal(RESULT_VALUES.includes("Performed Similarly"), false);
 });
 
+test("versioned results preserve a non-null inconclusive detail contract", () => {
+  const inconclusive = projectCanonicalResult({
+    result: "inconclusive",
+    resultEvidence: "studio_explicit",
+    resultSemanticsVersion: "2.0",
+    inconclusiveReason: "insufficient_views",
+    inconclusiveReasonEvidence: "studio_explicit"
+  });
+  const performedSame = projectCanonicalResult({
+    result: "performed_same",
+    resultEvidence: "studio_explicit",
+    resultSemanticsVersion: "2.0"
+  });
+
+  assert.equal(inconclusive.inconclusiveReason, "insufficient_views");
+  assert.equal(inconclusive.inconclusiveReasonEvidence, "studio_explicit");
+  assert.equal(performedSame.inconclusiveReason, "");
+  assert.equal(performedSame.inconclusiveReasonEvidence, "");
+});
+
 test("numeric shares never become a YouTube winner", () => {
   const projected = projectCanonicalResult({
     detectedOutcome: "winner_b",
