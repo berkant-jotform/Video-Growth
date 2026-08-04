@@ -845,6 +845,15 @@ export default function DetectorPage({ session }) {
     advancedStatus !== "all",
     Boolean(search.trim())
   ].filter(Boolean).length;
+  const channelScopedRuns = viewChannel === "all"
+    ? runs
+    : runs.filter((run) => displayChannel(run) === viewChannel);
+  const allActionableRuns = runs.filter((run) => isActionableQueueStatus(run.queueStatus));
+  const selectedChannelHasNoActionableWork =
+    viewChannel !== "all" &&
+    resultFilter === "actionable" &&
+    activeViewFilterCount === 1 &&
+    !channelScopedRuns.some((run) => isActionableQueueStatus(run.queueStatus));
 
   function clearViewFilters() {
     setViewChannel("all");
@@ -1043,7 +1052,9 @@ export default function DetectorPage({ session }) {
             ) : null}
           </div>
           <div className="queue-filter-feedback" role="status">
-            <span><strong>{filtered.length}</strong> of {runs.length} active tests shown</span>
+            <span>
+              <strong>{filtered.length}</strong> of {channelScopedRuns.length} {viewChannel === "all" ? "active" : viewChannel} tests shown
+            </span>
             {activeViewFilterCount ? (
               <button className="quiet-button compact-button" type="button" onClick={clearViewFilters}>
                 <X size={14} />
@@ -1090,12 +1101,25 @@ export default function DetectorPage({ session }) {
         {loading ? <div className="empty-state">Loading queue</div> : null}
         {!loading && filtered.length === 0 ? (
           <div className="empty-state queue-empty-state">
-            <strong>No tests match this view</strong>
-            <span>{activeViewFilterCount ? "Reset the view filters to return to the active queue." : "Run a scan or check History for completed work."}</span>
-            {activeViewFilterCount ? (
-              <button className="secondary-button compact-button" type="button" onClick={clearViewFilters}>
-                Reset filters
-              </button>
+            <strong>{selectedChannelHasNoActionableWork ? `No ${viewChannel} tests need action` : "No tests match this view"}</strong>
+            <span>
+              {selectedChannelHasNoActionableWork
+                ? `${allActionableRuns.length} tests are ready in other channels. ${channelScopedRuns.length} ${viewChannel} tests remain monitored.`
+                : activeViewFilterCount
+                  ? "Reset the view filters to return to the active queue."
+                  : "Run a scan or check History for completed work."}
+            </span>
+            {selectedChannelHasNoActionableWork ? (
+              <div className="queue-empty-actions">
+                <button className="primary-button compact-button" type="button" onClick={() => setViewChannel("all")}>
+                  Show all ready tests
+                </button>
+                <button className="secondary-button compact-button" type="button" onClick={() => setResultFilter("all")}>
+                  Show {viewChannel} monitoring
+                </button>
+              </div>
+            ) : activeViewFilterCount ? (
+              <button className="secondary-button compact-button" type="button" onClick={clearViewFilters}>Reset filters</button>
             ) : null}
           </div>
         ) : null}
@@ -1206,7 +1230,7 @@ function Summary({ summary, runs = [] }) {
   return (
     <section className="queue-overview">
       <div className="queue-overview-title">
-        <span className="eyebrow">Review queue</span>
+        <span className="eyebrow">All-channel review queue</span>
         <h3><strong>{ready}</strong> ready to review</h3>
         <em>{newToday ? `${newToday} new today` : "No new finishes today"}</em>
       </div>

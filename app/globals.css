@@ -6453,6 +6453,7 @@ select,
 
 .queue-empty-state strong { color: var(--text); font-size: 16px; }
 .queue-empty-state span { color: var(--muted); }
+.queue-empty-actions { display: flex; gap: 8px; justify-content: center; margin-top: 4px; }
 
 .quick-action.no_clear {
   aspect-ratio: auto;
