@@ -6,6 +6,7 @@ import {
   getConnectorStatus,
   listFinishSignalMatchCandidates,
   listQueue,
+  listRecentResolvedFinishSignals,
   listUnmatchedFinishEvents,
   summarizeQueue
 } from "@/lib/repository.js";
@@ -18,12 +19,13 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     await requireSession();
-    const [runs, unmatchedEvents, connectorStatus, config, matchCandidates] = await Promise.all([
+    const [runs, unmatchedEvents, connectorStatus, config, matchCandidates, recentResolved] = await Promise.all([
       listQueue(),
       listUnmatchedFinishEvents(),
       getConnectorStatus(),
       getAppConfig(),
-      listFinishSignalMatchCandidates()
+      listFinishSignalMatchCandidates(),
+      listRecentResolvedFinishSignals()
     ]);
     const channelLogos = await loadConfiguredChannelLogos(config);
     const consolidatedEvents = consolidateUnmatchedFinishEvents(unmatchedEvents).events;
@@ -39,6 +41,7 @@ export async function GET() {
       runs: runsWithLogos,
       unmatchedEvents: [],
       connectorStatus,
+      recentResolved,
       summary: summarizeQueue(runsWithLogos)
     });
   } catch (error) {

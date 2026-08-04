@@ -91,6 +91,7 @@ export default function DetectorPage({ session }) {
   const [connectorStatus, setConnectorStatus] = useState([]);
   const [connectorConfig, setConnectorConfig] = useState({ configured: false, channels: [], watcherTabs: [] });
   const [summary, setSummary] = useState(null);
+  const [recentResolved, setRecentResolved] = useState({ days: 30, total: 0, channels: {} });
   const [lastScan, setLastScan] = useState(null);
   const [lastSuccessfulScan, setLastSuccessfulScan] = useState(null);
   const [scanProgress, setScanProgress] = useState(null);
@@ -294,6 +295,7 @@ export default function DetectorPage({ session }) {
       setConnectorStatus(queuePayload.connectorStatus || []);
       setConnectorConfig(statusPayload.connector || { configured: false, channels: [], watcherTabs: [] });
       setSummary(queuePayload.summary || null);
+      setRecentResolved(queuePayload.recentResolved || { days: 30, total: 0, channels: {} });
       setLastScan(statusPayload.lastScan || null);
       setLastSuccessfulScan(statusPayload.lastSuccessfulScan || null);
       setScanProgress(statusPayload.lastScan?.progress || null);
@@ -854,6 +856,9 @@ export default function DetectorPage({ session }) {
     resultFilter === "actionable" &&
     activeViewFilterCount === 1 &&
     !channelScopedRuns.some((run) => isActionableQueueStatus(run.queueStatus));
+  const selectedChannelResolved = viewChannel === "all"
+    ? null
+    : recentResolved.channels?.[viewChannel] || null;
 
   function clearViewFilters() {
     setViewChannel("all");
@@ -1104,7 +1109,9 @@ export default function DetectorPage({ session }) {
             <strong>{selectedChannelHasNoActionableWork ? `No ${viewChannel} tests need action` : "No tests match this view"}</strong>
             <span>
               {selectedChannelHasNoActionableWork
-                ? `${allActionableRuns.length} tests are ready in other channels. ${channelScopedRuns.length} ${viewChannel} tests remain monitored.`
+                ? selectedChannelResolved?.count
+                  ? `${selectedChannelResolved.count} ${viewChannel} finish signal${selectedChannelResolved.count === 1 ? " was" : "s were"} already completed in the sheet or handled by the team during the last ${recentResolved.days} days. ${allActionableRuns.length} tests still need action in other channels.`
+                  : `${allActionableRuns.length} tests are ready in other channels. ${channelScopedRuns.length} ${viewChannel} tests remain monitored.`
                 : activeViewFilterCount
                   ? "Reset the view filters to return to the active queue."
                   : "Run a scan or check History for completed work."}
@@ -1117,7 +1124,15 @@ export default function DetectorPage({ session }) {
                 <button className="secondary-button compact-button" type="button" onClick={() => setResultFilter("all")}>
                   Show {viewChannel} monitoring
                 </button>
+                {selectedChannelResolved?.count ? (
+                  <a className="secondary-button compact-button" href="/history">
+                    Open team history
+                  </a>
+                ) : null}
               </div>
+            ) : null}
+            {selectedChannelHasNoActionableWork && selectedChannelResolved?.count ? (
+              <small>Completed tests leave the action queue automatically. Sheet-complete tests remain available in exports; team actions appear in History.</small>
             ) : activeViewFilterCount ? (
               <button className="secondary-button compact-button" type="button" onClick={clearViewFilters}>Reset filters</button>
             ) : null}
