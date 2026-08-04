@@ -1288,7 +1288,7 @@ function UnifiedCheckStatus({ operation, recentPassiveStudioData = false }) {
   return (
     <div className={`unified-check-status ${stopped ? "stopped" : operation.refresh === "error" ? "error" : operation.extension === "warn" ? "warn" : operation.running ? "running" : "ok"}`}>
       <span>{operation.extension === "running" ? "Studio: checking" : operation.extension === "ok" ? "Studio: checked" : recentPassiveStudioData ? "Studio: recent data" : "Studio: unavailable"}</span>
-      <span>{operation.refresh === "pending" ? "Queue: waiting" : operation.refresh === "running" ? "Queue: updating" : operation.refresh === "ok" ? "Queue: updated" : stopped ? "Queue: unchanged" : "Queue: failed"}</span>
+      <span>{operation.refresh === "pending" ? "Queue: waiting" : operation.refresh === "running" ? "Queue: updating" : operation.refresh === "ok" ? "Queue: updated" : stopped ? "Queue: stopped" : "Queue: failed"}</span>
       <strong>{liveCheckUnavailable && recentPassiveStudioData && operation.refresh === "ok"
         ? "Queue updated with recent passive Studio signals. The live bell check did not respond."
         : operation.message}</strong>
