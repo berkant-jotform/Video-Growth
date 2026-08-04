@@ -109,6 +109,7 @@
 
 .unified-check-status.warn { background: color-mix(in srgb, var(--amber) 7%, var(--surface-2)); border-color: color-mix(in srgb, var(--amber) 35%, var(--border)); }
 .unified-check-status.error { background: color-mix(in srgb, var(--red) 7%, var(--surface-2)); border-color: color-mix(in srgb, var(--red) 35%, var(--border)); }
+.unified-check-status.stopped { background: var(--surface-2); border-color: var(--border); }
 .unified-check-status span { color: var(--muted); font-size: 11px; font-weight: 820; white-space: nowrap; }
 .unified-check-status strong { font-size: 12px; font-weight: 720; text-align: right; }
 
@@ -1117,6 +1118,11 @@ a {
 
 .scan-progress-panel.stale {
   border-color: color-mix(in srgb, var(--amber) 28%, var(--border));
+}
+
+.scan-progress-panel.stopped {
+  border-color: color-mix(in srgb, var(--muted) 38%, var(--border));
+  box-shadow: none;
 }
 
 .scan-progress-header {
@@ -5973,6 +5979,20 @@ select,
 .command-type-control .segmented { width: 100%; }
 .command-type-control .segmented button { flex: 1; padding: 0 10px; }
 .daily-command-strip .primary-check-button { min-height: 42px; }
+
+.daily-command-strip .stop-check-button {
+  background: color-mix(in srgb, var(--red) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--red) 42%, var(--border));
+  color: var(--red);
+  justify-content: center;
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.daily-command-strip .stop-check-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 13%, var(--surface));
+  border-color: color-mix(in srgb, var(--red) 62%, var(--border));
+}
 
 .command-more-channels { flex: 0 0 auto; }
 .command-more-channels summary {

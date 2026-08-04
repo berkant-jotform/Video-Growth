@@ -10,6 +10,7 @@ export async function POST(request) {
     const body = await request.json().catch(() => ({}));
     const result = await runScan({
       actorName: session.actorName,
+      scanId: body.scanId || "",
       channel: body.channel || "all",
       channels: Array.isArray(body.channels) ? body.channels : [],
       testType: body.testType || "all",

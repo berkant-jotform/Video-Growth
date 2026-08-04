@@ -35,3 +35,35 @@ test("finish check preserves extension success when the queue refresh fails", as
   assert.equal(result.operation.extension, "ok");
   assert.equal(result.operation.refresh, "error");
 });
+
+test("finish check stops before queue refresh when requested during Studio check", async () => {
+  let stopRequested = false;
+  let refreshed = false;
+  const result = await runFinishCheckWorkflow({
+    checkSignals: async () => {
+      stopRequested = true;
+      return { ok: true };
+    },
+    refreshQueue: async () => {
+      refreshed = true;
+      return { ok: true };
+    },
+    shouldStop: () => stopRequested
+  });
+
+  assert.equal(refreshed, false);
+  assert.equal(result.refreshResult.cancelled, true);
+  assert.equal(result.operation.stopped, true);
+  assert.equal(result.operation.refresh, "stopped");
+});
+
+test("finish check reports a cooperatively cancelled queue refresh as stopped", async () => {
+  const result = await runFinishCheckWorkflow({
+    checkSignals: async () => ({ ok: true }),
+    refreshQueue: async () => ({ ok: false, cancelled: true })
+  });
+
+  assert.equal(result.operation.stopped, true);
+  assert.equal(result.operation.refresh, "stopped");
+  assert.match(result.operation.message, /existing queue remains available/i);
+});

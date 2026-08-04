@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   BellRing,
@@ -13,6 +13,7 @@ import {
   Info as InfoIcon,
   RefreshCw,
   Search,
+  Square,
   Type,
   X
 } from "lucide-react";
@@ -82,6 +83,7 @@ const DETECTOR_VIEW_STORAGE_KEY = "youtube-ab-detector-view";
 const EXTENSION_RECONNECT_STORAGE_KEY = "youtube-ab-extension-reconnect-attempted";
 const SCAN_CHANNELS_STORAGE_KEY = "youtube-ab-scan-channels";
 const SCAN_TYPE_STORAGE_KEY = "youtube-ab-scan-type";
+const ACTIVE_SCAN_STORAGE_KEY = "youtube-ab-active-scan-id";
 
 export default function DetectorPage({ session }) {
   const [runs, setRuns] = useState([]);
@@ -94,6 +96,9 @@ export default function DetectorPage({ session }) {
   const [scanProgress, setScanProgress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [stoppingScan, setStoppingScan] = useState(false);
+  const cancelRequestedRef = useRef(false);
+  const activeScanIdRef = useRef("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [scanInfo, setScanInfo] = useState("");
@@ -126,6 +131,11 @@ export default function DetectorPage({ session }) {
   });
 
   useEffect(() => {
+    try {
+      activeScanIdRef.current = window.sessionStorage.getItem(ACTIVE_SCAN_STORAGE_KEY) || "";
+    } catch {
+      activeScanIdRef.current = "";
+    }
     refresh();
   }, []);
 
@@ -287,6 +297,7 @@ export default function DetectorPage({ session }) {
       setLastScan(statusPayload.lastScan || null);
       setLastSuccessfulScan(statusPayload.lastSuccessfulScan || null);
       setScanProgress(statusPayload.lastScan?.progress || null);
+      syncServerScanState(statusPayload.lastScan || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -302,11 +313,41 @@ export default function DetectorPage({ session }) {
       setLastScan(payload.lastScan || null);
       setLastSuccessfulScan(payload.lastSuccessfulScan || null);
       setScanProgress(payload.lastScan?.progress || null);
+      syncServerScanState(payload.lastScan || null);
       setConnectorStatus(payload.connectorStatus || []);
       setConnectorConfig(payload.connector || { configured: false, channels: [], watcherTabs: [] });
     } catch {
       // Progress polling is best-effort; the main scan request still reports failures.
     }
+  }
+
+  function syncServerScanState(scan) {
+    const localScanId = activeScanIdRef.current;
+    // A running scan is shared team state, but only the browser that started it
+    // should receive its Stop control. This ID survives a page reload in the tab.
+    if (!localScanId || scan?.scanId !== localScanId) return;
+    if (scan?.status === "running") {
+      setScanning(true);
+      setStoppingScan(scan.progress?.stage === "cancel_requested");
+      return;
+    }
+    clearActiveScanId();
+    setScanning(false);
+    setStoppingScan(false);
+  }
+
+  function rememberActiveScanId(scanId) {
+    activeScanIdRef.current = scanId;
+    try {
+      window.sessionStorage.setItem(ACTIVE_SCAN_STORAGE_KEY, scanId);
+    } catch {}
+  }
+
+  function clearActiveScanId() {
+    activeScanIdRef.current = "";
+    try {
+      window.sessionStorage.removeItem(ACTIVE_SCAN_STORAGE_KEY);
+    } catch {}
   }
 
   function setViewMode(value) {
@@ -329,15 +370,21 @@ export default function DetectorPage({ session }) {
 
   async function checkForFinishedTests() {
     if (scanning || checkOperation?.running) return;
+    cancelRequestedRef.current = false;
+    setStoppingScan(false);
     setError("");
     await runFinishCheckWorkflow({
       checkSignals: () => sendExtensionCommand("check-studio-now", { quiet: true }),
       refreshQueue: scanNow,
-      onStage: setCheckOperation
+      onStage: setCheckOperation,
+      shouldStop: () => cancelRequestedRef.current
     });
+    setStoppingScan(false);
   }
 
   async function fullRefresh() {
+    cancelRequestedRef.current = false;
+    setStoppingScan(false);
     return runScanRequest({
       channel: "all",
       testType: "all",
@@ -347,6 +394,8 @@ export default function DetectorPage({ session }) {
   }
 
   async function scanChannelNow(channel) {
+    cancelRequestedRef.current = false;
+    setStoppingScan(false);
     return runScanRequest({
       channel: channel && channel !== OTHER_CHANNELS_LABEL ? channel : "all",
       testType: "all",
@@ -356,6 +405,9 @@ export default function DetectorPage({ session }) {
   }
 
   async function runScanRequest({ channel = "all", channels = [], testType = "all", refreshThumbnails = false, label = "" } = {}) {
+    if (cancelRequestedRef.current) {
+      return { ok: false, cancelled: true, message: "Check stopped before the queue scan began." };
+    }
     const selectedChannels = channels.length ? channels : channel !== "all" ? [channel] : [];
     const scoped = {
       channel: selectedChannels.length === 1 ? selectedChannels[0] : "all",
@@ -369,12 +421,14 @@ export default function DetectorPage({ session }) {
     ].filter(Boolean).join(" · ");
     const previousLastScan = lastScan;
     const optimisticStartedAt = new Date().toISOString();
+    const requestedScanId = globalThis.crypto?.randomUUID?.() || `scan-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    rememberActiveScanId(requestedScanId);
     setScanning(true);
     setError("");
     setNotice("");
     setScanInfo("");
     setLastScan({
-      scanId: `local-${Date.now()}`,
+      scanId: requestedScanId,
       startedAt: optimisticStartedAt,
       completedAt: null,
       status: "running",
@@ -395,9 +449,15 @@ export default function DetectorPage({ session }) {
       const response = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(scoped)
+        body: JSON.stringify({ ...scoped, scanId: requestedScanId })
       });
       const payload = await response.json();
+      if (payload.cancelled) {
+        setNotice(payload.message || "Scan stopped safely. The existing queue remains available.");
+        setScanInfo("");
+        await refresh();
+        return { ok: false, cancelled: true, payload };
+      }
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Scan failed.");
       if (payload.warnings?.length) {
         setNotice(`Scan completed with ${payload.warnings.length} warning${payload.warnings.length === 1 ? "" : "s"}: ${payload.warnings.slice(0, 3).join(" ")}`);
@@ -415,6 +475,48 @@ export default function DetectorPage({ session }) {
       return { ok: false, error: err.message || "Scan failed." };
     } finally {
       setScanning(false);
+      setStoppingScan(false);
+      clearActiveScanId();
+    }
+  }
+
+  async function stopChecking() {
+    if ((!scanning && !checkOperation?.running) || stoppingScan) return;
+    cancelRequestedRef.current = true;
+    setStoppingScan(true);
+    setError("");
+    setCheckOperation((current) => current?.running
+      ? { ...current, message: "Stopping safely after the current step..." }
+      : current);
+    try {
+      const scanId = activeScanIdRef.current;
+      if (!scanId) {
+        setNotice("Stop requested. The check will end before the queue refresh begins.");
+        return;
+      }
+      let payload = null;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const response = await fetch("/api/scan/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scanId })
+        });
+        payload = await response.json();
+        if (response.ok && payload.ok) break;
+        if (response.status !== 404 || attempt === 7) {
+          throw new Error(payload.error || "Could not stop the active scan.");
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+      setLastScan(payload.scan || lastScan);
+      setScanProgress(payload.scan?.progress || scanProgress || null);
+      setNotice(payload.alreadyFinished
+        ? "The scan had already finished. The queue is ready."
+        : "Stop requested. Finishing the current safe step; the existing queue remains available.");
+    } catch (err) {
+      cancelRequestedRef.current = false;
+      setStoppingScan(false);
+      setError(err.message || "Could not stop the active scan.");
     }
   }
 
@@ -806,10 +908,17 @@ export default function DetectorPage({ session }) {
                 {["all", "title", "thumbnail"].map((item) => <button key={item} className={scanType === item ? "active" : ""} onClick={() => setScanType(item)} type="button">{item === "all" ? "All" : titleCase(item)}</button>)}
               </div>
             </div>
-            <button className="primary-button primary-check-button" onClick={checkForFinishedTests} disabled={scanning || checkOperation?.running}>
-              <BellRing size={18} className={scanning || checkOperation?.running ? "spin" : ""} />
-              {scanning || checkOperation?.running ? "Checking" : "Check now"}
-            </button>
+            {scanning || checkOperation?.running ? (
+              <button className="secondary-button primary-check-button stop-check-button" onClick={stopChecking} disabled={stoppingScan}>
+                <Square size={15} />
+                {stoppingScan ? "Stopping safely" : "Stop check"}
+              </button>
+            ) : (
+              <button className="primary-button primary-check-button" onClick={checkForFinishedTests}>
+                <BellRing size={18} />
+                Check now
+              </button>
+            )}
           </div>
           <div className="command-footer">
             <span>{scanScopeSummary(scanChannels, scanType)} · Studio signals, Sheets, and YouTube metadata</span>
@@ -817,7 +926,7 @@ export default function DetectorPage({ session }) {
           </div>
         </section>
 
-        {scanning ? <ScanProgress scan={lastScan} lastSuccessfulScan={lastSuccessfulScan} progress={scanProgress} scanning /> : null}
+        {scanning ? <ScanProgress scan={lastScan} lastSuccessfulScan={lastSuccessfulScan} progress={scanProgress} scanning stopping={stoppingScan} /> : null}
 
         <section className="review-queue-panel">
           <Summary summary={summary} runs={runs} />
@@ -1175,10 +1284,11 @@ function QueueTrustState({ operation, scan, recentPassiveStudioData = false }) {
 
 function UnifiedCheckStatus({ operation, recentPassiveStudioData = false }) {
   const liveCheckUnavailable = operation.extension === "warn";
+  const stopped = operation.refresh === "stopped" || operation.stopped;
   return (
-    <div className={`unified-check-status ${operation.refresh === "error" ? "error" : operation.extension === "warn" ? "warn" : operation.running ? "running" : "ok"}`}>
+    <div className={`unified-check-status ${stopped ? "stopped" : operation.refresh === "error" ? "error" : operation.extension === "warn" ? "warn" : operation.running ? "running" : "ok"}`}>
       <span>{operation.extension === "running" ? "Studio: checking" : operation.extension === "ok" ? "Studio: checked" : recentPassiveStudioData ? "Studio: recent data" : "Studio: unavailable"}</span>
-      <span>{operation.refresh === "pending" ? "Queue: waiting" : operation.refresh === "running" ? "Queue: updating" : operation.refresh === "ok" ? "Queue: updated" : "Queue: failed"}</span>
+      <span>{operation.refresh === "pending" ? "Queue: waiting" : operation.refresh === "running" ? "Queue: updating" : operation.refresh === "ok" ? "Queue: updated" : stopped ? "Queue: unchanged" : "Queue: failed"}</span>
       <strong>{liveCheckUnavailable && recentPassiveStudioData && operation.refresh === "ok"
         ? "Queue updated with recent passive Studio signals. The live bell check did not respond."
         : operation.message}</strong>
@@ -1208,12 +1318,13 @@ function actionLabel(action) {
   return titleCase(action || "Done");
 }
 
-function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
+function ScanProgress({ scan, lastSuccessfulScan, progress, scanning, stopping = false }) {
   const staleScan = isStaleRunningScan(scan);
   const stale = !scanning && staleScan;
+  const stopped = !scanning && scan?.status === "cancelled";
   const active = scanning || (scan?.status === "running" && !stale);
   const elapsedScan = scanning && (scan?.status !== "running" || staleScan) ? null : scan;
-  if (!active && !stale && !lastSuccessfulScan) return null;
+  if (!active && !stale && !stopped && !lastSuccessfulScan) return null;
   const percent = clampPercent(progress?.percent ?? 0);
   const counts = progress?.counts || {};
   const steps = progress?.steps || [];
@@ -1231,27 +1342,31 @@ function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
     .slice(0, 5);
 
   return (
-    <section className={`scan-progress-panel ${stale ? "stale" : ""}`}>
+    <section className={`scan-progress-panel ${stale ? "stale" : stopped ? "stopped" : ""}`}>
       <div className="scan-progress-header">
         <div>
-          <span className="eyebrow">{active ? "Current scan" : stale ? "Stale scan" : "Last successful scan"}</span>
-          <h3>{active ? progress?.label || "Scanning" : stale ? "Previous scan did not finish cleanly" : "Queue is ready"}</h3>
+          <span className="eyebrow">{active ? "Current scan" : stale ? "Stale scan" : stopped ? "Stopped scan" : "Last successful scan"}</span>
+          <h3>{stopping ? "Stopping safely" : active ? progress?.label || "Scanning" : stale ? "Previous scan did not finish cleanly" : stopped ? "Scan stopped" : "Queue is ready"}</h3>
           <p>
-            {active
+            {stopping
+              ? "The current safe step will finish, then this run will stop without publishing an incomplete scan as successful."
+              : active
               ? stillWorkingText(elapsedScan, progress)
               : stale
                 ? `Last update was ${progress?.updatedAt ? formatDateTime(progress.updatedAt) : "not recorded"}. Start a new scan if counts look old.`
+                : stopped
+                  ? progress?.detail || "The existing queue remains available. You can start another scan now."
                 : `Completed ${formatDateTime(lastSuccessfulScan.completedAt)}.`}
           </p>
         </div>
-        <strong>{active ? `${percent}%` : "OK"}</strong>
+        <strong>{active ? `${percent}%` : stopped ? "Stopped" : "OK"}</strong>
       </div>
-      {active || stale ? (
+      {active || stale || stopped ? (
         <div className="scan-progress-track" aria-label="Scan progress">
           <span style={{ width: `${percent}%` }} />
         </div>
       ) : null}
-      {(active || stale) && steps.length ? (
+      {(active || stale || stopped) && steps.length ? (
         <div className="scan-step-list">
           {steps.map((step) => (
             <span className={`scan-step ${step.state}`} key={step.stage}>
@@ -1260,7 +1375,7 @@ function ScanProgress({ scan, lastSuccessfulScan, progress, scanning }) {
           ))}
         </div>
       ) : null}
-      {(active || stale) && countItems.length ? (
+      {(active || stale || stopped) && countItems.length ? (
         <div className="scan-count-list">
           {countItems.map(([label, value]) => (
             <span key={label}>
