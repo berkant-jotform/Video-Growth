@@ -18,6 +18,8 @@ import {
   parseStudioNotification,
   choosePreferredQueueFinishEvent,
   queueFinishEventPriority,
+  resolveEventOccurredAt,
+  studioResultTextQuality,
   resolveWatcherTabsFromRuns,
   suggestFinishEventMatches
 } from "../lib/finish-events.mjs";
@@ -67,6 +69,48 @@ test("newest explicit Studio result wins when signal quality is equal", () => {
   const newer = { ...older, observedAt: "2026-08-03T12:00:00.000Z" };
 
   assert.equal(choosePreferredQueueFinishEvent([older, newer]), newer);
+});
+
+test("complete Studio result beats a newer malformed bell reread", () => {
+  const complete = {
+    source: "studio_accessibility_label",
+    result: "performed_same",
+    resultEvidence: "studio_explicit",
+    detectedOutcome: "performed_same",
+    rawText: "A/B test performed well for all Announcing Website Widgets: Results with very similar performance.",
+    notificationAge: "2 days ago",
+    observedAt: "2026-08-03T08:36:17.243Z"
+  };
+  const malformed = {
+    ...complete,
+    source: "studio_bell",
+    rawText: "A/B test performed well for all Announcing Website Widgets: Results with very similar performance 2",
+    notificationAge: "52 minutes ago",
+    observedAt: "2026-08-04T06:16:24.107Z"
+  };
+
+  assert.equal(studioResultTextQuality(complete), 2);
+  assert.equal(studioResultTextQuality(malformed), 1);
+  assert.equal(choosePreferredQueueFinishEvent([malformed, complete]), complete);
+});
+
+test("relative notification age corrects an extension occurrence timestamp captured at scan time", () => {
+  const observedAt = "2026-08-04T05:34:28.485Z";
+  assert.equal(
+    resolveEventOccurredAt({
+      observedAt,
+      occurredAt: observedAt,
+      notificationAge: "23 hours ago"
+    }),
+    "2026-08-03T06:34:28.485Z"
+  );
+  const parsed = parseStudioNotification({
+    rawText: "A/B test performed well for all Example: Results with very similar performance.",
+    observedAt,
+    occurredAt: observedAt,
+    notificationAge: "23 hours ago"
+  });
+  assert.equal(parsed.occurredAt, "2026-08-03T06:34:28.485Z");
 });
 
 test("keeps the same Studio notification stable across rescans and duplicate sheet rows", () => {
