@@ -253,6 +253,107 @@ test("does not replace an exact video-id match", () => {
   assert.equal(aligned.videoId, "exact-video");
 });
 
+test("exact notification title beats a contaminated page video ID with only a prefix match", () => {
+  const event = {
+    videoId: "july-newsletter",
+    videoTitle: "Announcing Website Widgets",
+    rawText: "A/B test performed well for all Announcing Website Widgets: Results with very similar performance.",
+    channel: "Jotform",
+    channelId: "UCjotformchannel"
+  };
+  const match = matchFinishEventToRun(event, [
+    {
+      testRunId: "july-run",
+      videoId: "july-newsletter",
+      channel: "Jotform",
+      youtubeChannelId: "UCjotformchannel",
+      currentYoutubeTitle: "July 2026 | Announcing Website Widgets",
+      options: {
+        A: "July 2026 | Announcing Website Widgets",
+        B: "July 2026 | Announcing Free Website Widgets"
+      }
+    },
+    {
+      testRunId: "widgets-run",
+      videoId: "widgets-video",
+      channel: "Jotform",
+      youtubeChannelId: "UCjotformchannel",
+      currentYoutubeTitle: "Announcing Website Widgets",
+      options: {
+        A: "Announcing Website Widgets",
+        B: "Introducing Website Widgets"
+      }
+    }
+  ]);
+
+  assert.equal(match.run.testRunId, "widgets-run");
+  assert.match(match.matchedConfidence, /^title_after_video_id_conflict:exact_title/);
+  assert.equal(alignFinishEventToMatchedRun(event, match).videoId, "widgets-video");
+});
+
+test("does not guess between duplicate exact-title alternatives for a contaminated page video ID", () => {
+  const event = {
+    videoId: "open-page-video",
+    videoTitle: "Shared Test Title",
+    channel: "Jotform",
+    channelId: "UCjotformchannel"
+  };
+  const match = matchFinishEventToRun(event, [
+    {
+      testRunId: "open-page-run",
+      videoId: "open-page-video",
+      channel: "Jotform",
+      youtubeChannelId: "UCjotformchannel",
+      currentYoutubeTitle: "July 2026 | Shared Test Title"
+    },
+    {
+      testRunId: "first-alternative",
+      videoId: "first-video",
+      channel: "Jotform",
+      youtubeChannelId: "UCjotformchannel",
+      currentYoutubeTitle: "Shared Test Title"
+    },
+    {
+      testRunId: "second-alternative",
+      videoId: "second-video",
+      channel: "Jotform",
+      youtubeChannelId: "UCjotformchannel",
+      currentYoutubeTitle: "Shared Test Title"
+    }
+  ]);
+
+  assert.equal(match.run.testRunId, "open-page-run");
+  assert.equal(match.matchedConfidence, "video_id");
+});
+
+test("does not move a contaminated page ID to an exact title on another channel", () => {
+  const event = {
+    videoId: "open-page-video",
+    videoTitle: "Shared Test Title",
+    channel: "Jotform",
+    channelId: "UCjotformchannel"
+  };
+  const match = matchFinishEventToRun(event, [
+    {
+      testRunId: "open-page-run",
+      videoId: "open-page-video",
+      channel: "Jotform",
+      youtubeChannelId: "UCjotformchannel",
+      currentYoutubeTitle: "July 2026 | Shared Test Title"
+    },
+    {
+      testRunId: "other-channel-run",
+      videoId: "other-channel-video",
+      channel: "AI Agents",
+      youtubeChannelId: "UCagentschannel",
+      currentYoutubeTitle: "Shared Test Title"
+    }
+  ]);
+
+  assert.equal(match.run.testRunId, "open-page-run");
+  assert.equal(match.matchedConfidence, "video_id");
+});
+
 test("removes a contaminated page video ID from a title-only app record", () => {
   const aligned = alignFinishEventToMatchedRun(
     { videoId: "wrong-page-video", videoTitle: "Unregistered test" },
