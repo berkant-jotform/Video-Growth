@@ -6471,6 +6471,63 @@ select,
     0 0 0 4px color-mix(in srgb, currentColor 34%, transparent);
 }
 
+.conflict-resolution-prompt,
+.review-conflict-resolution {
+  align-items: center;
+  background: color-mix(in srgb, var(--red) 7%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--red) 32%, var(--border));
+  border-radius: 7px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.conflict-resolution-prompt span,
+.review-conflict-resolution div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.conflict-resolution-prompt strong,
+.review-conflict-resolution strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.conflict-resolution-prompt em,
+.review-conflict-resolution span {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.conflict-resolution-prompt button,
+.review-conflict-resolution button {
+  background: color-mix(in srgb, var(--green) 15%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--green) 48%, var(--border));
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--green) 82%, var(--text));
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 800;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.conflict-resolution-prompt button:hover,
+.review-conflict-resolution button:hover {
+  background: color-mix(in srgb, var(--green) 22%, var(--surface-2));
+}
+
+.conflict-resolution-prompt button:disabled,
+.review-conflict-resolution button:disabled { opacity: 0.58; }
+
+.board-card .conflict-resolution-prompt { grid-column: 1 / -1; margin-top: 8px; }
+.test-card .conflict-resolution-prompt { margin-top: 2px; }
+.review-conflict-resolution { margin: 0 22px 18px; padding: 14px 16px; }
+
 .card-primary-actions { flex-wrap: wrap; }
 
 .review-session-progress {

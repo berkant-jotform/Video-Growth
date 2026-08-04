@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, ListChecks, RotateCcw, Type } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 import { buildReviewQueue } from "@/lib/review-session.mjs";
+import { explicitOutcomeAction } from "@/lib/queue-status.mjs";
 import { highestShareDescription, resultDisplayLabel } from "@/lib/result-semantics.mjs";
 
 const OUTCOMES = [
@@ -108,7 +109,12 @@ export default function ReviewSessionPage({ session }) {
       const response = await fetch("/api/actions/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ testRunId: run.testRunId, action, retestConfirmed: true })
+        body: JSON.stringify({
+          testRunId: run.testRunId,
+          action,
+          retestConfirmed: true,
+          replacePrevious: run.queueStatus === "action_conflict"
+        })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save outcome.");
@@ -227,6 +233,10 @@ export default function ReviewSessionPage({ session }) {
               <ReviewOptions run={run} />
             </div>
 
+            {run.queueStatus === "action_conflict" ? (
+              <ReviewConflictResolution run={run} saving={saving} onResolve={complete} />
+            ) : null}
+
             <footer className="review-actions">
               <div className="review-outcomes">
                 {OUTCOMES.filter(([value]) => value !== "C" || run.options?.C || run.testType === "thumbnail" && run.thumbnailPreviews?.C).map(([value, label]) => (
@@ -290,6 +300,26 @@ function ReviewOptions({ run }) {
         </div>
       ))}
     </aside>
+  );
+}
+
+function ReviewConflictResolution({ run, saving, onResolve }) {
+  const sheetAction = explicitOutcomeAction({
+    result: run.result,
+    resultEvidence: run.resultEvidence,
+    explicitWinnerVariant: run.explicitWinnerVariant
+  });
+  if (!sheetAction) return null;
+  return (
+    <section className="review-conflict-resolution">
+      <div>
+        <strong>Sheet says {sheetAction}; saved decision is {run.latestAction || "different"}.</strong>
+        <span>Use the sheet result to correct the saved decision. The previous value remains in the audit history.</span>
+      </div>
+      <button type="button" disabled={Boolean(saving)} onClick={() => onResolve(sheetAction)}>
+        {saving === sheetAction ? "Fixing..." : `Use sheet result ${sheetAction}`}
+      </button>
+    </section>
   );
 }
 

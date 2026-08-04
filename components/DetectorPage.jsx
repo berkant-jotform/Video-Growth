@@ -24,7 +24,7 @@ import {
   hasFreshConnectorData,
   isStudioFinishSignalSource
 } from "@/lib/finish-signal-source.mjs";
-import { isActionableQueueStatus } from "@/lib/queue-status.mjs";
+import { explicitOutcomeAction, isActionableQueueStatus } from "@/lib/queue-status.mjs";
 import { runFinishCheckWorkflow } from "@/lib/finish-check-workflow.mjs";
 import { matchesDetectorSearch } from "@/lib/detector-filters.mjs";
 import {
@@ -734,12 +734,20 @@ export default function DetectorPage({ session }) {
       const response = await fetch("/api/actions/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ testRunId: run.testRunId, action, retestConfirmed: true })
+        body: JSON.stringify({
+          testRunId: run.testRunId,
+          action,
+          retestConfirmed: true,
+          replacePrevious: run.queueStatus === "action_conflict"
+        })
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not save action.");
       if (payload.actionId || payload.resolutionId) {
         setUndoAction({ actionId: payload.actionId || "", resolutionId: payload.resolutionId || "", run, action, label: actionLabel(action) });
+      }
+      if (payload.corrected) {
+        setNotice(`Conflict resolved. ${actionLabel(action)} now replaces the previous recorded decision.`);
       }
       await refresh();
     } catch (err) {
@@ -1976,6 +1984,11 @@ function BoardCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSavin
               {run.unregistered && run.signalResolution?.bestSuggestion ? <span className="signal-resolution-note">Possible row: {formatSuggestion(run.signalResolution.bestSuggestion)}</span> : null}
             </div>
           ) : null}
+          <ConflictResolutionPrompt
+            run={run}
+            busy={quickSaving}
+            onResolve={onQuickAction}
+          />
         </div>
       </div>
       <div className="board-card-actions">
@@ -2153,6 +2166,11 @@ function TestCard({ run, onDetails, onDone, onQuickAction, onIgnore, quickSaving
           </div>
         ) : null}
       </div>
+      <ConflictResolutionPrompt
+        run={run}
+        busy={quickSaving}
+        onResolve={onQuickAction}
+      />
       <div className="card-actions">
         <div className="card-primary-actions">
           <a
@@ -2415,7 +2433,12 @@ function DoneModal({ run, initialAction = "", onClose, onDone }) {
     const response = await fetch("/api/actions/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ testRunId: run.testRunId, action, retestConfirmed: needsRetestConfirmation ? retestConfirmed : true })
+      body: JSON.stringify({
+        testRunId: run.testRunId,
+        action,
+        retestConfirmed: needsRetestConfirmation ? retestConfirmed : true,
+        replacePrevious: run.queueStatus === "action_conflict"
+      })
     });
     const payload = await response.json();
     setBusy(false);
@@ -2927,6 +2950,32 @@ function quickActionOptions(run) {
 
 function quickActionLabel(action) {
   return action === "NO_CLEAR" ? "No clear" : action;
+}
+
+function ConflictResolutionPrompt({ run, busy, onResolve }) {
+  if (run.queueStatus !== "action_conflict") return null;
+  const sheetAction = explicitOutcomeAction({
+    result: run.result,
+    resultEvidence: run.resultEvidence,
+    explicitWinnerVariant: run.explicitWinnerVariant
+  });
+  if (!sheetAction) return null;
+  const saving = busy === `${run.testRunId}:${sheetAction}`;
+  return (
+    <div className="conflict-resolution-prompt">
+      <span>
+        <strong>Sheet result: {sheetAction}</strong>
+        <em>Replace the saved {run.latestAction || "tool"} decision and close this conflict.</em>
+      </span>
+      <button
+        type="button"
+        disabled={Boolean(busy)}
+        onClick={() => onResolve(run, sheetAction)}
+      >
+        {saving ? "Fixing..." : `Use sheet result ${sheetAction}`}
+      </button>
+    </div>
+  );
 }
 
 function isRecommendedQuickAction(result, action) {

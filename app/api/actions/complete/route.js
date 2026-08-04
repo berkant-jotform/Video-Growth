@@ -32,9 +32,16 @@ export async function POST(request) {
       action,
       actorName: session.actorName,
       note: body.note || "",
-      retestConfirmed: Boolean(body.retestConfirmed)
+      retestConfirmed: Boolean(body.retestConfirmed),
+      replacePrevious: Boolean(body.replacePrevious)
     });
-    return json({ ok: true, test: result.test, actionId: result.actionId, duplicate: result.duplicate });
+    return json({
+      ok: true,
+      test: result.test,
+      actionId: result.actionId,
+      duplicate: result.duplicate,
+      corrected: result.corrected
+    });
   } catch (error) {
     return errorJson(error);
   }
