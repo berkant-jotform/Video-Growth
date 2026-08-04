@@ -32,6 +32,15 @@ test("reconciles a legacy yearless-date artifact with its plausible dated twin",
   });
 });
 
+test("retires a legacy raw artifact already linked to the canonical logical test", () => {
+  const result = planLegacyYearlessDateReconciliation([
+    pair({ legacyTestId: "same-test", targetTestId: "same-test" })
+  ]);
+  assert.equal(result.mappings.length, 1);
+  assert.equal(result.mappings[0].legacyTestId, "same-test");
+  assert.equal(result.mappings[0].targetTestId, "same-test");
+});
+
 test("does not reconcile different month/day values", () => {
   const result = planLegacyYearlessDateReconciliation([
     pair({ targetStartDate: "2026-07-25" })
@@ -54,4 +63,15 @@ test("refuses an ambiguous legacy identity instead of guessing", () => {
   ]);
   assert.equal(result.mappings.length, 0);
   assert.equal(result.ambiguous.length, 1);
+});
+
+test("keeps every legacy raw row when several share one logical identity", () => {
+  const result = planLegacyYearlessDateReconciliation([
+    pair({ legacyRunId: "legacy-one" }),
+    pair({ legacyRunId: "legacy-two" })
+  ]);
+  assert.deepEqual(result.mappings.map((item) => item.legacyRunId).sort(), [
+    "legacy-one",
+    "legacy-two"
+  ]);
 });

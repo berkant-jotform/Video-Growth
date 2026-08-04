@@ -40,6 +40,13 @@ test("parses dates and falls back safely", () => {
   assert.deepEqual(parseDate(""), { date: "", present: false });
 });
 
+test("parses Date objects as local calendar dates without UTC drift", () => {
+  assert.deepEqual(parseDate(new Date(2026, 6, 10)), {
+    date: "2026-07-10",
+    present: true
+  });
+});
+
 test("keeps highest numeric share descriptive and preserves explicit no-clear result", () => {
   const shares = inferWinner({ A: 0.45, B: 0.55 }, { A: "Title A", B: "Title B" });
   assert.equal(shares.suggestedWinner, "");
@@ -155,6 +162,32 @@ test("blank finish date does not create a guessed finished signal", () => {
   });
   assert.equal(records[0].effectiveFinishDate, "");
   assert.equal(records[0].status, "running");
+});
+
+test("future test rows stay scheduled instead of entering the active queue", () => {
+  const records = parseSheetRecords({
+    spreadsheetId: "sheet",
+    sourceKind: "title",
+    sheetName: "AI Agents Podcast",
+    today: "2026-08-04",
+    values: [
+      [
+        "Published Date/ Test Start Date",
+        "Video URL",
+        "Title A",
+        "Title B",
+        "Done"
+      ],
+      [
+        "2026-08-13",
+        "https://youtu.be/abc123XYZ89",
+        "Scheduled title A",
+        "Scheduled title B",
+        "False"
+      ]
+    ]
+  });
+  assert.equal(records[0].status, "scheduled");
 });
 
 test("explicit finish date marks tests as needing review", () => {
