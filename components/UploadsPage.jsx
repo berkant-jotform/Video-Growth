@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, FileSpreadsheet, Image, Upload } from "lucide-react";
+import { Archive, CheckCircle2, FileSpreadsheet, Image, Layers3, Upload } from "lucide-react";
 import { upload as uploadToBlob } from "@vercel/blob/client";
 import AppShell from "@/components/AppShell.jsx";
 
 export default function UploadsPage({ session }) {
   const [file, setFile] = useState(null);
   const [uploads, setUploads] = useState([]);
+  const [inactiveTabs, setInactiveTabs] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26,6 +27,7 @@ export default function UploadsPage({ session }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not load imports.");
       setUploads(payload.uploads || []);
+      setInactiveTabs(payload.inactiveTabs || []);
     } catch (loadError) {
       setError(loadError.message || "Could not load imports.");
     } finally {
@@ -70,7 +72,10 @@ export default function UploadsPage({ session }) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Upload failed.");
-      setMessage(`Imported ${payload.importedCount} thumbnail previews.`);
+      const skipped = payload.skippedSheets?.length
+        ? ` Skipped ${payload.skippedSheets.length} archived or ignored tab${payload.skippedSheets.length === 1 ? "" : "s"}.`
+        : "";
+      setMessage(`Imported ${payload.importedCount} thumbnail previews from ${payload.importedSheets?.length || 0} active tab${payload.importedSheets?.length === 1 ? "" : "s"}.${skipped}`);
       setFile(null);
       setInputKey((value) => value + 1);
       await load();
@@ -107,7 +112,18 @@ export default function UploadsPage({ session }) {
                 <h2>Import embedded thumbnails</h2>
               </div>
             </div>
-            <p className="muted">Export a smaller XLSX containing the active thumbnail-test tabs. Maximum size: 220 MB.</p>
+            <div className="upload-workflow" aria-label="Recommended snapshot workflow">
+              <div><span>1</span><strong>Keep active tabs</strong><small>Copy only tabs still receiving tests into a temporary workbook.</small></div>
+              <div><span>2</span><strong>Keep tab names</strong><small>Preview matching uses the exact sheet tab name and row.</small></div>
+              <div><span>3</span><strong>Upload in parts</strong><small>Separate active-tab files are merged into the same preview cache.</small></div>
+            </div>
+            <p className="upload-size-guidance"><Layers3 size={17} /><span><strong>Large workbook?</strong> Use an active-tab snapshot under 220 MB. Normal queue scans already read cell data without downloading embedded images.</span></p>
+            {inactiveTabs.length ? (
+              <details className="upload-skipped-tabs">
+                <summary><Archive size={16} />{inactiveTabs.length} archived or ignored thumbnail tab{inactiveTabs.length === 1 ? "" : "s"} will be skipped</summary>
+                <div>{inactiveTabs.map((item) => <span key={`${item.sourceKind}:${item.sheetName}`}>{item.sheetName}</span>)}</div>
+              </details>
+            ) : null}
             <label className={`upload-dropzone ${file ? "has-file" : ""}`}>
               <input
                 key={inputKey}
@@ -148,7 +164,7 @@ export default function UploadsPage({ session }) {
                 <h2>Recent imports</h2>
               </div>
             </div>
-            <p className="muted">The newest imported image for each sheet row and option is used on detector cards.</p>
+            <p className="muted">The newest imported image for each active sheet row and option is used on detector cards.</p>
           <div className="upload-list">
             {uploads.map((item) => (
               <div className="upload-row" key={item.uploadId}>

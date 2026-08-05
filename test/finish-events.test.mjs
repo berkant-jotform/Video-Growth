@@ -962,6 +962,31 @@ test("sheet inspection reports non-empty tabs without recognizable A/B headers",
   assert.equal(inspection[1].testType, "thumbnail");
 });
 
+test("sheet inspection retains linked workbook identity and skipped policy state", () => {
+  const inspection = inspectWorkbookSheets({
+    sourceKind: "thumbnail",
+    sheets: [{
+      title: "Thumbnail Tests 2",
+      spreadsheetId: "linked-workbook-id",
+      linkedFrom: "Archive index",
+      skippedByPolicy: true,
+      values: []
+    }]
+  });
+  assert.deepEqual(inspection[0], {
+    title: "Thumbnail Tests 2",
+    spreadsheetId: "linked-workbook-id",
+    linkedFrom: "Archive index",
+    skippedByPolicy: true,
+    rowCount: 0,
+    hasContent: false,
+    recognized: false,
+    likelyTestData: false,
+    testType: "",
+    headerRow: 0
+  });
+});
+
 test("sheet inspection flags unrecognized tabs that still look like A/B test data", () => {
   const inspection = inspectWorkbookSheets({
     sourceKind: "title",

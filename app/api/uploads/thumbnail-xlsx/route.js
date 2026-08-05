@@ -5,6 +5,7 @@ import { getPreviewBlob } from "@/lib/blob.js";
 import { listUploads } from "@/lib/repository.js";
 import { badRequest, errorJson, json } from "@/lib/http.js";
 import { getAppConfig } from "@/lib/config.js";
+import { inactiveSourceTabs } from "@/lib/source-tabs.mjs";
 
 export const runtime = "nodejs";
 
@@ -24,7 +25,8 @@ export async function POST(request) {
           buffer,
           filename: String(body.filename || stored.blob.pathname || "thumbnail-snapshot.xlsx"),
           sourceKind: String(body.sourceKind || "thumbnail"),
-          blobToken: config.blobReadWriteToken
+          blobToken: config.blobReadWriteToken,
+          excludedSheetNames: inactiveSourceTabs(config.sourceTabPolicies, config.excludedSheetTabs, "thumbnail").map((item) => item.sheetName)
         });
         return json({ ok: true, ...result });
       } finally {
@@ -44,7 +46,8 @@ export async function POST(request) {
     const result = await importThumbnailWorkbook({
       file,
       sourceKind,
-      blobToken: config.blobReadWriteToken
+      blobToken: config.blobReadWriteToken,
+      excludedSheetNames: inactiveSourceTabs(config.sourceTabPolicies, config.excludedSheetTabs, "thumbnail").map((item) => item.sheetName)
     });
     return json({ ok: true, ...result });
   } catch (error) {
@@ -55,8 +58,13 @@ export async function POST(request) {
 export async function GET() {
   try {
     await requireSession();
-    const uploads = await listUploads();
-    return json({ ok: true, uploads });
+    const [uploads, config] = await Promise.all([listUploads(), getAppConfig()]);
+    const inactiveTabs = inactiveSourceTabs(
+      config.sourceTabPolicies,
+      config.excludedSheetTabs,
+      "thumbnail"
+    );
+    return json({ ok: true, uploads, inactiveTabs });
   } catch (error) {
     return errorJson(error);
   }

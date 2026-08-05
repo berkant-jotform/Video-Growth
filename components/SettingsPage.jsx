@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, CheckCircle2, Clipboard, Database, ExternalLink, EyeOff, Save, Settings2, ShieldCheck, TableProperties, Undo2, Youtube } from "lucide-react";
+import { Archive, Bell, CheckCircle2, CircleDot, Clipboard, Database, ExternalLink, EyeOff, Save, Settings2, ShieldCheck, TableProperties, Undo2, Youtube } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
-import { EXCLUDED_SHEET_TABS_KEY, parseExcludedSheetTabs, sourceTabKey, stringifyExcludedSheetTabs } from "@/lib/source-tabs.mjs";
+import {
+  EXCLUDED_SHEET_TABS_KEY,
+  SOURCE_TAB_POLICIES_KEY,
+  parseExcludedSheetTabs,
+  parseSourceTabPolicies,
+  sourceTabKey,
+  stringifySourceTabPolicies
+} from "@/lib/source-tabs.mjs";
 
 const DELETE_SECRET_VALUE = "__DELETE_SECRET__";
 
@@ -213,8 +220,9 @@ export default function SettingsPage({ session }) {
             </fieldset>
             <SourceTabManager
               tabs={sourceTabs}
+              policyJson={form[SOURCE_TAB_POLICIES_KEY] || "[]"}
               excludedJson={form[EXCLUDED_SHEET_TABS_KEY] || "[]"}
-              onChange={(value) => setForm((current) => ({ ...current, [EXCLUDED_SHEET_TABS_KEY]: value }))}
+              onChange={(value) => setForm((current) => ({ ...current, [SOURCE_TAB_POLICIES_KEY]: value }))}
             />
             <details className="settings-fieldset optional-settings">
               <summary>
@@ -390,25 +398,30 @@ export default function SettingsPage({ session }) {
   );
 }
 
-function SourceTabManager({ tabs, excludedJson, onChange }) {
-  const configured = safeExcludedTabs(excludedJson);
-  const configuredKeys = new Set(configured.map((item) => sourceTabKey(item.sourceKind, item.sheetName)));
-  const visibleTabs = tabs.filter((tab) => tab.hasContent);
-  const includedRows = visibleTabs.reduce((sum, tab) => {
-    const excluded = configuredKeys.has(sourceTabKey(tab.sourceKind, tab.title)) || tab.exclusionSource === "system";
-    return sum + (excluded ? 0 : Number(tab.testRows || 0));
-  }, 0);
-  const excludedRows = visibleTabs.reduce((sum, tab) => {
-    const excluded = configuredKeys.has(sourceTabKey(tab.sourceKind, tab.title)) || tab.exclusionSource === "system";
-    return sum + (excluded ? Number(tab.testRows || 0) : 0);
-  }, 0);
+function SourceTabManager({ tabs, policyJson, excludedJson, onChange }) {
+  const policies = safeSourceTabPolicies(policyJson);
+  const legacyExcluded = safeExcludedTabs(excludedJson);
+  const policyByKey = new Map(policies.map((item) => [sourceTabKey(item.sourceKind, item.sheetName), item]));
+  const legacyKeys = new Set(legacyExcluded.map((item) => sourceTabKey(item.sourceKind, item.sheetName)));
+  const visibleTabs = [...tabs]
+    .filter((tab) => tab.title)
+    .sort((a, b) => `${a.sourceKind}:${a.title}`.localeCompare(`${b.sourceKind}:${b.title}`));
+  const visibleKeys = new Set(visibleTabs.map((tab) => sourceTabKey(tab.sourceKind, tab.title)));
+  const stalePolicies = policies.filter((item) => !visibleKeys.has(sourceTabKey(item.sourceKind, item.sheetName)));
+  const totals = visibleTabs.reduce((result, tab) => {
+    const mode = tabMode(tab, policyByKey, legacyKeys);
+    result[mode] += Number(tab.testRows || 0);
+    result[`${mode}Tabs`] += 1;
+    return result;
+  }, { active: 0, archive: 0, ignore: 0, activeTabs: 0, archiveTabs: 0, ignoreTabs: 0 });
 
-  function toggle(tab) {
+  function setMode(tab, mode) {
     const key = sourceTabKey(tab.sourceKind, tab.title);
-    const next = configuredKeys.has(key)
-      ? configured.filter((item) => sourceTabKey(item.sourceKind, item.sheetName) !== key)
-      : [...configured, { sourceKind: tab.sourceKind, sheetName: tab.title }];
-    onChange(stringifyExcludedSheetTabs(next));
+    const next = policies.filter((item) => sourceTabKey(item.sourceKind, item.sheetName) !== key);
+    if (mode !== "active" || legacyKeys.has(key)) {
+      next.push({ sourceKind: tab.sourceKind, sheetName: tab.title, mode });
+    }
+    onChange(stringifySourceTabPolicies(next));
   }
 
   return (
@@ -416,57 +429,94 @@ function SourceTabManager({ tabs, excludedJson, onChange }) {
       <div className="source-tab-manager-heading">
         <span className="panel-icon"><TableProperties size={18} /></span>
         <div>
-          <strong>Included sheet tabs</strong>
-          <p>Exclude notes, inventories, archives, or report tabs that are not real A/B test sources.</p>
+          <strong>Sheet tab lifecycle</strong>
+          <p>Active tabs scan and alert. Archive keeps past results but stops future scans and alerts. Ignore is for notes or non-test tabs.</p>
         </div>
         {visibleTabs.length ? (
           <div className="source-impact-summary">
-            <strong>{includedRows} active rows</strong>
-            <span>{excludedRows} excluded</span>
+            <strong>{totals.activeTabs} active</strong>
+            <span>{totals.archiveTabs} archived · {totals.ignoreTabs} ignored</span>
           </div>
         ) : null}
       </div>
+      {stalePolicies.length ? (
+        <div className="source-tab-rename-warning" role="status">
+          <Archive size={17} />
+          <span><strong>Possible renamed tab</strong>{stalePolicies.map((item) => item.sheetName).join(", ")} was not found in the last scan. New or renamed tabs default to Active until you classify them.</span>
+        </div>
+      ) : null}
       {visibleTabs.length ? (
         <div className="source-tab-list">
           {visibleTabs.map((tab) => {
-            const configuredExcluded = configuredKeys.has(sourceTabKey(tab.sourceKind, tab.title));
             const systemExcluded = tab.exclusionSource === "system";
-            const excluded = configuredExcluded || systemExcluded;
+            const mode = tabMode(tab, policyByKey, legacyKeys);
             return (
-              <label className={`source-tab-row ${excluded ? "excluded" : ""}`} key={`${tab.sourceKind}:${tab.title}`}>
-                <input
-                  type="checkbox"
-                  checked={!excluded}
-                  disabled={systemExcluded}
-                  onChange={() => toggle(tab)}
-                />
-                <span>
-                  <strong>{tab.title}</strong>
-                  <em>{tab.sourceKind === "thumbnail" ? "Thumbnail sheet" : "Title sheet"}</em>
+              <article className={`source-tab-row mode-${mode}`} key={`${tab.spreadsheetId || "primary"}:${tab.sourceKind}:${tab.title}`}>
+                <span className={`source-tab-mode-icon ${mode}`} aria-hidden="true">
+                  {mode === "active" ? <CircleDot size={16} /> : mode === "archive" ? <Archive size={16} /> : <EyeOff size={16} />}
                 </span>
-                <small>
+                <span className="source-tab-identity">
+                  <strong>{tab.title}</strong>
+                  <em>{tab.sourceKind === "thumbnail" ? "Thumbnail source" : "Title source"}{tab.linkedFrom ? ` · linked from ${tab.linkedFrom}` : ""}</em>
+                </span>
+                <div className="source-tab-mode-picker" aria-label={`Lifecycle for ${tab.title}`}>
+                  {[
+                    ["active", "Active"],
+                    ["archive", "Archive"],
+                    ["ignore", "Ignore"]
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={mode === value ? "selected" : ""}
+                      disabled={systemExcluded}
+                      onClick={() => setMode(tab, value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <small className="source-tab-effect">
                   {systemExcluded
-                    ? `Automatically excluded · ${tab.exclusionReason} · ${rowCountLabel(tab.testRows)}`
-                    : configuredExcluded
-                      ? `Excluded from future scans · removes ${rowCountLabel(tab.testRows)}`
-                      : tab.recognized
-                        ? `Included as A/B data · ${rowCountLabel(tab.testRows)}`
-                        : tab.likelyTestData
-                          ? `Included, but headers need attention · ${rowCountLabel(tab.testRows)}`
-                          : `Included auxiliary tab · ${rowCountLabel(tab.testRows)}`}
+                    ? `Automatically ignored · ${tab.exclusionReason}`
+                    : mode === "archive"
+                      ? "History retained · no scanning or alerts"
+                      : mode === "ignore"
+                        ? "Skipped as a non-test source"
+                        : tab.recognized
+                          ? tab.readyToArchive
+                            ? "Every test row has sheet finish evidence · ready to archive"
+                            : `Scanned for changes · ${Number(tab.monitoringRows || 0)} row${Number(tab.monitoringRows || 0) === 1 ? "" : "s"} still monitored`
+                          : tab.likelyTestData
+                            ? "Active, but A/B headers need attention"
+                            : "Active auxiliary tab · switch to Ignore if it is not test data"}
                 </small>
-              </label>
+              </article>
             );
           })}
         </div>
       ) : (
         <div className="settings-next-action">
           <EyeOff size={18} />
-          <span>Run one Full refresh to discover tabs. They will appear here for inclusion control.</span>
+          <span>Run one Full refresh to discover tabs. New tabs appear as Active and can then be archived or ignored here.</span>
         </div>
       )}
     </section>
   );
+}
+
+function tabMode(tab, policyByKey, legacyKeys) {
+  if (tab.exclusionSource === "system") return "ignore";
+  const key = sourceTabKey(tab.sourceKind, tab.title);
+  return policyByKey.get(key)?.mode || (legacyKeys.has(key) ? "ignore" : tab.mode || "active");
+}
+
+function safeSourceTabPolicies(value) {
+  try {
+    return parseSourceTabPolicies(value);
+  } catch {
+    return [];
+  }
 }
 
 function rowCountLabel(value) {

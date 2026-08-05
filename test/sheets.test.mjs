@@ -16,6 +16,15 @@ test("extracts and decodes public Google Sheet tab captions", () => {
   assert.deepEqual(extractPublicSheetTitles(html), ["Jotform - A/B", "Apps & Sign"]);
 });
 
+test("extracts more than forty public sheet tabs without truncation", () => {
+  const html = Array.from({ length: 45 }, (_, index) =>
+    `<div class="goog-inline-block docs-sheet-tab-caption">Tab ${index + 1}</div>`
+  ).join("");
+  const titles = extractPublicSheetTitles(html);
+  assert.equal(titles.length, 45);
+  assert.equal(titles[44], "Tab 45");
+});
+
 test("extracts linked workbook IDs from reference tabs", () => {
   const values = [[
     "URL: https://docs.google.com/spreadsheets/d/1Rxfbiv_0o2cCwjTPXwHRu5Q2e3kKcVm21ClPFPeDLMY/edit?gid=1"
