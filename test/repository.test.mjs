@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveQueueStatus, explicitOutcomeAction, isActionableQueueStatus, isActionConflict } from "../lib/queue-status.mjs";
+import {
+  deriveQueueStatus,
+  explicitOutcomeAction,
+  isActionableQueueStatus,
+  isActionConflict,
+  resolveBaseQueueStatus
+} from "../lib/queue-status.mjs";
 
 test("default action queue excludes metadata observations and passive monitoring", () => {
   assert.equal(isActionableQueueStatus("confirmed_finished"), true);
@@ -9,6 +15,33 @@ test("default action queue excludes metadata observations and passive monitoring
   assert.equal(isActionableQueueStatus("applied_change_observed"), false);
   assert.equal(isActionableQueueStatus("watching"), false);
   assert.equal(isActionableQueueStatus("uncovered"), false);
+});
+
+test("terminal sheet state takes precedence over an older Studio event", () => {
+  assert.equal(
+    resolveBaseQueueStatus({
+      rowStatus: "sheet_marked_done",
+      finishEventStatus: "confirmed_finished"
+    }),
+    "sheet_marked_done"
+  );
+  assert.equal(
+    resolveBaseQueueStatus({
+      rowStatus: "result_logged",
+      finishEventStatus: "confirmed_finished"
+    }),
+    "result_logged"
+  );
+});
+
+test("Studio event still promotes an unfinished row", () => {
+  assert.equal(
+    resolveBaseQueueStatus({
+      rowStatus: "running",
+      finishEventStatus: "confirmed_finished"
+    }),
+    "confirmed_finished"
+  );
 });
 
 test("sheet result entered after tool action does not reopen active queue", () => {

@@ -105,6 +105,57 @@ test("hybrid detection treats entered percentages as already logged", () => {
   assert.equal(records[0].highestShareVariant, "B");
 });
 
+test("completed mixed-tab thumbnail rows close even when shares are descriptive", () => {
+  const records = parseSheetRecords({
+    spreadsheetId: "thumbnail-sheet",
+    sourceKind: "thumbnail",
+    sheetName: "With Podo",
+    today: "2026-08-31",
+    values: [
+      [
+        "Test Start / Published Date",
+        "Test Finish Date",
+        "Test Duration",
+        "Video URL",
+        "Video Title",
+        "Thumbnail A",
+        "Thumbnail B",
+        "Thumbnail C",
+        "A - Character Count",
+        "B - Character Count",
+        "C - Character Count",
+        "A - Watch-Time Share",
+        "B - Watch-Time Share",
+        "C - Watch-Time Share",
+        "Done"
+      ],
+      [
+        "August 13",
+        "August 21",
+        "8",
+        "https://youtu.be/lupM4P-fs_I",
+        "How to Create Forms From Websites in Claude",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "59.20%",
+        "40.80%",
+        "",
+        "TRUE"
+      ]
+    ]
+  });
+
+  assert.equal(records.length, 1);
+  assert.equal(records[0].finishDate, "2026-08-21");
+  assert.equal(records[0].status, "sheet_marked_done");
+  assert.equal(records[0].watchTimeShare.A, 0.5920000000000001);
+  assert.equal(records[0].watchTimeShare.B, 0.408);
+});
+
 test("hybrid detection treats not-enough-impressions text as already logged", () => {
   const records = parseSheetRecords({
     spreadsheetId: "sheet",
