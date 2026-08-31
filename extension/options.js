@@ -1,4 +1,4 @@
-const FIELDS = ["appUrl", "connectorToken", "actorName"];
+const SYNC_FIELDS = ["appUrl", "actorName"];
 const DEFAULTS = {
   appUrl: "https://video-growth.vercel.app",
   connectorToken: "",
@@ -7,8 +7,18 @@ const DEFAULTS = {
 
 document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("versionBadge").textContent = `v${chrome.runtime.getManifest().version}`;
-  const settings = { ...DEFAULTS, ...(await chrome.storage.sync.get(FIELDS)) };
-  for (const field of FIELDS) {
+  const [sync, local, legacy] = await Promise.all([
+    chrome.storage.sync.get(SYNC_FIELDS),
+    chrome.storage.local.get(["connectorToken"]),
+    chrome.storage.sync.get(["connectorToken"])
+  ]);
+  const connectorToken = local.connectorToken || legacy.connectorToken || "";
+  if (connectorToken && !local.connectorToken) {
+    await chrome.storage.local.set({ connectorToken });
+    await chrome.storage.sync.remove("connectorToken");
+  }
+  const settings = { ...DEFAULTS, ...sync, connectorToken };
+  for (const field of [...SYNC_FIELDS, "connectorToken"]) {
     document.getElementById(field).value = settings[field] || "";
   }
   document.getElementById("save").addEventListener("click", saveAndCheck);
@@ -19,14 +29,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 async function save() {
   const updates = Object.fromEntries(
-    FIELDS.map((field) => [field, document.getElementById(field).value.trim()])
+    [...SYNC_FIELDS, "connectorToken"].map((field) => [field, document.getElementById(field).value.trim()])
   );
   validateSettings(updates);
   if (!updates.connectorId) {
     const current = await chrome.storage.sync.get("connectorId");
     updates.connectorId = current.connectorId || crypto.randomUUID();
   }
-  await chrome.storage.sync.set(updates);
+  await chrome.storage.sync.set({
+    ...Object.fromEntries(SYNC_FIELDS.map((field) => [field, updates[field]])),
+    connectorId: updates.connectorId
+  });
+  await chrome.storage.local.set({ connectorToken: updates.connectorToken });
   updateWebSetupLink(updates.appUrl);
   setStatus("Saved. Checking the dashboard connection...");
   return updates;

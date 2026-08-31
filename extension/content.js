@@ -2,7 +2,8 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "0.3.4";
+globalThis.__youtubeAbTestsConnectorVersion = "1.0.0";
+const PARSER_VERSION = "structured-notifications-v1";
 const DEFAULT_RUNTIME_CONFIG = {
   minTextLength: MIN_TEXT_LENGTH,
   maxTextLength: MAX_TEXT_LENGTH,
@@ -161,12 +162,16 @@ function collectNotificationEvents({ includeSeen = false, runtimeConfig = DEFAUL
     const texts = snippets.length ? snippets : [rawText];
     for (const text of texts) {
       const event = {
+        source: "notification_row",
+        parserVersion: PARSER_VERSION,
+        notificationId: extractNotificationId(element, linkedUrl, text),
         rawText: text,
         url,
         videoId: extractVideoId(`${linkedUrl || ""} ${text}`),
         channel,
         channelId,
         videoTitle: extractNotificationVideoTitle(text),
+        detectedOutcome: detectNotificationOutcome(text),
         notificationAge: extractAgeAfterSnippet(`${rawText} ${pageText}`, text),
         observedAt: new Date().toISOString()
       };
@@ -176,38 +181,8 @@ function collectNotificationEvents({ includeSeen = false, runtimeConfig = DEFAUL
     }
     if (events.length >= config.maxEvents) break;
   }
-  const bodySnippets = finishNotificationSnippets(pageText, config);
-  for (const text of bodySnippets) {
-    const event = {
-      rawText: text,
-      url: location.href,
-      videoId: extractVideoId(text),
-      channel,
-      channelId,
-      videoTitle: extractNotificationVideoTitle(text),
-      notificationAge: extractAgeAfterSnippet(pageText, text),
-      observedAt: new Date().toISOString()
-    };
-    if (!rememberEvent(event, includeSeen)) continue;
-    events.push(event);
-    if (events.length >= config.maxEvents) break;
-  }
-  for (const text of rawFinishTextWindows(pageText, config)) {
-    const event = {
-      source: "visible_text_block",
-      rawText: text,
-      url: location.href,
-      videoId: extractVideoId(text),
-      channel,
-      channelId,
-      videoTitle: extractNotificationVideoTitle(text),
-      notificationAge: extractAgeAfterSnippet(pageText, text),
-      observedAt: new Date().toISOString()
-    };
-    if (!rememberEvent(event, includeSeen)) continue;
-    events.push(event);
-    if (events.length >= config.maxEvents) break;
-  }
+  // Whole-page text is diagnostics only. Emitting it as evidence previously
+  // allowed unrelated video titles and running-test copy to become finish cards.
   return compactEvents(events);
 }
 
@@ -223,12 +198,15 @@ function collectAccessibleNotificationEvents({ includeSeen = false, runtimeConfi
     for (const text of snippets) {
       const event = {
         source: "studio_accessibility_label",
+        parserVersion: PARSER_VERSION,
+        notificationId: `aria:${stableTextId(text)}`,
         rawText: text,
         url: location.href,
         videoId: extractVideoId(text),
         channel,
         channelId,
         videoTitle: extractNotificationVideoTitle(text),
+        detectedOutcome: detectNotificationOutcome(text),
         notificationAge: extractAgeAfterSnippet(rawText, text),
         observedAt: new Date().toISOString()
       };
@@ -356,11 +334,14 @@ function collectStudioPageStatusEvents(channel) {
   return [
     {
       source: "studio_page_status",
+      parserVersion: PARSER_VERSION,
+      notificationId: `page:${videoId}:${stableTextId(rawText)}`,
       rawText,
       url: location.href,
       videoId,
       channel,
       channelId: detectChannelId(),
+      detectedOutcome: detectNotificationOutcome(rawText),
       observedAt: new Date().toISOString()
     }
   ];
@@ -625,7 +606,9 @@ function detectChannelId() {
   ].filter(Boolean).join(" ");
   const directMatch = directText.match(/(UC[A-Za-z0-9_-]{10,})/i);
   if (directMatch?.[1]) return directMatch[1];
-  return findDeepChannelId(document.body || document.documentElement);
+  // Do not take the first UC identifier from the whole page. Studio pages can
+  // contain links to many unrelated channels and videos.
+  return "";
 }
 
 function cleanChannelLabel(value) {
@@ -701,26 +684,83 @@ function findNotificationButton(runtimeConfig = DEFAULT_RUNTIME_CONFIG) {
 }
 
 async function waitForNotificationEvents({ includeSeen, timeoutMs = 4000, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
-  const startedAt = Date.now();
   const config = normalizeRuntimeConfig(runtimeConfig);
-  let latest = collectNotificationEvents({ includeSeen, runtimeConfig: config });
-  while (!latest.length && Date.now() - startedAt < timeoutMs) {
-    await delay(500);
-    latest = collectNotificationEvents({ includeSeen, runtimeConfig: config });
-  }
-  return latest;
+  const initial = collectNotificationEvents({ includeSeen, runtimeConfig: config });
+  if (initial.length) return initial;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (events = []) => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      window.clearInterval(interval);
+      window.clearTimeout(timer);
+      resolve(events);
+    };
+    const check = () => {
+      const events = collectNotificationEvents({ includeSeen, runtimeConfig: config });
+      if (events.length) finish(events);
+    };
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-label", "aria-expanded"] });
+    const interval = window.setInterval(check, 500);
+    const timer = window.setTimeout(() => finish(collectNotificationEvents({ includeSeen, runtimeConfig: config })), timeoutMs);
+  });
 }
 
 async function collectWithScrolling({ includeSeen, runtimeConfig = DEFAULT_RUNTIME_CONFIG } = {}) {
   const config = normalizeRuntimeConfig(runtimeConfig);
   const events = [];
   let scrolls = 0;
+  let previousCount = 0;
+  let unchangedRounds = 0;
   for (let round = 0; round < config.scrollRounds; round += 1) {
     scrolls += await scrollNotificationSurfaces(round, config);
     await delay(config.scrollDelayMs);
     events.push(...collectNotificationEvents({ includeSeen, runtimeConfig: config }));
+    const count = compactEvents(events).length;
+    unchangedRounds = count === previousCount ? unchangedRounds + 1 : 0;
+    previousCount = count;
+    if (unchangedRounds >= 2) break;
   }
   return { scrolls, events: compactEvents(events) };
+}
+
+function extractNotificationId(element, linkedUrl, text) {
+  const nativeId = element?.getAttribute?.("data-notification-id") || element?.getAttribute?.("notification-id") || "";
+  if (nativeId) return `native:${stableTextId(nativeId)}`;
+  const values = [
+    linkedUrl,
+    element?.id,
+    stableNotificationIdentityText(text)
+  ].filter(Boolean).join("|");
+  return values ? `synthetic:${stableTextId(values)}` : `synthetic:${stableTextId(stableNotificationIdentityText(text))}`;
+}
+
+function stableNotificationIdentityText(value) {
+  return collapseText(value)
+    .replace(/\b\d+\s+(?:minute|hour|day|week|month)s?\s+ago\b/gi, "")
+    .replace(/\b(?:today|yesterday|this week|older)\b/gi, "")
+    .trim();
+}
+
+function detectNotificationOutcome(value) {
+  const text = String(value || "");
+  if (/not enough (?:views|impressions|data|traffic)/i.test(text)) return "not_enough_views";
+  if (/performed well for all|very similar performance/i.test(text)) return "performed_same";
+  if (/completed with no winner|no winner|no clear|inconclusive/i.test(text)) return "inconclusive";
+  if (/a\/b test won|updated your video to use the winner/i.test(text)) return "winner";
+  return "unknown";
+}
+
+function stableTextId(value) {
+  let hash = 0x811c9dc5;
+  const text = String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 async function scrollNotificationSurfaces(round = 0, runtimeConfig = DEFAULT_RUNTIME_CONFIG) {

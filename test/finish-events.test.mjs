@@ -15,6 +15,7 @@ import {
   matchFinishEventToRun,
   notificationTitleMatchesVideoMetadata,
   parseWatcherTabs,
+  parseNotificationAge,
   parseStudioNotification,
   choosePreferredQueueFinishEvent,
   queueFinishEventPriority,
@@ -113,6 +114,12 @@ test("relative notification age corrects an extension occurrence timestamp captu
   assert.equal(parsed.occurredAt, "2026-08-03T06:34:28.485Z");
 });
 
+test("missing structured notification age is not treated as zero days", () => {
+  assert.equal(parseNotificationAge({ label: "", days: null }), null);
+  assert.equal(parseNotificationAge({ label: "", days: "" }), null);
+  assert.deepEqual(parseNotificationAge({ label: "Today", days: 0 }), { milliseconds: 0, label: "Today" });
+});
+
 test("keeps the same Studio notification stable across rescans and duplicate sheet rows", () => {
   const rawText =
     "A/B test performed well for all Google Calendar Guide: Settings & Share Options in 2 Minutes: Results with very similar performance.";
@@ -151,6 +158,26 @@ test("keeps the same Studio notification stable across rescans and duplicate she
       occurredAt: "2026-08-20T08:00:00.000Z"
     })
   );
+});
+
+test("synthetic notification IDs preserve later retests on the same video", () => {
+  const base = {
+    source: "studio_bell",
+    notificationId: "synthetic:abc123",
+    videoId: "video123",
+    channelId: "UCchannel123",
+    videoTitle: "Example video",
+    rawText: "A/B test performed well for all Example video",
+    detectedOutcome: "performed_same"
+  };
+  const first = finishEventHash({ ...base, observedAt: "2026-08-01T12:00:00.000Z", notificationAge: "1 day ago" });
+  const repeat = finishEventHash({ ...base, observedAt: "2026-08-02T12:00:00.000Z", notificationAge: "2 days ago" });
+  const laterRetest = finishEventHash({ ...base, observedAt: "2026-08-30T12:00:00.000Z", notificationAge: "1 day ago" });
+  const noAgeFirst = finishEventHash({ ...base, observedAt: "2026-08-01T12:00:00.000Z", notificationAge: { label: "", days: null } });
+  const noAgeRepeat = finishEventHash({ ...base, observedAt: "2026-08-02T12:00:00.000Z", notificationAge: { label: "", days: null } });
+  assert.equal(first, repeat);
+  assert.notEqual(first, laterRetest);
+  assert.equal(noAgeFirst, noAgeRepeat);
 });
 
 test("does not promote truncated Studio fragments without a resolved identity", () => {

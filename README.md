@@ -2,7 +2,7 @@
 
 Cloud-first real finish tracker for YouTube title and thumbnail A/B tests.
 
-V4 is a Next.js app for Vercel plus a read-only Chrome extension for YouTube Studio. Sheets and YouTube Data API keep the test registry fresh; Studio bell notifications provide the precise early-finish signal. The app keeps shared team state in Postgres, helps reviewers open Studio, and records Done actions. It does not write to Sheets, edit YouTube, upload thumbnails to YouTube, or use Apps Script.
+V6 is a Next.js app for Vercel plus a read-only Chrome extension for YouTube Studio. Sheets and YouTube Data API keep the test registry fresh; Studio bell notifications provide the precise early-finish signal. The app keeps shared team state in Postgres, helps reviewers open Studio, and records Done actions. It does not write to Sheets, edit YouTube, upload thumbnails to YouTube, or use Apps Script.
 
 The active queue is intentionally a finish tracker, not a full control center. If a row already has watch-time percentages or a "not enough impressions" result entered in the sheet, the app treats that run as already logged and keeps it out of the active queue. Blank finish dates do not become finished items from a time guess.
 
@@ -65,7 +65,7 @@ Neon Postgres is the recommended Vercel database. Vercel Blob is used for thumbn
 1. Open the app.
 2. Configure title and thumbnail spreadsheet IDs in Settings.
 3. Open Extension and create a browser connection token for the Chrome profile that is logged into YouTube Studio.
-4. Download, extract, and load the Chrome extension. Paste the app URL and browser token in its Settings page.
+4. Download, extract, and load the Chrome extension. Open the app's Extension page and use **Connect this browser**. Manual token setup remains available only as a fallback.
 5. Add monitored channels on the app's Extension page. Channel IDs are resolved automatically from known YouTube metadata when possible.
 6. Use `Check now` to read visible Studio/YouTube finish notifications, then use `Scan selected` to refresh sheet and YouTube metadata.
 7. The default `Action needed` queue shows real finish signals and manual checks. Choose `Everything` to inspect Watching, Needs Signal, Missing Data, and metadata observations.

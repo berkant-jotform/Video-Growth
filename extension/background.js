@@ -1,14 +1,31 @@
-const EXTENSION_VERSION = "0.3.4";
+import {
+  EXTENSION_CAPABILITIES,
+  EXTENSION_VERSION,
+  channelIdentityConflict,
+  finalJobStatus,
+  nextRetryAt,
+  progressPercent,
+  shouldRetryOutboxItem,
+  stableEventKey,
+  summarizeChannelCoverage
+} from "./reliability-core.js";
 const DEEP_SCAN_LIMIT = 8;
 const NOTIFICATION_WATCHER_URL = "https://www.youtube.com/";
 const APP_BRIDGE_MATCHES = ["https://video-growth.vercel.app/*", "http://127.0.0.1:8770/*"];
 const PENDING_EVENT_QUEUE_KEY = "pendingConnectorEvents";
 const RECENT_EVENT_KEYS_KEY = "recentConnectorEventKeys";
 const MAX_PENDING_EVENTS = 200;
+const DEAD_EVENT_QUEUE_KEY = "deadConnectorEvents";
+const MAX_DEAD_EVENTS = 50;
+const OUTBOX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const RECENT_EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RUNTIME_CONFIG_STORAGE_KEY = "extensionRuntimeConfig";
+const OWNED_WATCHERS_KEY = "ownedStudioWatchers";
 const DEFAULT_RUNTIME_CONFIG = {
-  version: "2026-07-10.2",
+  version: "2026-08-31.1",
+  passiveScanMinutes: 60,
+  commandPollMinutes: 1,
+  startupCatchupMinutes: 20,
   waitAfterOpenMs: 1200,
   waitForRowsMs: 4500,
   scrollRounds: 3,
@@ -72,6 +89,7 @@ const DEFAULT_SETTINGS = {
 };
 let studioScrapePromise = null;
 let watcherOpenPromise = null;
+let connectorJobPromise = null;
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings();
@@ -79,12 +97,14 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.storage.sync.set({ connectorId: crypto.randomUUID() });
   }
   scheduleHourlyAlarm();
+  scheduleCommandAlarm();
   await injectAppBridgeIntoAppTabs().catch(() => {});
+  await recoverInterruptedOperation().catch(() => {});
+  await processQueuedConnectorJobs().catch(() => {});
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  scheduleHourlyAlarm();
-  injectAppBridgeIntoAppTabs().catch(() => {});
+  runStartupMaintenance().catch(() => {});
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -94,6 +114,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === "youtube-ab-command-poll") {
+    await flushPendingEvents().catch(() => null);
+    await processQueuedConnectorJobs().catch((error) => appendDiagnosticLog({
+      category: "connector_jobs",
+      severity: "warning",
+      message: "Queued app check could not run",
+      context: { error: error.message }
+    }));
+    return;
+  }
   if (alarm.name !== "youtube-ab-heartbeat") return;
   await sendHeartbeat().catch((error) => appendDiagnosticLog({
     category: "heartbeat",
@@ -107,22 +137,29 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     message: "Scheduled scan failed",
     context: { error: error.message }
   }));
-  scheduleHourlyAlarm();
+  await processQueuedConnectorJobs().catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "studio-notifications") {
-    postEvents(message.events || [], sender.tab?.url || "", {
-      forcePost: Boolean(message.forcePost),
-      channelScope: message.channelScope || [],
-      testTypeScope: message.testTypeScope || "all"
-    })
+    prepareSourceEvents(message.events || [], sender.tab)
+      .then(({ events, rejected }) => postEvents(events, sender.tab?.url || "", {
+        forcePost: Boolean(message.forcePost),
+        channelScope: message.channelScope || [],
+        testTypeScope: message.testTypeScope || "all"
+      }).then((result) => ({ ...result, identityRejected: rejected })))
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (message?.type === "send-heartbeat") {
     sendHeartbeat()
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "get-control-status") {
+    buildControlStatus()
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -134,6 +171,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       channelScope: message.channelScope || [],
       testTypeScope: message.testTypeScope || "all"
     })
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "run-scan-job") {
+    requestConnectorScanJobGuarded(message.jobId || "")
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "pair-extension") {
+    pairExtension(message.payload || {})
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -187,11 +236,280 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-function scheduleHourlyAlarm() {
+function scheduleHourlyAlarm(minutes = 60) {
+  const interval = Math.max(15, Math.min(240, Number(minutes) || 60));
   chrome.alarms.create("youtube-ab-heartbeat", {
-    delayInMinutes: minutesUntilNextHour(),
-    periodInMinutes: 60
+    delayInMinutes: interval === 60 ? minutesUntilNextHour() : Math.min(interval, 5),
+    periodInMinutes: interval
   });
+}
+
+async function runStartupMaintenance() {
+  scheduleHourlyAlarm();
+  scheduleCommandAlarm();
+  await injectAppBridgeIntoAppTabs().catch(() => {});
+  await recoverInterruptedOperation().catch(() => {});
+  await sendHeartbeat().catch(() => {});
+  await processQueuedConnectorJobs().catch(() => {});
+  await runStartupCatchupIfNeeded().catch(() => {});
+}
+
+async function buildControlStatus() {
+  const [settings, ownedWatchers, pending, local] = await Promise.all([
+    getSettings(),
+    readOwnedWatchers(),
+    pendingQueueState(),
+    chrome.storage.local.get(["activeConnectorJob", "lastStudioScanAt", "lastStudioScanResult", "lastRuntimeConfigAt", "lastRuntimeConfigOk"])
+  ]);
+  return {
+    ok: true,
+    version: EXTENSION_VERSION,
+    configured: Boolean(settings.appUrl && settings.connectorToken),
+    connectorId: settings.connectorId || "",
+    capabilities: EXTENSION_CAPABILITIES,
+    ownedWatchers,
+    pending,
+    activeJob: local.activeConnectorJob || null,
+    lastScanAt: local.lastStudioScanAt || "",
+    lastScan: local.lastStudioScanResult || null,
+    runtimeConfig: {
+      checkedAt: local.lastRuntimeConfigAt || "",
+      ok: local.lastRuntimeConfigOk !== false
+    }
+  };
+}
+
+async function prepareSourceEvents(events, tab) {
+  const watcher = tab?.id ? await ownedWatcherForTab(tab.id) : null;
+  if (!watcher) {
+    return {
+      events: events.map((event) => ({ ...event, sourceTabId: tab?.id || 0 })),
+      rejected: 0
+    };
+  }
+  const expectedId = watcher.channelId || "";
+  const urlChannelId = String(tab.url || "").match(/\/channel\/(UC[A-Za-z0-9_-]{10,})/i)?.[1] || "";
+  const observedIds = Array.from(new Set(events.map((event) => String(event.channelId || "").trim()).filter(Boolean)));
+  const identityConflict = channelIdentityConflict(expectedId, observedIds, tab.url || "");
+  if (identityConflict) {
+    await appendDiagnosticLog({
+      category: "channel_identity",
+      severity: "error",
+      message: "Dedicated watcher opened under an unexpected channel",
+      context: { expectedChannel: watcher.label, expectedId, observedIds, urlChannelId, tabUrl: tab.url || "", events: events.length }
+    });
+    return { events: [], rejected: events.length };
+  }
+  return {
+    events: events.map((event) => ({
+      ...event,
+      channel: watcher.label || event.channel || "",
+      channelId: expectedId || event.channelId || "",
+      channelIdentitySource: "owned_watcher",
+      channelIdentityConfidence: expectedId ? "exact" : "label",
+      sourceTabId: tab.id
+    })),
+    rejected: 0
+  };
+}
+
+function scheduleCommandAlarm(minutes = 1) {
+  const interval = Math.max(1, Math.min(15, Number(minutes) || 1));
+  chrome.alarms.create("youtube-ab-command-poll", {
+    delayInMinutes: interval,
+    periodInMinutes: interval
+  });
+}
+
+async function runStartupCatchupIfNeeded() {
+  const [local, runtimeConfig] = await Promise.all([
+    chrome.storage.local.get(["lastStudioScanAt"]),
+    runtimeConfigForScan()
+  ]);
+  const lastScanAt = new Date(local.lastStudioScanAt || 0).getTime();
+  const maxAge = Math.max(5, Number(runtimeConfig.startupCatchupMinutes || 20)) * 60_000;
+  if (lastScanAt && Date.now() - lastScanAt < maxAge) return { ok: true, skipped: true };
+  return requestStudioScrapeGuarded({ userInitiated: false, avoidTabSwitch: true });
+}
+
+async function pairExtension(payload = {}) {
+  const appUrl = cleanAppUrl(payload.appUrl || DEFAULT_SETTINGS.appUrl);
+  const current = await getSettings();
+  const connectorId = current.connectorId || crypto.randomUUID();
+  const response = await fetchWithTimeout(`${appUrl}/api/connector/pairings/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code: payload.code || "",
+      connectorId,
+      deviceLabel: payload.deviceLabel || `${payload.actorName || "Reviewer"} Chrome`,
+      version: EXTENSION_VERSION,
+      capabilities: EXTENSION_CAPABILITIES
+    })
+  }, 20_000);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok || !result.device?.token) {
+    throw new Error(result.error || "Browser pairing failed.");
+  }
+  await chrome.storage.local.set({ connectorToken: result.device.token });
+  await chrome.storage.sync.set({
+    appUrl,
+    actorName: payload.actorName || current.actorName || "Reviewer",
+    connectorId: result.device.connectorId || connectorId
+  });
+  await sendHeartbeat({ pairedAt: new Date().toISOString() });
+  return {
+    ok: true,
+    connectorId: result.device.connectorId || connectorId,
+    label: result.device.label || payload.deviceLabel || "Chrome",
+    version: EXTENSION_VERSION
+  };
+}
+
+async function processQueuedConnectorJobs() {
+  return requestConnectorScanJobGuarded("");
+}
+
+function requestConnectorScanJobGuarded(requestedJobId = "") {
+  if (connectorJobPromise) return connectorJobPromise;
+  connectorJobPromise = runConnectorScanJob(requestedJobId).finally(() => {
+    connectorJobPromise = null;
+  });
+  return connectorJobPromise;
+}
+
+async function runConnectorScanJob(requestedJobId = "") {
+  const settings = await getSettings();
+  requireConfigured(settings);
+  const claim = await connectorApi(settings, "/api/connector/jobs/claim", {
+    method: "POST",
+    body: {
+      connectorId: settings.connectorId,
+      jobId: requestedJobId,
+      version: EXTENSION_VERSION,
+      capabilities: EXTENSION_CAPABILITIES
+    }
+  });
+  const job = claim.job;
+  if (!job) return {
+    ok: !requestedJobId,
+    accepted: false,
+    queued: Boolean(requestedJobId),
+    error: requestedJobId ? "This check is queued for another connected browser." : "",
+    message: requestedJobId ? "Waiting for the browser assigned to these channels." : "No queued app checks."
+  };
+  const remoteConfig = await fetchConnectorConfig(settings).catch(() => null);
+  const requestedChannels = Array.isArray(job.channels) && job.channels.length
+    ? job.channels
+    : Array.isArray(remoteConfig?.channels) ? remoteConfig.channels : splitChannels(settings.channels);
+  await chrome.storage.local.set({
+    activeConnectorJob: {
+      jobId: job.jobId,
+      channels: requestedChannels,
+      testType: job.testType || "all",
+      status: "running",
+      startedAt: new Date().toISOString()
+    }
+  });
+  await updateRemoteJob(settings, job.jobId, {
+    status: "running",
+    progress: jobProgress("starting", "Preparing browser check.", 4, requestedChannels)
+  });
+  let results = [];
+  let cancelled = false;
+  try {
+    if (studioScrapePromise) await studioScrapePromise.catch(() => null);
+    results = await requestStudioScrapeGuarded({
+      userInitiated: true,
+      avoidTabSwitch: true,
+      channelScope: requestedChannels,
+      testTypeScope: job.testType || "all",
+      connectorJob: { jobId: job.jobId, settings, channels: requestedChannels }
+    });
+    const tabResults = Array.isArray(results?.tabs) ? results.tabs : [];
+    cancelled = Boolean(results?.cancelled);
+    const coverageInput = tabResults.map((tab) => ({
+      ...tab,
+      checked: tab.ok !== false,
+      channel: tab.diagnostics?.channel || "",
+      channelId: tab.diagnostics?.channelId || ""
+    }));
+    const coverage = summarizeChannelCoverage(coverageInput, requestedChannels);
+    const status = finalJobStatus(coverage, cancelled);
+    const totals = summarizeScanResults(tabResults);
+    await updateRemoteJob(settings, job.jobId, {
+      status,
+      progress: jobProgress(status, jobCompletionMessage(status, coverage), 100, requestedChannels, coverage),
+      result: { totals, coverage, diagnosis: results?.diagnosis || null, runtimeConfigVersion: results?.runtimeConfigVersion || "" }
+    });
+    return { ok: status !== "failed", accepted: true, jobId: job.jobId, status, tabs: tabResults, coverage };
+  } catch (error) {
+    await updateRemoteJob(settings, job.jobId, {
+      status: "failed",
+      error: error.message,
+      progress: jobProgress("failed", error.message || "Browser check failed.", 100, requestedChannels)
+    }).catch(() => null);
+    throw error;
+  } finally {
+    await chrome.storage.local.remove("activeConnectorJob").catch(() => {});
+  }
+}
+
+async function recoverInterruptedOperation() {
+  const local = await chrome.storage.local.get(["activeConnectorJob"]).catch(() => ({}));
+  const active = local.activeConnectorJob;
+  if (!active?.jobId) return null;
+  await chrome.storage.local.remove("activeConnectorJob").catch(() => {});
+  return requestConnectorScanJobGuarded(active.jobId);
+}
+
+async function updateRemoteJob(settings, jobId, update) {
+  return connectorApi(settings, `/api/connector/jobs/${encodeURIComponent(jobId)}`, {
+    method: "PATCH",
+    body: { connectorId: settings.connectorId, ...update }
+  });
+}
+
+async function readRemoteJob(settings, jobId) {
+  return connectorApi(settings, `/api/connector/jobs/${encodeURIComponent(jobId)}?connectorId=${encodeURIComponent(settings.connectorId || "")}`);
+}
+
+async function connectorJobCancelled(jobContext) {
+  if (!jobContext?.jobId || !jobContext?.settings) return false;
+  const result = await readRemoteJob(jobContext.settings, jobContext.jobId).catch(() => null);
+  return ["cancel_requested", "cancelled"].includes(result?.job?.status);
+}
+
+async function connectorApi(settings, path, options = {}) {
+  const response = await fetchWithTimeout(`${cleanAppUrl(settings.appUrl)}${path}`, {
+    method: options.method || "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${settings.connectorToken}`
+    },
+    ...(options.body ? { body: JSON.stringify(options.body) } : {})
+  }, 20_000);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) throw new Error(payload.error || `Extension control request failed: ${response.status}`);
+  return payload;
+}
+
+function jobProgress(stage, message, percent, channels = [], coverage = []) {
+  return {
+    stage,
+    message,
+    percent,
+    channels,
+    coverage,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function jobCompletionMessage(status, coverage) {
+  if (status === "cancelled") return "Check stopped safely. Signals already found were retained.";
+  const checked = coverage.filter((item) => item.status === "checked").length;
+  if (status === "partial") return `${checked} of ${coverage.length} requested channels were checked.`;
+  return coverage.length ? `${checked} of ${coverage.length} requested channels were checked.` : "Browser check completed.";
 }
 
 function requestStudioScrapeGuarded(options = {}) {
@@ -222,14 +540,15 @@ async function requestStudioScrape(options = {}) {
     ? initialTabs
     : await collectScrapeTabs({ preferStudio: runtimeConfig.scanOrder === "studio_first" || !scanOptions.userInitiated, includeYoutube: true });
   let results = await scrapeTabs(tabs, scanOptions);
-  if (runtimeConfig.openYoutubeFallback && shouldRetryWithNotificationWatcher(results, tabs, scanOptions)) {
+  const cancelled = results.some((item) => item.cancelled);
+  if (!cancelled && runtimeConfig.openYoutubeFallback && shouldRetryWithNotificationWatcher(results, tabs, scanOptions)) {
     await openNotificationPage({ active: false }).catch(() => null);
     await delay(Math.max(1200, Number(runtimeConfig.waitAfterOpenMs || 1200) + 2000));
     const retryTabs = await collectScrapeTabs({ preferStudio: Boolean(scanOptions.userInitiated), includeYoutube: true });
     const retryResults = await scrapeTabs(retryTabs, scanOptions);
     results = mergeScanResults(results, retryResults);
   }
-  if (shouldDeepScanFallback(results, scanOptions)) {
+  if (!cancelled && shouldDeepScanFallback(results, scanOptions)) {
     const deepScan = await deepScanActiveVideos({ limit: 4, reason: "finish-signal-fallback" }).catch((error) => ({ ok: false, error: error.message }));
     if (Array.isArray(deepScan.results) && deepScan.results.length) {
       results = mergeScanResults(results, deepScan.results.map((item) => ({
@@ -246,7 +565,7 @@ async function requestStudioScrape(options = {}) {
   }
   await saveStudioScanResults(results, scanOptions);
   await sendHeartbeat({ lastStudioScan: await buildLastStudioScanPayload() }).catch(() => {});
-  return { ok: true, tabs: results, diagnosis: buildScanDiagnosis(results), scope: scanScopeSummary(scanOptions), runtimeConfigVersion: runtimeConfig.version || "" };
+  return { ok: true, cancelled, tabs: results, diagnosis: buildScanDiagnosis(results), scope: scanScopeSummary(scanOptions), runtimeConfigVersion: runtimeConfig.version || "" };
 }
 
 async function ensureNotificationWatcherForScan(options = {}) {
@@ -260,7 +579,23 @@ async function ensureNotificationWatcherForScan(options = {}) {
 
 async function scrapeTabs(tabs, options = {}) {
   const results = [];
-  for (const tab of tabs) {
+  for (let index = 0; index < tabs.length; index += 1) {
+    const tab = tabs[index];
+    if (await connectorJobCancelled(options.connectorJob)) {
+      results.push({ ok: true, cancelled: true, tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "" });
+      break;
+    }
+    if (options.connectorJob?.jobId) {
+      await updateRemoteJob(options.connectorJob.settings, options.connectorJob.jobId, {
+        status: "running",
+        progress: jobProgress(
+          "checking",
+          `Checking browser tab ${index + 1} of ${tabs.length}.`,
+          progressPercent(index, tabs.length),
+          options.connectorJob.channels
+        )
+      }).catch(() => null);
+    }
     try {
       await waitForTabReady(tab.id, 3000).catch(() => {});
       await ensureContentScript(tab.id);
@@ -271,7 +606,24 @@ async function scrapeTabs(tabs, options = {}) {
         testTypeScope: options.testTypeScope || "all",
         runtimeConfig: options.runtimeConfig || DEFAULT_RUNTIME_CONFIG
       });
-      results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ...response });
+      const expected = tab.expectedWatcher || null;
+      const identityConflict = Boolean(expected && Number(response?.identityRejected || 0) > 0);
+      results.push({
+        tabId: tab.id,
+        tabTitle: tab.title || "",
+        tabUrl: tab.url || "",
+        ...response,
+        identityConflict,
+        ...(identityConflict ? { ok: false, error: "Studio tab is showing a different channel than its watcher assignment." } : {}),
+        diagnostics: {
+          ...(response?.diagnostics || {}),
+          ...(expected ? {
+            channel: expected.label || response?.diagnostics?.channel || "",
+            channelId: expected.channelId || response?.diagnostics?.channelId || "",
+            channelIdentitySource: "owned_watcher"
+          } : {})
+        }
+      });
     } catch (error) {
       results.push({ tabId: tab.id, tabTitle: tab.title || "", tabUrl: tab.url || "", ok: false, error: error.message });
     }
@@ -355,9 +707,11 @@ async function collectScrapeTabs(options = {}) {
   const youtubeFallbackTabs = youtubeTabs
     .filter((tab) => tab.id && tab.id !== watcherTab?.id && !notificationTabs.some((item) => item.id === tab.id))
     .slice(0, 2);
+  const ownedWatchers = await readOwnedWatchers();
   const enrichedStudioTabs = [];
   for (const tab of studioTabs) {
-    enrichedStudioTabs.push(await enrichStudioTab(tab));
+    const expectedWatcher = ownedWatchers.find((item) => item.tabId === tab.id) || null;
+    enrichedStudioTabs.push({ ...(await enrichStudioTab(tab)), expectedWatcher });
   }
   const ranked = [
     ...enrichedStudioTabs.map((tab) => ({
@@ -376,7 +730,8 @@ async function collectScrapeTabs(options = {}) {
     const key = scrapeTabKey(tab);
     if (!map.has(key)) map.set(key, tab);
   }
-  return Array.from(map.values()).slice(0, 12);
+  const ownedCount = enrichedStudioTabs.filter((tab) => tab.expectedWatcher).length;
+  return Array.from(map.values()).slice(0, Math.min(30, Math.max(12, ownedCount + 4)));
 }
 
 function isLikelyNotificationTab(tab) {
@@ -403,6 +758,7 @@ function classifyStudioTab(tab) {
 }
 
 function rankStudioTab(tab) {
+  if (tab.expectedWatcher) return 0;
   const kind = classifyStudioTab(tab);
   if (kind === "studio_channel") return 10;
   if (kind === "studio_other") return 20;
@@ -414,6 +770,7 @@ function scrapeTabKey(tab) {
   if (tab.scanKind === "youtube_notifications" || isLikelyNotificationTab(tab)) return `youtube_notifications:${new URL(tab.url || "https://www.youtube.com").origin}`;
   if (tab.scanKind === "youtube_fallback") return `youtube_fallback:${tab.id}`;
   const url = String(tab.url || "");
+  if (tab.expectedWatcher?.channelId) return `studio_channel:${tab.expectedWatcher.channelId}`;
   const videoId = url.match(/\/video\/([A-Za-z0-9_-]{6,})/)?.[1] || "";
   if (videoId) return `studio_video:${videoId}`;
   const channelId = url.match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] || tab.studioStatus?.channelId || "";
@@ -590,6 +947,10 @@ async function ensureContentScript(tabId) {
     .catch(() => ({ loaded: false, version: "" }));
   if (status.loaded && status.version === EXTENSION_VERSION) return;
   if (status.loaded && status.version && status.version !== EXTENSION_VERSION) {
+    const watcher = await ownedWatcherForTab(tabId);
+    if (!watcher?.owned) {
+      throw new Error("This user-owned tab still has an older extension script. Reload it manually or open the dedicated watcher tab.");
+    }
     await chrome.tabs.reload(tabId).catch(() => {});
     await waitForTabReady(tabId, 8000).catch(() => {});
     await delay(700);
@@ -669,7 +1030,9 @@ async function postEvents(events, tabUrl, options = {}) {
   requireConfigured(settings);
   await flushPendingEvents(settings).catch(() => null);
   const forcePost = Boolean(options.forcePost);
-  const freshEvents = forcePost ? events : await filterDuplicateEvents(events);
+  // Manual checks may re-read old DOM rows, but they must never bypass the
+  // durable duplicate guard. The server remains a second idempotency layer.
+  const freshEvents = await filterDuplicateEvents(events);
   if (!freshEvents.length) {
     return { ok: true, received: 0, matched: 0, unmatched: 0, ignored: 0, duplicate: events.length };
   }
@@ -716,11 +1079,11 @@ async function postEvents(events, tabUrl, options = {}) {
       ignored: payload.ignored || 0,
       youtubeResolved: payload.youtubeResolved || 0,
       queued: payload.queued || 0,
-      duplicate: forcePost ? 0 : events.length - freshEvents.length,
+      duplicate: events.length - freshEvents.length,
       forcePost
       }
   });
-  return { ...payload, duplicate: forcePost ? 0 : events.length - freshEvents.length };
+  return { ...payload, duplicate: events.length - freshEvents.length };
 }
 
 async function sendEventsBatch(settings, events, tabUrl, options = {}) {
@@ -757,7 +1120,7 @@ async function enqueuePendingEvents(events, tabUrl, reason = "") {
     pendingKeys.add(key);
     uniqueEvents.push(event);
   }
-  const next = [
+  const combined = [
     ...current,
     ...uniqueEvents.map((event) => ({
       event,
@@ -765,9 +1128,18 @@ async function enqueuePendingEvents(events, tabUrl, reason = "") {
       reason,
       attempts: 0,
       queuedAt: new Date().toISOString(),
-      lastTriedAt: ""
+      lastTriedAt: "",
+      nextAttemptAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + OUTBOX_TTL_MS).toISOString()
     }))
-  ].slice(-MAX_PENDING_EVENTS);
+  ];
+  const overflow = combined.slice(0, Math.max(0, combined.length - MAX_PENDING_EVENTS)).map((item) => ({
+    ...item,
+    deadAt: new Date().toISOString(),
+    deadReason: "outbox_capacity_exceeded"
+  }));
+  if (overflow.length) await appendDeadEvents(overflow);
+  const next = combined.slice(-MAX_PENDING_EVENTS);
   await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: next });
 }
 
@@ -779,14 +1151,24 @@ async function flushPendingEvents(settings = null) {
   if (!queue.length) return { ok: true, flushed: 0, remaining: 0 };
   const fresh = [];
   const remaining = [];
+  const expired = [];
   for (const item of queue) {
     const event = item.event || item;
     if (await isRecentDuplicate(event)) continue;
+    if (item.expiresAt && new Date(item.expiresAt).getTime() <= Date.now()) {
+      expired.push({ ...item, deadAt: new Date().toISOString(), deadReason: "retry_expired" });
+      continue;
+    }
+    if (!shouldRetryOutboxItem(item)) {
+      remaining.push(item);
+      continue;
+    }
     fresh.push({ ...item, event });
   }
+  if (expired.length) await appendDeadEvents(expired);
   if (!fresh.length) {
-    await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: [] });
-    return { ok: true, flushed: 0, remaining: 0, duplicate: queue.length };
+    await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: remaining });
+    return { ok: true, flushed: 0, remaining: remaining.length, expired: expired.length };
   }
   try {
     const events = fresh.map((item) => item.event);
@@ -797,19 +1179,27 @@ async function flushPendingEvents(settings = null) {
       category: "connector_events",
       severity: "info",
       message: "Pending connector events retried successfully",
-      context: { flushed: events.length }
+      context: { flushed: events.length, deferred: remaining.length, expired: expired.length }
     });
-    return { ok: true, flushed: events.length, remaining: 0 };
+    return { ok: true, flushed: events.length, remaining: remaining.length, expired: expired.length };
   } catch (error) {
     const next = fresh.map((item) => ({
       ...item,
       attempts: Number(item.attempts || 0) + 1,
       lastTriedAt: new Date().toISOString(),
+      nextAttemptAt: nextRetryAt(Number(item.attempts || 0) + 1),
       reason: error.message
-    })).slice(-MAX_PENDING_EVENTS);
-    await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: next });
-    return { ok: false, flushed: 0, remaining: next.length, error: error.message };
+    }));
+    const combined = [...remaining, ...next].slice(-MAX_PENDING_EVENTS);
+    await chrome.storage.local.set({ [PENDING_EVENT_QUEUE_KEY]: combined });
+    return { ok: false, flushed: 0, remaining: combined.length, error: error.message };
   }
+}
+
+async function appendDeadEvents(items) {
+  const local = await chrome.storage.local.get([DEAD_EVENT_QUEUE_KEY]).catch(() => ({}));
+  const current = Array.isArray(local[DEAD_EVENT_QUEUE_KEY]) ? local[DEAD_EVENT_QUEUE_KEY] : [];
+  await chrome.storage.local.set({ [DEAD_EVENT_QUEUE_KEY]: [...current, ...items].slice(-MAX_DEAD_EVENTS) });
 }
 
 async function filterDuplicateEvents(events) {
@@ -847,12 +1237,7 @@ async function readRecentEventKeys() {
 }
 
 function eventKey(event) {
-  return [
-    event.videoId || "",
-    event.channelId || "",
-    normalizeEventKeyText(event.rawText || event.text || ""),
-    event.notificationAge?.label || event.notificationAge || ""
-  ].join("|").slice(0, 420);
+  return stableEventKey(event);
 }
 
 function normalizeEventKeyText(value) {
@@ -881,17 +1266,17 @@ async function openWatcherTabs(requestedTargets = [], options = {}) {
       scan: null
     };
   }
-  const openStudioUrls = (await chrome.tabs.query({ url: "https://studio.youtube.com/*" }))
-    .map((tab) => tab.url || "")
-    .filter(Boolean);
+  const ownedWatchers = await readOwnedWatchers();
   const targetsToOpen = options.onlyMissing
-    ? targets.filter((target) => !isWatcherTargetOpen(target, openStudioUrls))
+    ? targets.filter((target) => !ownedWatchers.some((watcher) => watcherMatchesTarget(watcher, target)))
     : targets;
   const opened = [];
   for (const target of targetsToOpen) {
     if (!target.url) continue;
     const tab = await chrome.tabs.create({ url: target.url, active: false });
-    opened.push({ label: target.label || target.url, url: target.url, tabId: tab.id });
+    const watcher = watcherRecord(tab, target);
+    opened.push(watcher);
+    await saveOwnedWatcher(watcher);
   }
   if (opened.length) await delay(1500);
   const heartbeat = await sendHeartbeat().catch((error) => ({ ok: false, error: error.message }));
@@ -913,6 +1298,48 @@ async function openWatcherTabs(requestedTargets = [], options = {}) {
     heartbeat,
     scan
   };
+}
+
+function watcherRecord(tab, target) {
+  return {
+    tabId: tab.id,
+    label: target.label || target.url,
+    url: target.url,
+    channelId: String(target.url || "").match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] || "",
+    owned: true,
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function readOwnedWatchers() {
+  const local = await chrome.storage.local.get([OWNED_WATCHERS_KEY]).catch(() => ({}));
+  const stored = Array.isArray(local[OWNED_WATCHERS_KEY]) ? local[OWNED_WATCHERS_KEY] : [];
+  const valid = [];
+  for (const watcher of stored) {
+    const tab = await chrome.tabs.get(watcher.tabId).catch(() => null);
+    if (!tab?.id || !/^https:\/\/studio\.youtube\.com\//i.test(tab.url || "")) continue;
+    valid.push({ ...watcher, currentUrl: tab.url || "" });
+  }
+  if (valid.length !== stored.length) await chrome.storage.local.set({ [OWNED_WATCHERS_KEY]: valid });
+  return valid;
+}
+
+async function saveOwnedWatcher(watcher) {
+  const current = await readOwnedWatchers();
+  const next = current.filter((item) => item.tabId !== watcher.tabId && !watcherMatchesTarget(item, watcher));
+  next.push(watcher);
+  await chrome.storage.local.set({ [OWNED_WATCHERS_KEY]: next });
+}
+
+async function ownedWatcherForTab(tabId) {
+  return (await readOwnedWatchers()).find((item) => item.tabId === tabId) || null;
+}
+
+function watcherMatchesTarget(watcher, target) {
+  const watcherId = watcher.channelId || String(watcher.url || "").match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] || "";
+  const targetId = String(target.url || "").match(/(UC[A-Za-z0-9_-]{10,})/)?.[1] || "";
+  if (watcherId && targetId) return watcherId === targetId;
+  return Boolean(watcher.url && target.url && String(watcher.url).replace(/\/+$/, "") === String(target.url).replace(/\/+$/, ""));
 }
 
 function isWatcherTargetOpen(target, openStudioUrls) {
@@ -984,6 +1411,8 @@ async function fetchConnectorConfig(settings) {
     lastConnectorConfigAt: new Date().toISOString(),
     lastConnectorConfig: payload
   });
+  scheduleHourlyAlarm(payload.pollMinutes);
+  scheduleCommandAlarm(payload.commandPollMinutes);
   return payload;
 }
 
@@ -1080,6 +1509,7 @@ async function sendHeartbeat(extraPayload = {}) {
   const notificationWatcherTab = await getNotificationWatcherTab();
   const studioTabDetails = await collectStudioTabDetails(studioTabs);
   const pendingState = await pendingQueueState();
+  const ownedWatchers = await readOwnedWatchers();
   const selfTest = buildQuietSelfTest({
     settings,
     studioTabs,
@@ -1105,6 +1535,14 @@ async function sendHeartbeat(extraPayload = {}) {
     pendingFlush,
     selfTest,
     userAgent: navigator.userAgent,
+    capabilities: EXTENSION_CAPABILITIES,
+    ownedWatchers: ownedWatchers.map((item) => ({
+      tabId: item.tabId,
+      label: item.label,
+      channelId: item.channelId,
+      url: item.url
+    })),
+    runtimeConfigVersion: (await cachedRuntimeConfig())?.version || "",
     observedAt: new Date().toISOString(),
     diagnosticLog: await readDiagnosticLog(),
     ...extraPayload,
@@ -1122,10 +1560,14 @@ async function sendHeartbeat(extraPayload = {}) {
       version: EXTENSION_VERSION,
       channels: reportedChannels,
       status: "online",
+      capabilities: EXTENSION_CAPABILITIES,
       ...heartbeatPayload
     })
   }, 20_000);
   const responsePayload = await response.json().catch(() => ({}));
+  if (response.ok && responsePayload.connectorId && responsePayload.connectorId !== settings.connectorId) {
+    await chrome.storage.sync.set({ connectorId: responsePayload.connectorId }).catch(() => {});
+  }
   await chrome.storage.local.set({
     lastHeartbeatAt: new Date().toISOString(),
     lastHeartbeatOk: response.ok,
@@ -1144,10 +1586,12 @@ async function sendHeartbeat(extraPayload = {}) {
 }
 
 async function pendingQueueState() {
-  const local = await chrome.storage.local.get([PENDING_EVENT_QUEUE_KEY]).catch(() => ({}));
+  const local = await chrome.storage.local.get([PENDING_EVENT_QUEUE_KEY, DEAD_EVENT_QUEUE_KEY]).catch(() => ({}));
   const queue = Array.isArray(local[PENDING_EVENT_QUEUE_KEY]) ? local[PENDING_EVENT_QUEUE_KEY] : [];
+  const dead = Array.isArray(local[DEAD_EVENT_QUEUE_KEY]) ? local[DEAD_EVENT_QUEUE_KEY] : [];
   return {
     count: queue.length,
+    deadCount: dead.length,
     oldestQueuedAt: queue[0]?.queuedAt || "",
     newestQueuedAt: queue[queue.length - 1]?.queuedAt || "",
     maxAttempts: queue.reduce((max, item) => Math.max(max, Number(item.attempts || 0)), 0)
@@ -1293,6 +1737,9 @@ function normalizeRuntimeConfig(value = {}) {
   return {
     ...DEFAULT_RUNTIME_CONFIG,
     ...input,
+    passiveScanMinutes: clampRuntimeNumber(input.passiveScanMinutes, 15, 240, DEFAULT_RUNTIME_CONFIG.passiveScanMinutes),
+    commandPollMinutes: clampRuntimeNumber(input.commandPollMinutes, 1, 15, DEFAULT_RUNTIME_CONFIG.commandPollMinutes),
+    startupCatchupMinutes: clampRuntimeNumber(input.startupCatchupMinutes, 5, 120, DEFAULT_RUNTIME_CONFIG.startupCatchupMinutes),
     waitAfterOpenMs: clampRuntimeNumber(input.waitAfterOpenMs, 300, 6000, DEFAULT_RUNTIME_CONFIG.waitAfterOpenMs),
     waitForRowsMs: clampRuntimeNumber(input.waitForRowsMs, 1000, 12000, DEFAULT_RUNTIME_CONFIG.waitForRowsMs),
     scrollRounds: clampRuntimeNumber(input.scrollRounds, 0, 8, DEFAULT_RUNTIME_CONFIG.scrollRounds),
@@ -1382,9 +1829,18 @@ function redactDiagnosticContext(value) {
 }
 
 async function getSettings() {
+  const [sync, local] = await Promise.all([
+    chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS)),
+    chrome.storage.local.get(["connectorToken"])
+  ]);
+  if (sync.connectorToken) {
+    if (!local.connectorToken) await chrome.storage.local.set({ connectorToken: sync.connectorToken });
+    await chrome.storage.sync.remove("connectorToken");
+  }
   return {
     ...DEFAULT_SETTINGS,
-    ...(await chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS)))
+    ...sync,
+    connectorToken: local.connectorToken || sync.connectorToken || ""
   };
 }
 

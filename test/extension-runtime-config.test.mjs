@@ -44,6 +44,17 @@ test("normalizes extension runtime config with safe guardrails", () => {
   assert.ok(config.ignorePhrases.includes("custom ignore"));
 });
 
+test("clamps app-managed passive and command timing", () => {
+  const config = normalizeExtensionRuntimeConfig({
+    passiveScanMinutes: 2,
+    commandPollMinutes: 90,
+    startupCatchupMinutes: 1
+  });
+  assert.equal(config.passiveScanMinutes, 15);
+  assert.equal(config.commandPollMinutes, 15);
+  assert.equal(config.startupCatchupMinutes, 5);
+});
+
 test("rejects invalid extension runtime config JSON", () => {
   assert.throws(
     () => parseExtensionRuntimeConfigJson("{bad json"),

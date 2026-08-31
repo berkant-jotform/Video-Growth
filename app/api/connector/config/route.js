@@ -19,8 +19,17 @@ export async function GET(request) {
       ok: true,
       channels: config.connectorChannels,
       watcherTabs,
-      pollMinutes: 60,
+      pollMinutes: config.extensionRuntimeConfig?.passiveScanMinutes || 60,
+      commandPollMinutes: config.extensionRuntimeConfig?.commandPollMinutes || 1,
+      startupCatchupMinutes: config.extensionRuntimeConfig?.startupCatchupMinutes || 20,
       latestExtensionVersion: LATEST_EXTENSION_VERSION,
+      capabilitiesRequired: {
+        durableJobs: true,
+        acknowledgedOutbox: true,
+        ownedWatchers: true,
+        exactChannelIdentity: true,
+        remoteProfiles: true
+      },
       activeTests: runs.map((run) => ({
         testRunId: run.testRunId,
 	        videoId: run.videoId,

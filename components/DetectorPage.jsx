@@ -26,6 +26,7 @@ import {
 } from "@/lib/finish-signal-source.mjs";
 import { explicitOutcomeAction, isActionableQueueStatus } from "@/lib/queue-status.mjs";
 import { runFinishCheckWorkflow } from "@/lib/finish-check-workflow.mjs";
+import { selectConnectorTarget } from "@/lib/connector-routing.mjs";
 import { matchesDetectorSearch } from "@/lib/detector-filters.mjs";
 import {
   highestShareDescription,
@@ -100,6 +101,7 @@ export default function DetectorPage({ session }) {
   const [stoppingScan, setStoppingScan] = useState(false);
   const cancelRequestedRef = useRef(false);
   const activeScanIdRef = useRef("");
+  const activeConnectorJobIdRef = useRef("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [scanInfo, setScanInfo] = useState("");
@@ -491,6 +493,13 @@ export default function DetectorPage({ session }) {
       ? { ...current, message: "Stopping safely after the current step..." }
       : current);
     try {
+      if (activeConnectorJobIdRef.current) {
+        await fetch("/api/connector/jobs", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId: activeConnectorJobIdRef.current })
+        }).catch(() => null);
+      }
       const scanId = activeScanIdRef.current;
       if (!scanId) {
         setNotice("Stop requested. The check will end before the queue refresh begins.");
@@ -529,11 +538,32 @@ export default function DetectorPage({ session }) {
       if (type === "check-studio-now" && scopeChannels.length === 1) {
         setViewChannel(scopeChannels[0]);
       }
-      const response = await requestExtension(type, {
-        timeoutMs: quiet ? 3500 : 12000,
-        payload: { channels: scopeChannels, testType: scanType }
+      const supportsDurableJobs = type === "check-studio-now" && connectorSupportsDurableJobs(extensionBridge, connectorStatus);
+      let connectorJob = null;
+      if (supportsDurableJobs) {
+        connectorJob = await createConnectorJob(scopeChannels, scanType);
+        activeConnectorJobIdRef.current = connectorJob.jobId;
+        if (!versionAtLeast(extensionBridge?.version, "1.0.0")) {
+          activeConnectorJobIdRef.current = "";
+          setExtensionRequest({
+            status: "warn",
+            message: "The browser check is queued safely and will run in the connected Chrome profile."
+          });
+          return { ok: false, queued: true, jobId: connectorJob.jobId, error: "Browser check queued; fresh Studio results are not available yet." };
+        }
+      }
+      const response = await requestExtension(supportsDurableJobs ? "run-scan-job" : type, {
+        timeoutMs: supportsDurableJobs ? 120000 : quiet ? 3500 : 12000,
+        payload: supportsDurableJobs
+          ? { jobId: connectorJob.jobId }
+          : { channels: scopeChannels, testType: scanType }
       });
       if (!response?.ok) throw new Error(response?.error || "Extension did not complete the request.");
+      if (connectorJob && response.accepted === false) {
+        activeConnectorJobIdRef.current = "";
+        setExtensionRequest({ status: "warn", message: "The check is queued for the Chrome profile watching those channels." });
+        return { ok: false, queued: true, jobId: connectorJob.jobId, error: "Browser check queued; fresh Studio results are not available yet." };
+      }
       setExtensionBridge((current) => ({
         status: "ready",
         version: current.version || connectorConfig?.latestExtensionVersion || "",
@@ -549,8 +579,18 @@ export default function DetectorPage({ session }) {
             : "Miss report sent with the latest scan diagnostics.";
       setExtensionRequest({ status: "ok", message });
       window.setTimeout(() => refresh(), 800);
+      activeConnectorJobIdRef.current = "";
       return { ok: true, response, message };
     } catch (err) {
+      const queuedJobId = activeConnectorJobIdRef.current;
+      activeConnectorJobIdRef.current = "";
+      if (queuedJobId && isBridgeOfflineMessage(err.message)) {
+        setExtensionRequest({
+          status: "warn",
+          message: "The browser check is queued safely. Extension 1.0 will claim it in the background when Chrome is available."
+        });
+        return { ok: false, queued: true, jobId: queuedJobId, error: "Browser check queued; fresh Studio results are not available yet." };
+      }
       if (isExtensionContextInvalidated(err.message)) {
         recoverInvalidatedExtensionContext();
         return { ok: false, error: err.message || "Extension was updated or reloaded." };
@@ -577,6 +617,18 @@ export default function DetectorPage({ session }) {
       }
       return { ok: false, error: err.message || "Extension request failed." };
     }
+  }
+
+  async function createConnectorJob(channels, testType) {
+    const targetConnectorId = selectConnectorTarget(connectorStatus, channels);
+    const response = await fetch("/api/connector/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channels, testType, mode: "notifications", targetConnectorId })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not queue the browser check.");
+    return payload.job;
   }
 
   function recoverInvalidatedExtensionContext() {
@@ -3499,6 +3551,27 @@ function requestExtension(type, { timeoutMs = 12000, payload = {} } = {}) {
     window.addEventListener("message", onMessage);
     window.postMessage({ source: "youtube-ab-tests-app", type, requestId, payload }, window.location.origin);
   });
+}
+
+function connectorSupportsDurableJobs(bridge, statuses = []) {
+  if (versionAtLeast(bridge?.version, "1.0.0")) return true;
+  return statuses.some((item) =>
+    item.active && (
+      item.payload?.capabilities?.durableJobs === true ||
+      versionAtLeast(item.version, "1.0.0")
+    )
+  );
+}
+
+function versionAtLeast(value, minimum) {
+  const parse = (input) => String(input || "0").split(".").slice(0, 3).map((item) => Number.parseInt(item, 10) || 0);
+  const current = parse(value);
+  const target = parse(minimum);
+  for (let index = 0; index < 3; index += 1) {
+    if (current[index] > target[index]) return true;
+    if (current[index] < target[index]) return false;
+  }
+  return true;
 }
 
 function extensionCommandLoadingText(type) {

@@ -70,13 +70,19 @@ async function render() {
   const connectorConfig = await chrome.runtime
     .sendMessage({ type: "get-connector-config" })
     .catch((error) => ({ ok: false, error: error.message }));
+  const controlStatus = await chrome.runtime
+    .sendMessage({ type: "get-control-status" })
+    .catch((error) => ({ ok: false, error: error.message }));
   const latestHeartbeat = latestOwnHeartbeat(local.lastHeartbeatResult, sync.actorName);
   const openStudioTabs = Number(latestHeartbeat?.payload?.openStudioTabs || 0);
-  const openStudioUrls = latestHeartbeat?.payload?.studioTabUrls || [];
+  const ownedWatcherUrls = Array.isArray(controlStatus?.ownedWatchers)
+    ? controlStatus.ownedWatchers.map((item) => item.currentUrl || item.url).filter(Boolean)
+    : [];
+  const openStudioUrls = ownedWatcherUrls.length ? ownedWatcherUrls : latestHeartbeat?.payload?.studioTabUrls || [];
   renderWatcherButtons(connectorConfig?.watcherTabs || [], openStudioUrls, connectorConfig);
   renderScanLog(local.lastStudioScanAt, local.lastStudioScanResult);
   renderDashboardBridge(local.lastAppBridgeRepairAt, local.lastAppBridgeRepairResult);
-  const watchState = buildWatchState({ sync, local, connectorConfig, openStudioTabs, openStudioUrls });
+  const watchState = buildWatchState({ sync, local, connectorConfig, openStudioTabs, openStudioUrls, controlStatus });
   renderHealthPanel(watchState);
   renderPrimaryAction(watchState);
   if (!sync.appUrl) {
@@ -85,6 +91,10 @@ async function render() {
     setSummary("Connected, but not watching. Open watcher tabs before expecting live detection.");
   } else if (connectorConfig && connectorConfig.ok === false) {
     setSummary(connectorConfig.error || "Dashboard settings could not be loaded.");
+  } else if (controlStatus?.activeJob) {
+    setSummary(`App check in progress: ${controlStatus.activeJob.channels?.join(", ") || "configured channels"}.`);
+  } else if (Number(controlStatus?.pending?.count || 0) > 0) {
+    setSummary(`${controlStatus.pending.count} finish signal${controlStatus.pending.count === 1 ? " is" : "s are"} saved locally and will retry automatically.`);
   } else {
     setSummary(`Connected to ${sync.appUrl}. Watching works when Studio tabs stay open.`);
   }
@@ -215,7 +225,7 @@ function renderScanLogTab(tab) {
   `;
 }
 
-function buildWatchState({ sync, local, connectorConfig, openStudioTabs, openStudioUrls }) {
+function buildWatchState({ sync, local, connectorConfig, openStudioTabs, openStudioUrls, controlStatus = {} }) {
   const watcherTabs = connectorConfig?.watcherTabs || [];
   const openWatchers = watcherTabs.filter((target) => isWatcherOpen(target, openStudioUrls));
   const missingWatchers = watcherTabs.filter((target) => !isWatcherOpen(target, openStudioUrls));
@@ -233,7 +243,19 @@ function buildWatchState({ sync, local, connectorConfig, openStudioTabs, openStu
     openStudioTabs
   };
 
-  if (!sync.appUrl) {
+  if (controlStatus?.activeJob) {
+    state = {
+      ...state,
+      tone: "neutral",
+      title: "Checking watched channels",
+      text: controlStatus.activeJob.channels?.length
+        ? controlStatus.activeJob.channels.join(", ")
+        : "An app-requested check is running.",
+      action: "scan",
+      actionLabel: "Check status",
+      actionHint: "The app controls this durable check. Signals already found are retained."
+    };
+  } else if (!sync.appUrl) {
     state = {
       ...state,
       tone: "warn",

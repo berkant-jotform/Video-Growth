@@ -2,16 +2,25 @@ import { requireConnector } from "@/lib/connector-auth.js";
 import { json, errorJson } from "@/lib/http.js";
 import { extractAccessibleFinishEventsFromScan, parseConnectorChannels } from "@/lib/finish-events.mjs";
 import { recordConnectorEvents, recordConnectorHeartbeat, recordDiagnosticLog } from "@/lib/repository.js";
+import { updateConnectorDeviceIdentity } from "@/lib/connector-tokens.js";
 
 export const runtime = "nodejs";
 
 export async function POST(request) {
   try {
-    await requireConnector(request);
+    const connectorConfig = await requireConnector(request);
     const body = await request.json();
+    const connectorId = connectorConfig.connectorDevice?.connectorId || body.connectorId || "";
+    if (connectorConfig.connectorDevice?.tokenId) {
+      await updateConnectorDeviceIdentity(connectorConfig.connectorDevice.tokenId, {
+        connectorId,
+        capabilities: body.capabilities,
+        version: body.version
+      });
+    }
     const lastStudioScan = sanitizeLastStudioScan(body.lastStudioScan);
     const status = await recordConnectorHeartbeat({
-      connectorId: body.connectorId || "",
+      connectorId,
       actorName: body.actorName || body.reviewerInitials || "",
       channels: parseConnectorChannels(body.channels || []),
       version: body.version || "",
@@ -23,11 +32,14 @@ export async function POST(request) {
           ? body.studioTabUrls.map(String).filter(Boolean).slice(0, 20)
           : [],
         studioTabs: sanitizeStudioTabs(body.studioTabs),
+        ownedWatchers: sanitizeOwnedWatchers(body.ownedWatchers),
         openYoutubeTabs: Number(body.openYoutubeTabs || 0),
         notificationWatcherOpen: Boolean(body.notificationWatcherOpen),
         pendingQueue: sanitizePendingQueue(body.pendingQueue),
         pendingFlush: sanitizePendingFlush(body.pendingFlush),
         selfTest: sanitizeSelfTest(body.selfTest),
+        capabilities: sanitizePlainContext(body.capabilities || {}),
+        runtimeConfigVersion: String(body.runtimeConfigVersion || "").slice(0, 80),
         userAgent: body.userAgent || "",
         observedAt: body.observedAt || new Date().toISOString(),
         lastStudioScan,
@@ -43,7 +55,7 @@ export async function POST(request) {
         recoveredSignals = await recordConnectorEvents({
           events: recoveredEvents,
           actorName: body.actorName || body.reviewerInitials || "",
-          connectorId: body.connectorId || "",
+          connectorId,
           source: "studio_accessibility_label",
           // Keep heartbeats fast. The normal event endpoint and subsequent
           // sheet scans perform YouTube title resolution for unmatched labels.
@@ -56,7 +68,7 @@ export async function POST(request) {
           severity: "warning",
           message: "Background notification labels could not be promoted",
           actorName: body.actorName || body.reviewerInitials || "",
-          context: { connectorId: body.connectorId || "", events: recoveredEvents.length, error: recoveryError.message }
+          context: { connectorId, events: recoveredEvents.length, error: recoveryError.message }
         });
       }
     }
@@ -67,7 +79,7 @@ export async function POST(request) {
         message: diagnosis.message || "Extension scan diagnosis",
         actorName: body.actorName || body.reviewerInitials || "",
         context: {
-          connectorId: body.connectorId || "",
+          connectorId,
           version: body.version || "",
           channels: parseConnectorChannels(body.channels || []),
           openStudioTabs: Number(body.openStudioTabs || 0),
@@ -80,6 +92,7 @@ export async function POST(request) {
     }
     return json({
       ok: true,
+      connectorId,
       connectorStatus: status,
       recoveredSignals: {
         found: recoveredEvents.length,
@@ -120,10 +133,21 @@ function sanitizePendingQueue(value) {
   if (!value || typeof value !== "object") return null;
   return {
     count: Number(value.count || 0),
+    deadCount: Number(value.deadCount || 0),
     oldestQueuedAt: String(value.oldestQueuedAt || "").slice(0, 40),
     newestQueuedAt: String(value.newestQueuedAt || "").slice(0, 40),
     maxAttempts: Number(value.maxAttempts || 0)
   };
+}
+
+function sanitizeOwnedWatchers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 30).map((item) => ({
+    tabId: Number(item?.tabId || 0),
+    label: String(item?.label || "").slice(0, 120),
+    channelId: String(item?.channelId || "").slice(0, 40),
+    url: String(item?.url || "").slice(0, 300)
+  }));
 }
 
 function sanitizePendingFlush(value) {

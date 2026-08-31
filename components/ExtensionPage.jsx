@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, ChevronDown, Clipboard, Download, ExternalLink, KeyRound, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { BellRing, CheckCircle2, ChevronDown, Clipboard, Download, ExternalLink, KeyRound, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
 import {
   DEFAULT_EXTENSION_RUNTIME_CONFIG,
   defaultExtensionRuntimeConfigJson,
   normalizeExtensionRuntimeConfig
 } from "@/lib/extension-runtime-config.mjs";
+import { selectConnectorTarget } from "@/lib/connector-routing.mjs";
 
 const DEFAULT_WATCHER_ROWS = [
   { label: "Jotform", target: "" },
@@ -23,6 +24,8 @@ export default function ExtensionPage({ session }) {
   const [deviceTokens, setDeviceTokens] = useState([]);
   const [deviceLabel, setDeviceLabel] = useState(`${session?.actorName || "Reviewer"} Chrome`);
   const [generatedToken, setGeneratedToken] = useState(null);
+  const [scanJobs, setScanJobs] = useState([]);
+  const [bridge, setBridge] = useState({ status: "checking", version: "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,17 +33,22 @@ export default function ExtensionPage({ session }) {
 
   useEffect(() => {
     load();
+    checkBridge();
+    const timer = window.setInterval(() => loadJobs(), 5000);
+    return () => window.clearInterval(timer);
   }, []);
 
   async function load() {
     setError("");
     try {
-      const [configResponse, tokenResponse] = await Promise.all([
+      const [configResponse, tokenResponse, jobsResponse] = await Promise.all([
         fetch("/api/config", { cache: "no-store" }),
-        fetch("/api/connector/tokens", { cache: "no-store" })
+        fetch("/api/connector/tokens", { cache: "no-store" }),
+        fetch("/api/connector/jobs?limit=8", { cache: "no-store" })
       ]);
       const configPayload = await configResponse.json().catch(() => ({}));
       const tokenPayload = await tokenResponse.json().catch(() => ({}));
+      const jobsPayload = await jobsResponse.json().catch(() => ({}));
       if (!configResponse.ok || !configPayload.ok) {
         throw new Error(configPayload.error || "Could not load extension settings.");
       }
@@ -56,10 +64,110 @@ export default function ExtensionPage({ session }) {
           : parseWatcherRows(values.CONNECTOR_WATCHER_TABS || "")
       );
       setDeviceTokens(tokenPayload.tokens || []);
+      if (jobsResponse.ok && jobsPayload.ok) setScanJobs(jobsPayload.jobs || []);
     } catch (loadError) {
       setError(loadError.message || "Could not load extension setup.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadJobs() {
+    try {
+      const response = await fetch("/api/connector/jobs?limit=8", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload.ok) setScanJobs(payload.jobs || []);
+    } catch {}
+  }
+
+  async function checkBridge() {
+    try {
+      const response = await requestExtensionMessage("ping-extension", {}, 2500);
+      setBridge({ status: response?.ok ? "ready" : "missing", version: response?.version || "" });
+    } catch {
+      setBridge({ status: "missing", version: "" });
+    }
+  }
+
+  async function connectThisBrowser() {
+    const label = deviceLabel.trim();
+    if (!label) {
+      setError("Name this browser, for example BG work Chrome.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await fetch("/api/connector/pairings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not start browser pairing.");
+      const paired = await requestExtensionMessage("pair-extension", {
+        code: payload.pairing.code,
+        appUrl,
+        actorName: session?.actorName || "Reviewer",
+        deviceLabel: label
+      }, 30000);
+      if (!paired?.ok) throw new Error(paired?.error || "The extension could not complete browser pairing.");
+      setBridge({ status: "ready", version: paired.version || "1.0.0" });
+      setMessage(`${paired.label || label} connected. No token copy is needed.`);
+      await load();
+    } catch (pairError) {
+      setError(pairError.message || "Could not connect this browser. Install Extension 1.0 and reload this page.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runConnectionCheck() {
+    setBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      const selectedChannels = parseChannelNames(channels);
+      const targetConnectorId = selectConnectorTarget(connectorStatus, selectedChannels);
+      const response = await fetch("/api/connector/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channels: selectedChannels, testType: "all", mode: "notifications", targetConnectorId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not queue browser check.");
+      if (versionAtLeast(bridge.version, "1.0.0")) {
+        try {
+          await requestExtensionMessage("run-scan-job", { jobId: payload.job.jobId }, 120000);
+        } catch {
+          // The durable job remains queued and will be claimed by the extension's
+          // background command poll even when the page bridge is unavailable.
+        }
+      }
+      await loadJobs();
+      setMessage("Browser check requested. It remains queued safely if Chrome is temporarily unavailable.");
+    } catch (jobError) {
+      setError(jobError.message || "Could not request a browser check.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelConnectionCheck(jobId) {
+    setError("");
+    try {
+      const response = await fetch("/api/connector/jobs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Could not stop the browser check.");
+      setMessage("Stop requested. Signals already found will be retained.");
+      await loadJobs();
+    } catch (cancelError) {
+      setError(cancelError.message || "Could not stop the browser check.");
     }
   }
 
@@ -163,6 +271,7 @@ export default function ExtensionPage({ session }) {
   const appUrl = typeof window === "undefined" ? "https://video-growth.vercel.app" : window.location.origin;
   const connectorStatus = config?.connectorStatus || [];
   const activeStatus = connectorStatus.find((item) => item.active) || connectorStatus[0] || null;
+  const bridgeSupportsPairing = bridge.status === "ready" && versionAtLeast(bridge.version, "1.0.0");
   const usableToken = generatedToken?.token || "";
   const channels = form.CONNECTOR_CHANNELS || "Jotform, AI Agents Podcast, AI Agents";
   const watcherTabs = serializeWatcherRows(watcherDraftRows);
@@ -273,6 +382,38 @@ export default function ExtensionPage({ session }) {
             <a className="secondary-button compact-button" href="/">Open Detector</a>
           </section>
         ) : null}
+
+        <section className="settings-panel full-width extension-control-plane">
+          <div className="extension-control-heading">
+            <div>
+              <p className="eyebrow">App connection</p>
+              <h2>Browser control center</h2>
+              <p className="muted">The app can queue a check even when the page bridge is temporarily unavailable. Extension 1.0 claims it automatically.</p>
+            </div>
+            <span className={`connection-pill ${bridgeSupportsPairing ? "ok" : "warn"}`}>
+              {bridgeSupportsPairing
+                ? `Direct connection · v${bridge.version}`
+                : bridge.status === "ready"
+                  ? `Update extension · v${bridge.version || "unknown"}`
+                  : "Background queue available"}
+            </span>
+          </div>
+          <div className="extension-control-actions">
+            <label className="setting-field">
+              <span>Browser name</span>
+              <input value={deviceLabel} onChange={(event) => setDeviceLabel(event.target.value)} placeholder="BG work Chrome" />
+            </label>
+            <button type="button" className="primary-button" onClick={connectThisBrowser} disabled={busy || !bridgeSupportsPairing}>
+              <KeyRound size={16} /> Connect this browser
+            </button>
+            <button type="button" className="secondary-button" onClick={runConnectionCheck} disabled={busy || !deviceTokens.some((item) => item.active)}>
+              <BellRing size={16} /> Check watched channels
+            </button>
+          </div>
+          <div className="extension-job-list">
+            {scanJobs.length ? scanJobs.slice(0, 4).map((job) => <ExtensionJob key={job.jobId} job={job} onCancel={cancelConnectionCheck} />) : <p className="muted">No browser checks requested yet.</p>}
+          </div>
+        </section>
 
         <details className="settings-panel full-width extension-setup-details" open={!activeStatus?.active}>
           <summary>
@@ -549,6 +690,87 @@ function StatusTile({ label, value, tone }) {
       <strong>{value}</strong>
     </article>
   );
+}
+
+function ExtensionJob({ job, onCancel }) {
+  const progress = job.progress || {};
+  const coverage = Array.isArray(progress.coverage) ? progress.coverage : Array.isArray(job.result?.coverage) ? job.result.coverage : [];
+  const tone = ["completed"].includes(job.status) ? "ok" : ["failed", "partial"].includes(job.status) ? "warn" : "active";
+  const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
+  return (
+    <article className={`extension-job-row ${tone}`}>
+      <span className="extension-job-indicator" aria-hidden="true" />
+      <div>
+        <strong>{jobTitle(job.status)}</strong>
+        <small>{progress.message || job.error || scanJobScope(job)}</small>
+        {["claimed", "running", "cancel_requested"].includes(job.status) ? <progress value={percent} max="100" aria-label={`Browser check ${percent}% complete`} /> : null}
+        {coverage.length ? <em>{coverage.map((item) => `${item.channel}: ${coverageLabel(item.status)}`).join(" · ")}</em> : null}
+      </div>
+      <span className="extension-job-time">{formatDateTime(job.updatedAt || job.requestedAt)}</span>
+      {["queued", "claimed", "running", "cancel_requested"].includes(job.status) ? (
+        <button type="button" className="quiet-button compact-button" onClick={() => onCancel(job.jobId)} disabled={job.status === "cancel_requested"}>
+          {job.status === "cancel_requested" ? "Stopping" : "Stop"}
+        </button>
+      ) : null}
+    </article>
+  );
+}
+
+function jobTitle(status) {
+  if (status === "queued") return "Waiting for browser";
+  if (status === "claimed" || status === "running") return "Checking channels";
+  if (status === "cancel_requested") return "Stopping safely";
+  if (status === "completed") return "Check completed";
+  if (status === "partial") return "Partial check";
+  if (status === "cancelled") return "Check stopped";
+  return "Check failed";
+}
+
+function coverageLabel(value) {
+  if (value === "checked") return "checked";
+  if (value === "wrong_account") return "wrong account";
+  if (value === "missing_tab") return "needs tab";
+  return "failed";
+}
+
+function scanJobScope(job) {
+  const channels = Array.isArray(job.channels) && job.channels.length ? job.channels.join(", ") : "All configured channels";
+  return `${channels} · ${job.testType === "all" ? "all tests" : `${job.testType} tests`}`;
+}
+
+function parseChannelNames(value) {
+  return Array.from(new Set(String(value || "").split(/[\n,]/).map((item) => item.trim()).filter(Boolean)));
+}
+
+function versionAtLeast(value, minimum) {
+  const left = String(value || "").split(".").map((item) => Number(item) || 0);
+  const right = String(minimum || "").split(".").map((item) => Number(item) || 0);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    if ((left[index] || 0) > (right[index] || 0)) return true;
+    if ((left[index] || 0) < (right[index] || 0)) return false;
+  }
+  return true;
+}
+
+function requestExtensionMessage(type, payload = {}, timeoutMs = 10000) {
+  if (typeof window === "undefined") return Promise.reject(new Error("Browser extension bridge is unavailable."));
+  const requestId = `ytab_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      window.removeEventListener("message", onMessage);
+      reject(new Error("Extension 1.0 did not respond from this browser tab."));
+    }, timeoutMs);
+    function onMessage(event) {
+      if (event.source !== window) return;
+      const message = event.data || {};
+      if (message.source !== "youtube-ab-tests-extension" || message.requestId !== requestId) return;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", onMessage);
+      resolve(message.response || {});
+    }
+    window.addEventListener("message", onMessage);
+    window.postMessage({ source: "youtube-ab-tests-app", type, requestId, payload }, window.location.origin);
+  });
 }
 
 function WatcherRows({ rows, openUrls, quickChannels = [], onChange }) {

@@ -41,6 +41,16 @@
           version: chrome.runtime.getManifest().version,
           bridgeReady: true
         };
+      } else if (message.type === "pair-extension") {
+        response = await chrome.runtime.sendMessage({
+          type: "pair-extension",
+          payload: message.payload || {}
+        });
+      } else if (message.type === "run-scan-job") {
+        response = await chrome.runtime.sendMessage({
+          type: "run-scan-job",
+          jobId: message.payload?.jobId || ""
+        });
       } else if (message.type === "check-studio-now") {
         response = await chrome.runtime.sendMessage({
           type: "scan-studio-tab",

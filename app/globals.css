@@ -760,6 +760,125 @@ a {
   color: var(--red);
 }
 
+.extension-control-plane {
+  display: grid;
+  gap: 18px;
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+.extension-control-heading,
+.extension-control-actions,
+.extension-job-row {
+  display: flex;
+  align-items: center;
+}
+
+.extension-control-heading {
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.extension-control-heading h2,
+.extension-control-heading p {
+  margin-bottom: 0;
+}
+
+.connection-pill {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.connection-pill.ok {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+}
+
+.connection-pill.warn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--border));
+}
+
+.extension-control-actions {
+  align-items: end;
+  gap: 12px;
+}
+
+.extension-control-actions .setting-field {
+  flex: 1 1 260px;
+  margin: 0;
+}
+
+.extension-control-actions > button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.extension-job-list {
+  display: grid;
+  gap: 8px;
+}
+
+.extension-job-row {
+  min-height: 58px;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.extension-job-row > div {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.extension-job-row small,
+.extension-job-row em,
+.extension-job-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.extension-job-row > button {
+  flex: 0 0 auto;
+  min-height: 32px;
+}
+
+.extension-job-row em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extension-job-row progress {
+  width: min(360px, 100%);
+  height: 5px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  accent-color: var(--accent);
+}
+
+.extension-job-indicator {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.extension-job-row.ok .extension-job-indicator { background: var(--green); }
+.extension-job-row.warn .extension-job-indicator { background: var(--amber); }
+.extension-job-row.active .extension-job-indicator { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent); }
+
 .extension-scan-receipt {
   background: var(--surface);
   border: 1px solid var(--border);

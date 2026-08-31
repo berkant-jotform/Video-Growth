@@ -8,8 +8,9 @@ export const runtime = "nodejs";
 
 export async function POST(request) {
   try {
-    await requireConnector(request);
+    const connectorConfig = await requireConnector(request);
     const body = await request.json();
+    const connectorId = connectorConfig.connectorDevice?.connectorId || body.connectorId || "";
     const rawEvents = Array.isArray(body.events) ? body.events : body.event ? [body.event] : [];
     const events = expandConnectorEventInputs(rawEvents);
     if (!events.length) {
@@ -21,7 +22,7 @@ export async function POST(request) {
     const results = await recordConnectorEvents({
       events,
       actorName: body.actorName || body.reviewerInitials || "",
-      connectorId: body.connectorId || "",
+      connectorId,
       source: body.source || "studio_bell",
       youtubeApiKey: config.youtubeApiKey,
       channelScope: body.channelScope || [],
@@ -33,7 +34,7 @@ export async function POST(request) {
       message: "Connector events received",
       actorName: body.actorName || body.reviewerInitials || "",
       context: {
-        connectorId: body.connectorId || "",
+        connectorId,
         source: body.source || "studio_bell",
         received: rawEvents.length,
         expanded: events.length,
