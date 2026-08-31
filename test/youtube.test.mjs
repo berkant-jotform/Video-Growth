@@ -5,6 +5,7 @@ import {
   fetchYouTubeVideoContexts,
   fetchYouTubeVideoMetadata,
   findYouTubeVideoCandidates,
+  isTrustedYouTubeSearchCandidate,
   parseIsoDurationSeconds
 } from "../lib/youtube.js";
 
@@ -60,6 +61,42 @@ test("finds and caches YouTube video candidates by title", async () => {
     assert.equal(first[0].videoId, "zoom123");
     assert.equal(first[0].channelId, "UCjotform123456789012");
     assert.deepEqual(second, first);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects a shorter same-channel video that omits a meaningful title prefix", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        items: [{
+          id: { videoId: "wrong-base-newsletter" },
+          snippet: {
+            title: "August 2026 | Announcing Jotform AI Data Assistant",
+            channelTitle: "Jotform",
+            channelId: "UCjotform123456789012"
+          }
+        }]
+      };
+    }
+  });
+  try {
+    const [candidate] = await findYouTubeVideoCandidates({
+      title: "Enterprise Newsletter: August 2026 | Announcing Jotform AI Data Assistant",
+      channel: "Jotform",
+      channelId: "UCjotform123456789012",
+      apiKey: "test-key"
+    });
+    assert.equal(candidate.videoId, "wrong-base-newsletter");
+    assert.equal(candidate.queryCoverage, 0.75);
+    assert.equal(isTrustedYouTubeSearchCandidate({
+      videoTitle: "Enterprise Newsletter: August 2026 | Announcing Jotform AI Data Assistant",
+      channel: "Jotform",
+      channelId: "UCjotform123456789012"
+    }, candidate), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
