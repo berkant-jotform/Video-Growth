@@ -398,6 +398,7 @@ test("canonicalizes channel names and applies priority order", () => {
   assert.equal(canonicalChannelName("Jotform Boards Channel"), "Boards");
   assert.equal(canonicalChannelName("Jotform PDF Editor Channel"), "PDF Editor");
   assert.equal(canonicalChannelName("Workflow Channel"), "Workflow");
+  assert.equal(canonicalChannelName("Jotform Workflows"), "Workflow");
   assert.equal(canonicalChannelName("With Podo"), "With Podo");
   assert.equal(canonicalChannelName("Noupe"), "Noupe");
   assert.deepEqual(

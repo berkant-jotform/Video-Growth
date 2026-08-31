@@ -27,7 +27,7 @@ test("keeps generic thumbnail tabs until YouTube resolves the real channel", () 
   );
 });
 
-test("drops a generic thumbnail row after YouTube resolves another channel", () => {
+test("persists a generic thumbnail row after YouTube resolves another channel", () => {
   const record = {
     sourceKind: "thumbnail",
     testType: "thumbnail",
@@ -37,7 +37,7 @@ test("drops a generic thumbnail row after YouTube resolves another channel", () 
     youtubeChannelId: "UC-another-channel"
   };
 
-  assert.equal(matchesPostEnrichmentScanFilters(record, jotformScope), false);
+  assert.equal(matchesPostEnrichmentScanFilters(record, jotformScope), true);
 });
 
 test("keeps a generic thumbnail row when YouTube enrichment is unavailable", () => {
