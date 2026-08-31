@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   matchesPostEnrichmentScanFilters,
-  matchesPreEnrichmentScanFilters
+  matchesPreEnrichmentScanFilters,
+  pruneChannelFilters
 } from "../lib/scan-scope.mjs";
 
 const jotformScope = { channels: ["Jotform"], testType: "" };
@@ -51,4 +52,11 @@ test("keeps a generic thumbnail row when YouTube enrichment is unavailable", () 
   };
 
   assert.equal(matchesPostEnrichmentScanFilters(record, jotformScope), true);
+});
+
+test("removes deleted channels from browser-local scan scope", () => {
+  assert.deepEqual(
+    pruneChannelFilters(["Jotform", "Apps", "Removed channel"], ["Jotform", "Apps", "AI Agents"]),
+    ["Jotform", "Apps"]
+  );
 });

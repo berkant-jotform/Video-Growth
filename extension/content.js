@@ -2,7 +2,7 @@ const MIN_TEXT_LENGTH = 18;
 const MAX_TEXT_LENGTH = 700;
 const MAX_EVENTS = 60;
 globalThis.__youtubeAbTestsConnectorLoaded = true;
-globalThis.__youtubeAbTestsConnectorVersion = "1.0.0";
+globalThis.__youtubeAbTestsConnectorVersion = "1.1.0";
 const PARSER_VERSION = "structured-notifications-v1";
 const DEFAULT_RUNTIME_CONFIG = {
   minTextLength: MIN_TEXT_LENGTH,
@@ -99,7 +99,8 @@ const NOTIFICATION_SURFACE_SELECTORS = [
   "ytcp-notifications-dialog",
   "ytcp-notification-menu"
 ];
-const seen = new Set();
+const seen = new Map();
+const RECENT_EVENT_TTL_MS = 10 * 60_000;
 let currentUrl = location.href;
 let lastNotificationOpenResult = null;
 
@@ -369,8 +370,13 @@ function compactEvents(events) {
 
 function rememberEvent(event, includeSeen) {
   const key = `${event.videoId}|${event.rawText}|${event.url}`;
-  if (!includeSeen && seen.has(key)) return false;
-  seen.add(key);
+  const now = Date.now();
+  const seenAt = Number(seen.get(key) || 0);
+  for (const [itemKey, timestamp] of seen) {
+    if (now - Number(timestamp || 0) > RECENT_EVENT_TTL_MS) seen.delete(itemKey);
+  }
+  if (!includeSeen && seenAt && now - seenAt <= RECENT_EVENT_TTL_MS) return false;
+  seen.set(key, now);
   return true;
 }
 

@@ -314,6 +314,24 @@ test("parses thumbnail tabs when headers are not on the first row", () => {
   assert.deepEqual(records[0].options, { A: "A image", B: "B image" });
 });
 
+test("finds a valid A/B header after a long instruction preamble", () => {
+  const values = [
+    ...Array.from({ length: 55 }, (_, index) => [`Instruction ${index + 1}`]),
+    ["Start Date", "Video URL", "Title A", "Title B", "A Share", "B Share"],
+    ["2026-08-01", "https://youtu.be/abcdefghijk", "A title", "B title", 0, 1]
+  ];
+  const [record] = parseSheetRecords({
+    spreadsheetId: "sheet",
+    sourceKind: "title",
+    sheetName: "Current",
+    values,
+    today: new Date("2026-08-31T00:00:00Z")
+  });
+  assert.ok(record);
+  assert.equal(record.watchTimeShare.A, 0);
+  assert.equal(record.watchTimeShare.B, 1);
+});
+
 test("skips report and note rows that are not actual A/B test runs", () => {
   const records = parseSheetRecords({
     spreadsheetId: "sheet",
@@ -401,6 +419,7 @@ test("canonicalizes channel names and applies priority order", () => {
   assert.equal(canonicalChannelName("Jotform Workflows"), "Workflow");
   assert.equal(canonicalChannelName("With Podo"), "With Podo");
   assert.equal(canonicalChannelName("Noupe"), "Noupe");
+  assert.equal(canonicalChannelName("Jotform Education"), "Jotform Education");
   assert.deepEqual(
     ["Sign", "Other", "AI Agents", "Jotform", "Apps", "AI Agents Podcast", "Boards", "PDF Editor", "Workflow", "With Podo", "Noupe"].sort(compareChannels),
     ["Jotform", "AI Agents Podcast", "AI Agents", "Apps", "Sign", "Boards", "PDF Editor", "Workflow", "Noupe", "Other", "With Podo"]

@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  changedSourceTabPolicies,
   inactiveSourceTabs,
   parseExcludedSheetTabs,
   parseSourceTabPolicies,
   sourceTabExclusion,
   sourceTabPolicy,
   stringifyExcludedSheetTabs,
-  stringifySourceTabPolicies
+  stringifySourceTabPolicies,
+  sourceTabKey
 } from "../lib/source-tabs.mjs";
 
 test("parses and normalizes configured source-tab exclusions", () => {
@@ -54,6 +56,11 @@ test("explicit active policy can reactivate a legacy excluded tab", () => {
   );
   assert.equal(result.mode, "active");
   assert.equal(result.source, "settings");
+  assert.deepEqual(inactiveSourceTabs(
+    [{ sourceKind: "thumbnail", sheetName: "Current tests", mode: "active" }],
+    [{ sourceKind: "thumbnail", sheetName: "Current tests" }],
+    "thumbnail"
+  ), []);
 });
 
 test("system inventory tabs remain ignored even when configured active", () => {
@@ -63,4 +70,59 @@ test("system inventory tabs remain ignored even when configured active", () => {
   );
   assert.equal(result.mode, "ignore");
   assert.equal(result.source, "system");
+});
+
+test("workbook-scoped policies keep same-named tabs independent", () => {
+  const policies = [{
+    sourceKind: "thumbnail",
+    spreadsheetId: "workbook-a",
+    externalTabId: "101",
+    sheetName: "August",
+    mode: "archive"
+  }];
+  assert.equal(sourceTabPolicy({
+    sourceKind: "thumbnail",
+    spreadsheetId: "workbook-a",
+    externalTabId: "101",
+    sheetName: "Renamed August"
+  }, policies).mode, "archive");
+  assert.equal(sourceTabPolicy({
+    sourceKind: "thumbnail",
+    spreadsheetId: "workbook-b",
+    externalTabId: "101",
+    sheetName: "August"
+  }, policies).mode, "active");
+  assert.notEqual(
+    sourceTabKey("thumbnail", "August", "workbook-a", "101"),
+    sourceTabKey("thumbnail", "August", "workbook-b", "101")
+  );
+});
+
+test("legacy name-only policies remain compatible", () => {
+  assert.equal(sourceTabPolicy(
+    { sourceKind: "thumbnail", spreadsheetId: "workbook-a", externalTabId: "101", sheetName: "Archive" },
+    [{ sourceKind: "thumbnail", sheetName: "Archive", mode: "archive" }]
+  ).mode, "archive");
+});
+
+test("policy changes preserve workbook and stable tab identity", () => {
+  assert.deepEqual(changedSourceTabPolicies([{
+    sourceKind: "thumbnail",
+    spreadsheetId: "workbook-a",
+    externalTabId: "101",
+    sheetName: "July",
+    mode: "archive"
+  }], [{
+    sourceKind: "thumbnail",
+    spreadsheetId: "workbook-a",
+    externalTabId: "101",
+    sheetName: "August",
+    mode: "ignore"
+  }]), [{
+    sourceKind: "thumbnail",
+    spreadsheetId: "workbook-a",
+    externalTabId: "101",
+    sheetName: "August",
+    mode: "ignore"
+  }]);
 });

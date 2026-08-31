@@ -28,6 +28,7 @@ import { explicitOutcomeAction, isActionableQueueStatus } from "@/lib/queue-stat
 import { runFinishCheckWorkflow } from "@/lib/finish-check-workflow.mjs";
 import { selectConnectorTarget } from "@/lib/connector-routing.mjs";
 import { matchesDetectorSearch } from "@/lib/detector-filters.mjs";
+import { pruneChannelFilters } from "@/lib/scan-scope.mjs";
 import {
   highestShareDescription,
   resultDisplayLabel
@@ -587,7 +588,7 @@ export default function DetectorPage({ session }) {
       if (queuedJobId && isBridgeOfflineMessage(err.message)) {
         setExtensionRequest({
           status: "warn",
-          message: "The browser check is queued safely. Extension 1.0 will claim it in the background when Chrome is available."
+          message: "The browser check is queued safely. A connected extension will claim it in the background when Chrome is available."
         });
         return { ok: false, queued: true, jobId: queuedJobId, error: "Browser check queued; fresh Studio results are not available yet." };
       }
@@ -874,6 +875,14 @@ export default function DetectorPage({ session }) {
     ],
     [runs, connectorConfig]
   );
+
+  useEffect(() => {
+    setScanChannels((current) => {
+      const next = pruneChannelFilters(current, channels);
+      return next.length === current.length && next.every((item, index) => item === current[index]) ? current : next;
+    });
+    if (viewChannel !== "all" && !channels.includes(viewChannel)) setViewChannel("all");
+  }, [channels, viewChannel]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();

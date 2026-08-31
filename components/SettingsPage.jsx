@@ -9,6 +9,7 @@ import {
   parseExcludedSheetTabs,
   parseSourceTabPolicies,
   sourceTabKey,
+  sourceTabLookupKeys,
   stringifySourceTabPolicies
 } from "@/lib/source-tabs.mjs";
 
@@ -401,13 +402,15 @@ export default function SettingsPage({ session }) {
 function SourceTabManager({ tabs, policyJson, excludedJson, onChange }) {
   const policies = safeSourceTabPolicies(policyJson);
   const legacyExcluded = safeExcludedTabs(excludedJson);
-  const policyByKey = new Map(policies.map((item) => [sourceTabKey(item.sourceKind, item.sheetName), item]));
+  const policyByKey = new Map(policies.map((item) => [sourceTabKey(item.sourceKind, item.sheetName, item.spreadsheetId, item.externalTabId), item]));
   const legacyKeys = new Set(legacyExcluded.map((item) => sourceTabKey(item.sourceKind, item.sheetName)));
   const visibleTabs = [...tabs]
     .filter((tab) => tab.title)
     .sort((a, b) => `${a.sourceKind}:${a.title}`.localeCompare(`${b.sourceKind}:${b.title}`));
-  const visibleKeys = new Set(visibleTabs.map((tab) => sourceTabKey(tab.sourceKind, tab.title)));
-  const stalePolicies = policies.filter((item) => !visibleKeys.has(sourceTabKey(item.sourceKind, item.sheetName)));
+  const visibleKeys = new Set(visibleTabs.flatMap((tab) =>
+    sourceTabLookupKeys(tab.sourceKind, tab.title, tab.spreadsheetId, tab.externalTabId)
+  ));
+  const stalePolicies = policies.filter((item) => !visibleKeys.has(sourceTabKey(item.sourceKind, item.sheetName, item.spreadsheetId, item.externalTabId)));
   const totals = visibleTabs.reduce((result, tab) => {
     const mode = tabMode(tab, policyByKey, legacyKeys);
     result[mode] += Number(tab.testRows || 0);
@@ -416,10 +419,17 @@ function SourceTabManager({ tabs, policyJson, excludedJson, onChange }) {
   }, { active: 0, archive: 0, ignore: 0, activeTabs: 0, archiveTabs: 0, ignoreTabs: 0 });
 
   function setMode(tab, mode) {
-    const key = sourceTabKey(tab.sourceKind, tab.title);
-    const next = policies.filter((item) => sourceTabKey(item.sourceKind, item.sheetName) !== key);
-    if (mode !== "active" || legacyKeys.has(key)) {
-      next.push({ sourceKind: tab.sourceKind, sheetName: tab.title, mode });
+    const lookupKeys = new Set(sourceTabLookupKeys(tab.sourceKind, tab.title, tab.spreadsheetId, tab.externalTabId));
+    const next = policies.filter((item) => !lookupKeys.has(sourceTabKey(item.sourceKind, item.sheetName, item.spreadsheetId, item.externalTabId)));
+    const legacyKey = sourceTabKey(tab.sourceKind, tab.title);
+    if (mode !== "active" || legacyKeys.has(legacyKey)) {
+      next.push({
+        sourceKind: tab.sourceKind,
+        spreadsheetId: tab.spreadsheetId || "",
+        externalTabId: tab.externalTabId || "",
+        sheetName: tab.title,
+        mode
+      });
     }
     onChange(stringifySourceTabPolicies(next));
   }
@@ -507,8 +517,10 @@ function SourceTabManager({ tabs, policyJson, excludedJson, onChange }) {
 
 function tabMode(tab, policyByKey, legacyKeys) {
   if (tab.exclusionSource === "system") return "ignore";
-  const key = sourceTabKey(tab.sourceKind, tab.title);
-  return policyByKey.get(key)?.mode || (legacyKeys.has(key) ? "ignore" : tab.mode || "active");
+  const configured = sourceTabLookupKeys(tab.sourceKind, tab.title, tab.spreadsheetId, tab.externalTabId)
+    .map((key) => policyByKey.get(key))
+    .find(Boolean);
+  return configured?.mode || (legacyKeys.has(sourceTabKey(tab.sourceKind, tab.title)) ? "ignore" : tab.mode || "active");
 }
 
 function safeSourceTabPolicies(value) {

@@ -117,7 +117,7 @@ export default function ExtensionPage({ session }) {
       setMessage(`${paired.label || label} connected. No token copy is needed.`);
       await load();
     } catch (pairError) {
-      setError(pairError.message || "Could not connect this browser. Install Extension 1.0 and reload this page.");
+      setError(pairError.message || "Could not connect this browser. Install the latest extension and reload this page.");
     } finally {
       setBusy(false);
     }
@@ -291,7 +291,7 @@ export default function ExtensionPage({ session }) {
     setForm((current) => ({
       ...current,
       CONNECTOR_WATCHER_TABS: serializeWatcherRows(rows),
-      CONNECTOR_CHANNELS: mergeConnectorChannels(current.CONNECTOR_CHANNELS || channels, rows)
+      CONNECTOR_CHANNELS: watcherChannelNames(rows)
     }));
     if (announce) setMessage(announce);
   }
@@ -325,7 +325,7 @@ export default function ExtensionPage({ session }) {
     const next = {
       ...form,
       CONNECTOR_WATCHER_TABS: serializeWatcherRows(namedRows),
-      CONNECTOR_CHANNELS: mergeConnectorChannels(form.CONNECTOR_CHANNELS || channels, namedRows)
+      CONNECTOR_CHANNELS: watcherChannelNames(namedRows)
     };
     const unresolved = namedRows.filter((row) => !String(row.target || "").trim()).length;
     const saved = await save(
@@ -388,7 +388,7 @@ export default function ExtensionPage({ session }) {
             <div>
               <p className="eyebrow">App connection</p>
               <h2>Browser control center</h2>
-              <p className="muted">The app can queue a check even when the page bridge is temporarily unavailable. Extension 1.0 claims it automatically.</p>
+              <p className="muted">The app can queue a check even when the page bridge is temporarily unavailable. A connected extension claims it automatically.</p>
             </div>
             <span className={`connection-pill ${bridgeSupportsPairing ? "ok" : "warn"}`}>
               {bridgeSupportsPairing
@@ -521,17 +521,6 @@ export default function ExtensionPage({ session }) {
             quickChannels={QUICK_WATCHER_CHANNELS}
             onChange={updateWatcherRows}
           />
-          <label className="setting-field extension-channel-field">
-            <span>
-              Watched channel names
-              <em>{sourceLabel(config?.sources?.CONNECTOR_CHANNELS)}</em>
-            </span>
-            <textarea
-              value={channels}
-              rows={3}
-              onChange={(event) => setForm((current) => ({ ...current, CONNECTOR_CHANNELS: event.target.value }))}
-            />
-          </label>
           <div className="install-actions compact">
             <button type="button" className="primary-button" onClick={saveExtensionSetup} disabled={busy}>
               <Save size={16} />
@@ -908,15 +897,11 @@ function duplicateWatcherLabels(rows) {
   return Array.from(duplicates);
 }
 
-function mergeConnectorChannels(value, rows = []) {
-  const current = String(value || "")
-    .split(/[\n,]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+function watcherChannelNames(rows = []) {
   const labels = rows
     .map((row) => String(row.label || "").trim())
     .filter(Boolean);
-  return Array.from(new Set([...current, ...labels])).join(", ");
+  return Array.from(new Set(labels)).join(", ");
 }
 
 function watcherStatus(row, openUrls) {

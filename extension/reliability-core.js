@@ -1,4 +1,4 @@
-export const EXTENSION_VERSION = "1.0.0";
+export const EXTENSION_VERSION = "1.1.0";
 export const PARSER_VERSION = "structured-notifications-v1";
 
 export const EXTENSION_CAPABILITIES = Object.freeze({
@@ -8,7 +8,10 @@ export const EXTENSION_CAPABILITIES = Object.freeze({
   exactChannelIdentity: true,
   remoteProfiles: true,
   safeCancellation: true,
-  startupCatchup: true
+  startupCatchup: true,
+  remoteWatcherSync: true,
+  verifiedBellCoverage: true,
+  retestAwareDedupe: true
 });
 
 export const JOB_TERMINAL_STATUSES = new Set(["completed", "partial", "failed", "cancelled"]);
@@ -70,11 +73,12 @@ export function summarizeChannelCoverage(tabs = [], requestedChannels = []) {
       { channel },
       { channel: tab.channel, channelId: tab.channelId }
     ));
-    const successful = matches.filter((tab) => tab.ok !== false && tab.checked === true);
+    const successful = matches.filter((tab) => tab.ok !== false && tab.checked === true && tab.bellRead === true);
+    const partial = matches.filter((tab) => tab.ok !== false && tab.checked === true && tab.bellRead !== true);
     const conflicts = matches.filter((tab) => tab.identityConflict);
     return {
       channel,
-      status: conflicts.length ? "wrong_account" : successful.length ? "checked" : matches.length ? "failed" : "missing_tab",
+      status: conflicts.length ? "wrong_account" : successful.length ? "checked" : partial.length ? "partial" : matches.length ? "failed" : "missing_tab",
       tabs: matches.length,
       successfulTabs: successful.length,
       candidates: successful.reduce((sum, tab) => sum + Number(tab.candidates || 0), 0),
@@ -82,6 +86,16 @@ export function summarizeChannelCoverage(tabs = [], requestedChannels = []) {
       error: conflicts[0]?.error || matches.find((tab) => tab.error)?.error || ""
     };
   });
+}
+
+export function recentlySeenEvent(cache, event = {}, now = Date.now(), ttlMs = 10 * 60_000) {
+  const key = [event.videoId || "", event.rawText || "", event.url || ""].join("|");
+  const seenAt = Number(cache.get(key) || 0);
+  for (const [itemKey, timestamp] of cache) {
+    if (now - Number(timestamp || 0) > ttlMs) cache.delete(itemKey);
+  }
+  cache.set(key, now);
+  return Boolean(seenAt && now - seenAt <= ttlMs);
 }
 
 export function finalJobStatus(coverage = [], cancelled = false) {

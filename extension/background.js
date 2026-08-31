@@ -431,6 +431,7 @@ async function runConnectorScanJob(requestedJobId = "") {
     const coverageInput = tabResults.map((tab) => ({
       ...tab,
       checked: tab.ok !== false,
+      bellRead: Boolean(tab.diagnostics?.menuOpened && tab.diagnostics?.notificationOpenResult?.opened !== false),
       channel: tab.diagnostics?.channel || "",
       channelId: tab.diagnostics?.channelId || ""
     }));
@@ -1411,9 +1412,31 @@ async function fetchConnectorConfig(settings) {
     lastConnectorConfigAt: new Date().toISOString(),
     lastConnectorConfig: payload
   });
+  await syncOwnedWatchersWithConfig(payload).catch(() => {});
   scheduleHourlyAlarm(payload.pollMinutes);
   scheduleCommandAlarm(payload.commandPollMinutes);
   return payload;
+}
+
+async function syncOwnedWatchersWithConfig(config = {}) {
+  if (!config.configRevision || !Array.isArray(config.watcherTabs)) return;
+  const local = await chrome.storage.local.get([OWNED_WATCHERS_KEY]).catch(() => ({}));
+  const stored = Array.isArray(local[OWNED_WATCHERS_KEY]) ? local[OWNED_WATCHERS_KEY] : [];
+  const targets = Array.isArray(config.watcherTabs) ? config.watcherTabs.filter((item) => item?.url) : [];
+  const keep = [];
+  for (const watcher of stored) {
+    if (targets.some((target) => watcherMatchesTarget(watcher, target))) {
+      keep.push(watcher);
+      continue;
+    }
+    if (watcher.owned && watcher.tabId) await chrome.tabs.remove(watcher.tabId).catch(() => {});
+  }
+  if (keep.length !== stored.length) {
+    await chrome.storage.local.set({
+      [OWNED_WATCHERS_KEY]: keep,
+      watcherConfigRevision: config.configRevision || ""
+    });
+  }
 }
 
 async function deepScanActiveVideos(options = {}) {

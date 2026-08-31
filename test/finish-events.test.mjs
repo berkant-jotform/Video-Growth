@@ -17,6 +17,7 @@ import {
   parseWatcherTabs,
   parseNotificationAge,
   parseStudioNotification,
+  normalizeWatcherTab,
   choosePreferredQueueFinishEvent,
   queueFinishEventPriority,
   resolveEventOccurredAt,
@@ -37,6 +38,21 @@ test("parses Studio notification video IDs and explicit inconclusive outcome", (
   assert.equal(event.result, "inconclusive");
   assert.equal(event.inconclusiveReason, "insufficient_views");
   assert.equal(event.channel, "Jotform");
+});
+
+test("watcher setup accepts channel pages but rejects video and content pages", () => {
+  assert.equal(
+    normalizeWatcherTab({ label: "Jotform", target: "https://studio.youtube.com/channel/UCh04CepWeaJT7wJUIgnmzJQ" }).url,
+    "https://studio.youtube.com/channel/UCh04CepWeaJT7wJUIgnmzJQ"
+  );
+  assert.equal(
+    normalizeWatcherTab({ label: "Wrong", target: "https://studio.youtube.com/video/abc123XYZ_9/edit" }).url,
+    ""
+  );
+  assert.equal(
+    normalizeWatcherTab({ label: "Wrong", target: "https://studio.youtube.com/channel/UCh04CepWeaJT7wJUIgnmzJQ/videos" }).url,
+    "https://studio.youtube.com/channel/UCh04CepWeaJT7wJUIgnmzJQ"
+  );
 });
 
 test("explicit Studio results outrank newer generic page-status observations", () => {
@@ -1003,7 +1019,10 @@ test("sheet inspection retains linked workbook identity and skipped policy state
   assert.deepEqual(inspection[0], {
     title: "Thumbnail Tests 2",
     spreadsheetId: "linked-workbook-id",
+    externalTabId: "",
     linkedFrom: "Archive index",
+    readStatus: "skipped",
+    readError: "",
     skippedByPolicy: true,
     rowCount: 0,
     hasContent: false,
