@@ -1,0 +1,17 @@
+name: Improvement idea
+description: Suggest a focused improvement to the existing workflow.
+title: "[Idea]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What would help?
+      description: Describe the desired behavior and who it would help. Do not include private data.
+    validations:
+      required: true

@@ -1,166 +1,40 @@
-# YouTube A/B Tests
+# Video-Growth · YouTube A/B Tests
 
-Cloud-first real finish tracker for YouTube title and thumbnail A/B tests.
+Track real finish signals for title and thumbnail tests, review outcomes, and keep retests separate.
 
-V6 is a Next.js app for Vercel plus a read-only Chrome extension for YouTube Studio. Sheets and YouTube Data API keep the test registry fresh; Studio bell notifications provide the precise early-finish signal. The app keeps shared team state in Postgres, helps reviewers open Studio, and records Done actions. It does not write to Sheets, edit YouTube, upload thumbnails to YouTube, or use Apps Script.
+**Status:** Configured web app plus read-only Chrome extension. A database and session secret are required before saving team state.
 
-The active queue is intentionally a finish tracker, not a full control center. If a row already has watch-time percentages or a "not enough impressions" result entered in the sheet, the app treats that run as already logged and keeps it out of the active queue. Blank finish dates do not become finished items from a time guess.
+![Three-step workflow overview](docs/images/workflow.svg)
 
-## Source version and requirements
+## Start here
 
-The selected source is package **6.1.0** with the Chrome connector **1.1**. It matches the latest local checkout and GitHub code at synchronization time (November 3, 2026); older 4.x folders are superseded. Install a Node.js version compatible with the `next` dependency and npm. PostgreSQL and a session secret are required for persistent team operation.
+Choose **Code → Download ZIP**, extract it, then open a Terminal in the extracted project folder. Git users can clone the repository instead.
 
-For a reproducible install when using the committed lockfile, use `npm ci`. The existing `npm install` path below is useful when intentionally updating dependencies.
-
-## Local Start
-
-```bash
-npm install
-npm run dev
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8770
-```
-
-The double-click launcher does the same setup/start flow:
-
-```text
-CLICK HERE TO OPEN YouTube A-B Tests.command
-```
-
-## Required Bootstrap
-
-Create `.env.local` locally or configure these in Vercel first:
-
-```text
-SESSION_SECRET=
-DATABASE_URL=
-```
-
-These are required bootstrap settings. The app cannot save anything until `DATABASE_URL` exists, and it needs `SESSION_SECRET` to sign reviewer sessions.
-
-Optional shared password gate:
-
-```text
-APP_SHARED_PASSWORD_HASH=
-```
-
-If `APP_SHARED_PASSWORD_HASH` is empty or removed, the login screen asks only for reviewer initials/name. If it is set, reviewers must enter the shared password.
-
-After those are configured, use the app to configure:
-
-- `Settings`: title and thumbnail spreadsheet IDs, optional Google read credentials, YouTube API key, and storage readiness.
-- `Extension`: one token per Chrome profile, monitored channels, Studio watcher URLs, and detection reliability rules.
-- `Notifications`: one or more team notification profiles with their own channels, test types, statuses, Slack webhook, or email recipient settings.
-
-Generate the optional shared password hash:
-
-```bash
-npm run hash-password
-```
-
-Use a Google service account for private read-only Sheets access, then share the title and thumbnail spreadsheets with the service account email as Viewer. If Google Cloud access is blocked, leave service-account settings empty and share the cloned sheets as `Anyone with the link: Viewer`; the app will read them through Google Sheets XLSX export without using the Sheets API. If service accounts are blocked but you have a valid readonly token, `GOOGLE_OAUTH_ACCESS_TOKEN` is still supported as a fallback.
-
-Neon Postgres is the recommended Vercel database. Vercel Blob is used for thumbnail preview image storage when `BLOB_READ_WRITE_TOKEN` is configured; local development can temporarily store small imported previews as data URLs.
-
-## Workflow
-
-1. Open the app.
-2. Configure title and thumbnail spreadsheet IDs in Settings.
-3. Open Extension and create a browser connection token for the Chrome profile that is logged into YouTube Studio.
-4. Download, extract, and load the Chrome extension. Open the app's Extension page and use **Connect this browser**. Manual token setup remains available only as a fallback.
-5. Add monitored channels on the app's Extension page. Channel IDs are resolved automatically from known YouTube metadata when possible.
-6. Use `Check now` to read visible Studio/YouTube finish notifications, then use `Scan selected` to refresh sheet and YouTube metadata.
-7. The default `Action needed` queue shows real finish signals and manual checks. Choose `Everything` to inspect Watching, Needs Signal, Missing Data, and metadata observations.
-8. Review channel-grouped signals:
-   - `Confirmed Finished`: Studio bell notification or explicit sheet finish/result signal.
-   - `Applied Change Observed`: YouTube metadata visibly changed to a B/C option; useful, but not final proof for A/no-clear cases.
-   - `Needs Signal`: no active extension heartbeat covers that channel.
-   - `Watching`: active test with no real finish signal yet.
-9. Use the dominant `Open Studio` button.
-10. After handling the result in Studio, click `Done` and choose A, B, C, No Clear / Not Enough Views, or another explicit outcome.
-11. Completed runs move to History for the whole team. A later matching sheet result keeps the run closed; only an explicit conflicting result creates an Action Conflict.
-
-The app tracks both:
-
-- `video_id`: groups tests by YouTube video.
-- `test_run_id`: identifies one specific test attempt, including row, dates, and option fingerprint.
-
-That keeps retests on the same video separate.
-
-Detection logic:
-
-- A test is confirmed finished when a Studio bell finish notification is received, a sheet result value exists, or the sheet has an explicit finish date.
-- `Start Date + 14` is never treated as proof that a test finished. It can only create the secondary `Needs Manual Check` state.
-- A test is already logged when A/B/C watch-time-share percentages or a no-clear-winner text are present.
-- Already logged rows are not shown as active Studio work, because the sheet already contains the selected result.
-- Entered results override missing-data warnings for queue purposes; the row can be messy, but it is not active Studio work anymore.
-- Missing IDs, missing dates, and broken row shapes stay visible at the bottom as fix items.
-
-## Chrome Extension
-
-The extension lives in `extension/`.
-
-Unpacked install for testing:
-
-1. Open `chrome://extensions`.
-2. Enable Developer Mode.
-3. Click `Load unpacked`.
-4. Select the `extension/` folder from this repo. For the downloaded build, unzip it first and select the extracted folder.
-5. Open the app's Extension page and create a browser connection token.
-6. Open the extension Settings.
-7. Enter:
-   - Cloud app URL, for example `https://video-growth.vercel.app`
-   - Browser token from the app's Extension page
-   - Reviewer initials
-8. Open YouTube Studio in the same Chrome profile and click `Check connection`.
-9. Use `Open missing watcher tabs` once. Keep those tabs open for passive hourly checks.
-
-Watcher channels and detection rules are managed in the website. Installed extensions pull those changes automatically. A new zip is only required when the app reports that the extension code version is outdated.
-
-Package for internal sharing:
-
-```bash
-npm run package-extension
-```
-
-The zip is written to `dist/youtube-ab-tests-connector.zip`.
-
-## Notifications
-
-Implemented:
-
-- In-app counts and badges.
-- Browser notifications from the detector screen.
-- Slack digest endpoint via `SLACK_WEBHOOK_URL`.
-
-Reserved/configurable:
-
-- SMTP email digest through `SMTP_*` and `DIGEST_EMAIL_RECIPIENTS`.
-- Vercel Cron at `/api/cron/scan`, guarded by `CRON_SECRET` when configured.
-
-## Tests
-
-```bash
-npm test
-```
-
-The tests cover parsing, no-guess finish behavior, Studio notification parsing/matching, watcher resolution and deduplication, metadata-observed detection, winner/no-clear inference, retest IDs, action conflict behavior, missing-data classification, and channel identity normalization.
-
-## Build and repository layout
+Node.js 24 and npm for this guide, a PostgreSQL database, and Chrome for the extension.
 
 ```sh
-npm test
-npm run build
+npm ci
+cp .env.example .env.local
 ```
 
-`app/` contains routes and screens; `components/` contains UI components; `lib/` contains parsing, detection and persistence; `extension/` contains Chrome source; `test/` contains automated checks; `scripts/` contains packaging and maintenance utilities.
+Configure the two required values below, then start the app with `npm run dev`.
 
-Never commit `.env*` secrets, database exports or browser connection tokens. `.env.example` is the placeholder reference. History-export verification and result migration commands require configured live services; they are not ordinary offline tests. A successful offline test suite does not prove installed extension monitoring, live channel access or notification delivery.
+Open **http://127.0.0.1:8770**. Keep the server window open while using the app.
 
-## Maintenance
+Fill `DATABASE_URL` and `SESSION_SECRET` in `.env.local` before running `npm run dev`. Open Settings and confirm storage readiness, then configure approved Sheets and YouTube access. Install and connect the extension only after the app is ready.
 
-Use focused pull requests with the affected workflow and check results. Preserve retest identity, real finish evidence and human Done decisions. Report security problems privately to the owner without posting tokens or account data. This documentation update does not grant a new software license.
+[Step-by-step setup and troubleshooting](docs/GETTING_STARTED.md).
+
+## What needs configuration
+
+| Item | What to know |
+| --- | --- |
+| DATABASE_URL | Required PostgreSQL connection string. |
+| SESSION_SECRET | Required private random value; see the installation guide. |
+| Sheets, YouTube and extension | Configure approved read access and connect the browser after storage is ready. |
+
+## Downloads and help
+
+- [Download and build guide](docs/DOWNLOADS.md) — source files versus packaged apps.
+- [Developer reference](docs/REFERENCE.md) — workflow details and relevant limits.
+- [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Usage and licensing](USAGE.md).

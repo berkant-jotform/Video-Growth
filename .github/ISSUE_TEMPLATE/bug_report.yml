@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a problem without sharing private data.
+title: "[Bug]: "
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic input where possible. Never include keys, tokens or private account exports.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and relevant runtime or app version
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized screenshot or error message
+      description: Remove personal data, credentials and access-bearing URLs first.

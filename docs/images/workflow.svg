@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="190" viewBox="0 0 960 190" role="img" aria-labelledby="title desc">
+<title id="title">Video-Growth · YouTube A/B Tests workflow</title>
+<desc id="desc">Workflow overview, not an application screenshot. Three steps from input to reviewed output.</desc>
+<rect width="960" height="190" rx="20" fill="#f5f6fa"/>
+<rect x="24" y="32" width="280" height="126" rx="16" fill="#e7e5ff"/>
+<circle cx="54" cy="62" r="15" fill="#27304d"/><text x="54" y="67" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" fill="#ffffff">1</text>
+<text x="46" y="106" font-family="Arial,sans-serif" font-size="19" font-weight="600" fill="#27304d">Connect sources</text>
+<path d="M312 95h20m-7-7 8 7-8 7" fill="none" stroke="#64708b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="340" y="32" width="280" height="126" rx="16" fill="#dff4eb"/>
+<circle cx="370" cy="62" r="15" fill="#27304d"/><text x="370" y="67" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" fill="#ffffff">2</text>
+<text x="362" y="106" font-family="Arial,sans-serif" font-size="19" font-weight="600" fill="#27304d">Review finish signals</text>
+<path d="M628 95h20m-7-7 8 7-8 7" fill="none" stroke="#64708b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="656" y="32" width="280" height="126" rx="16" fill="#fff0d9"/>
+<circle cx="686" cy="62" r="15" fill="#27304d"/><text x="686" y="67" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" fill="#ffffff">3</text>
+<text x="678" y="106" font-family="Arial,sans-serif" font-size="19" font-weight="600" fill="#27304d">Record the outcome</text>
+</svg>
