@@ -6,6 +6,12 @@ V6 is a Next.js app for Vercel plus a read-only Chrome extension for YouTube Stu
 
 The active queue is intentionally a finish tracker, not a full control center. If a row already has watch-time percentages or a "not enough impressions" result entered in the sheet, the app treats that run as already logged and keeps it out of the active queue. Blank finish dates do not become finished items from a time guess.
 
+## Source version and requirements
+
+The selected source is package **6.1.0** with the Chrome connector **1.1**. It matches the latest local checkout and GitHub code at synchronization time (November 3, 2026); older 4.x folders are superseded. Install a Node.js version compatible with the `next` dependency and npm. PostgreSQL and a session secret are required for persistent team operation.
+
+For a reproducible install when using the committed lockfile, use `npm ci`. The existing `npm install` path below is useful when intentionally updating dependencies.
+
 ## Local Start
 
 ```bash
@@ -143,3 +149,18 @@ npm test
 ```
 
 The tests cover parsing, no-guess finish behavior, Studio notification parsing/matching, watcher resolution and deduplication, metadata-observed detection, winner/no-clear inference, retest IDs, action conflict behavior, missing-data classification, and channel identity normalization.
+
+## Build and repository layout
+
+```sh
+npm test
+npm run build
+```
+
+`app/` contains routes and screens; `components/` contains UI components; `lib/` contains parsing, detection and persistence; `extension/` contains Chrome source; `test/` contains automated checks; `scripts/` contains packaging and maintenance utilities.
+
+Never commit `.env*` secrets, database exports or browser connection tokens. `.env.example` is the placeholder reference. History-export verification and result migration commands require configured live services; they are not ordinary offline tests. A successful offline test suite does not prove installed extension monitoring, live channel access or notification delivery.
+
+## Maintenance
+
+Use focused pull requests with the affected workflow and check results. Preserve retest identity, real finish evidence and human Done decisions. Report security problems privately to the owner without posting tokens or account data. This documentation update does not grant a new software license.

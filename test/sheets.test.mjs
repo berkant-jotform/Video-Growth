@@ -40,8 +40,8 @@ test("extracts stable public tab IDs when Google exposes gids", () => {
 
 test("extracts linked workbook IDs from reference tabs", () => {
   const values = Array.from({ length: 20 }, () => []);
-  values[18][24] = "URL: https://docs.google.com/spreadsheets/d/1Rxfbiv_0o2cCwjTPXwHRu5Q2e3kKcVm21ClPFPeDLMY/edit?gid=1";
-  assert.deepEqual(extractLinkedSpreadsheetIds(values), ["1Rxfbiv_0o2cCwjTPXwHRu5Q2e3kKcVm21ClPFPeDLMY"]);
+  values[18][24] = "URL: https://docs.google.com/spreadsheets/d/EXAMPLE_RESOURCE_06/edit?gid=1";
+  assert.deepEqual(extractLinkedSpreadsheetIds(values), ["EXAMPLE_RESOURCE_06"]);
 });
 
 test("parses quoted public CSV values without breaking commas", async () => {
