@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { REVIEW_OUTCOMES, reviewActionLabel } from "@/lib/review-outcomes.mjs";
 import {
   ArrowRight,
   BellRing,
@@ -61,12 +62,8 @@ const SECTION_LABELS = {
 const OTHER_CHANNELS_LABEL = "Other channels";
 
 const ACTIONS = [
-  { value: "A", label: "A" },
-  { value: "B", label: "B" },
-  { value: "C", label: "C" },
-  { value: "NO_CLEAR", label: "No Clear / Not Enough Views", description: "No clear winner or not enough impressions" },
-  { value: "KEPT_CURRENT", label: "Kept Current" },
-  { value: "RETEST_LATER", label: "Retest Later" },
+  ...REVIEW_OUTCOMES.map(([value, label]) => ({ value, label })),
+  { value: "NO_CLEAR", label: "No clear (unspecified)" },
   { value: "SKIP", label: "Skip" }
 ];
 
@@ -1421,9 +1418,7 @@ function scanScopeSummary(channels, testType) {
 }
 
 function actionLabel(action) {
-  if (["A", "B", "C"].includes(action)) return `Selected ${action}`;
-  if (action === "NO_CLEAR") return "Not enough views / No clear";
-  return titleCase(action || "Done");
+  return reviewActionLabel(action);
 }
 
 function ScanProgress({ scan, lastSuccessfulScan, progress, scanning, stopping = false }) {
