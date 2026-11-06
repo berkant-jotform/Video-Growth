@@ -34,8 +34,8 @@ const BOOTSTRAP_ITEMS = [
     key: "sessionSecret",
     label: "Session Secret",
     env: "SESSION_SECRET",
-    required: true,
-    fix: "Use a long random string. In Vercel, add it as SESSION_SECRET; locally, add it to .env.local and restart."
+    required: false,
+    fix: "Optional. Leave empty for initials-only access. Set a private random value to sign cookies; initials still do not verify identity."
   }
 ];
 

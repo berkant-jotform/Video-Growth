@@ -2,7 +2,7 @@
 
 Track real finish signals for title and thumbnail tests, review outcomes, and keep retests separate.
 
-**Status:** Configured web app plus read-only Chrome extension. A database and session secret are required before saving team state.
+**Status:** Configured web app plus read-only Chrome extension. A database is required before saving team state. Initials-only sign-in requires no session secret.
 
 ![Three-step workflow overview](docs/images/workflow.svg)
 
@@ -17,11 +17,11 @@ npm ci
 cp .env.example .env.local
 ```
 
-Configure the two required values below, then start the app with `npm run dev`.
+Configure database storage below, then start the app with `npm run dev`.
 
 Open **http://127.0.0.1:8770**. Keep the server window open while using the app.
 
-Fill `DATABASE_URL` and `SESSION_SECRET` in `.env.local` before running `npm run dev`. Open Settings and confirm storage readiness, then configure approved Sheets and YouTube access. Install and connect the extension only after the app is ready.
+Set `DATABASE_URL` in `.env.local` to enable saved team state. `SESSION_SECRET` is optional for initials-only access. Open Settings and confirm storage readiness, then configure approved Sheets and YouTube access. Install and connect the extension only after the app is ready.
 
 [Step-by-step setup and troubleshooting](docs/GETTING_STARTED.md).
 
@@ -30,7 +30,7 @@ Fill `DATABASE_URL` and `SESSION_SECRET` in `.env.local` before running `npm run
 | Item | What to know |
 | --- | --- |
 | DATABASE_URL | Required PostgreSQL connection string. |
-| SESSION_SECRET | Required private random value; see the installation guide. |
+| SESSION_SECRET | Optional private random value for signed cookies. Without this and a shared password, initials-only cookies are unsigned. |
 | Sheets, YouTube and extension | Configure approved read access and connect the browser after storage is ready. |
 
 ## Downloads and help

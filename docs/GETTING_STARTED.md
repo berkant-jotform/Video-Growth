@@ -1,6 +1,6 @@
 # Getting started with Video-Growth · YouTube A/B Tests
 
-Configured web app plus read-only Chrome extension. A database and session secret are required before saving team state.
+Configured web app plus read-only Chrome extension. A database is required before saving team state. Initials-only sign-in requires no session secret.
 
 ## 1. Get the files
 
@@ -28,19 +28,19 @@ npm ci
 cp .env.example .env.local
 ```
 
-Before starting, edit `.env.local` and set `DATABASE_URL` to your approved PostgreSQL connection and `SESSION_SECRET` to a private random value. Generate a value locally with:
+Before saving team state, edit `.env.local` and set `DATABASE_URL` to your approved PostgreSQL connection. `SESSION_SECRET` is optional; to use signed cookies, generate a private value locally with:
 
 ```sh
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-Paste it only into your local configuration, then run `npm run dev`. Storage is not ready merely because the page opens. Keep Sheets access private by default; link-accessible Sheets are an optional fallback only for data explicitly approved for that sharing mode.
+If generated, paste it only into your local configuration, then run `npm run dev`. Storage is not ready merely because the page opens. Keep Sheets access private by default; link-accessible Sheets are an optional fallback only for data explicitly approved for that sharing mode.
 
 ## 4. Get a first result
 
 Open **http://127.0.0.1:8770**.
 
-Fill `DATABASE_URL` and `SESSION_SECRET` in `.env.local` before running `npm run dev`. Open Settings and confirm storage readiness, then configure approved Sheets and YouTube access. Install and connect the extension only after the app is ready.
+Set `DATABASE_URL` in `.env.local` for storage. No `SESSION_SECRET` is needed for initials-only sign-in. Open Settings and confirm storage readiness, then configure approved Sheets and YouTube access. Install and connect the extension only after the app is ready.
 
 ## If something does not work
 
