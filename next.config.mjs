@@ -5,6 +5,16 @@ const scriptPolicy = process.env.NODE_ENV === "development"
 
 const nextConfig = {
   output: "standalone",
+  async redirects() {
+    // This alias was linked to a second deployment without the team's database.
+    // Keep the original app as the single home for data, sessions and connectors.
+    return [{
+      source: "/:path*",
+      has: [{ type: "host", value: "jotsub-studio\\.vercel\\.app" }],
+      destination: "https://video-growth.vercel.app/:path*",
+      permanent: false
+    }];
+  },
   async headers() {
     return [
       {
