@@ -3,18 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, ListChecks, RotateCcw, Type } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
+import { REVIEW_OUTCOMES, reviewActionLabel } from "@/lib/review-outcomes.mjs";
 import { buildReviewQueue } from "@/lib/review-session.mjs";
 import { explicitOutcomeAction } from "@/lib/queue-status.mjs";
 import { highestShareDescription, resultDisplayLabel } from "@/lib/result-semantics.mjs";
 
-const OUTCOMES = [
-  ["A", "A"],
-  ["B", "B"],
-  ["C", "C"],
-  ["NO_CLEAR", "Not enough views / No clear"],
-  ["KEPT_CURRENT", "Kept current"],
-  ["RETEST_LATER", "Retest later"]
-];
 const REVIEW_CHANNEL_KEY = "youtube-ab-review-channel";
 const REVIEW_TYPE_KEY = "youtube-ab-review-type";
 
@@ -238,8 +231,8 @@ export default function ReviewSessionPage({ session }) {
             ) : null}
 
             <footer className="review-actions">
-              <div className="review-outcomes">
-                {OUTCOMES.filter(([value]) => value !== "C" || run.options?.C || run.testType === "thumbnail" && run.thumbnailPreviews?.C).map(([value, label]) => (
+              <div className="review-outcomes" role="group" aria-label="Record review outcome">
+                {REVIEW_OUTCOMES.filter(([value]) => value !== "C" || run.options?.C || run.testType === "thumbnail" && run.thumbnailPreviews?.C).map(([value, label]) => (
                   <button type="button" className={`review-outcome outcome-${value.toLowerCase()}`} key={value} disabled={Boolean(saving)} onClick={() => complete(value)}>{saving === value ? "Saving..." : label}</button>
                 ))}
               </div>
@@ -279,9 +272,7 @@ export default function ReviewSessionPage({ session }) {
 }
 
 function labelOutcome(action) {
-  if (["A", "B", "C"].includes(action)) return `Selected ${action}`;
-  if (action === "NO_CLEAR") return "Not enough views / No clear";
-  return titleCase(action);
+  return reviewActionLabel(action);
 }
 
 function ReviewOptions({ run }) {

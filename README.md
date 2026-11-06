@@ -38,3 +38,7 @@ Set `DATABASE_URL` in `.env.local` to enable saved team state. `SESSION_SECRET` 
 - [Download and build guide](docs/DOWNLOADS.md) — source files versus packaged apps.
 - [Developer reference](docs/REFERENCE.md) — workflow details and relevant limits.
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Usage and licensing](USAGE.md).
+
+## Review outcomes
+
+The focused Review panel offers A/B/C, Not enough viewers / views, Not enough impressions, Not enough data, Performed similarly, No clear winner, Kept current, and Retest later. C appears when C evidence exists. Specific no-winner reasons retain the existing `NO_CLEAR` decision category and are saved in the action note, shown in History, and available when correcting a decision. Old combined no-clear decisions keep their original label. Include reviewer notes in an export to include the specific reason. No existing records or database schema are rewritten.

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, ExternalLink, Pencil, Search, Users, X } from "lucide-react";
 import AppShell from "@/components/AppShell.jsx";
+import { REVIEW_OUTCOMES, reviewActionLabel, reviewOutcomeValue } from "@/lib/review-outcomes.mjs";
 import HistoryExportDrawer from "@/components/HistoryExportDrawer.jsx";
 import {
   displayHistoryChannel,
@@ -92,6 +93,7 @@ export default function HistoryPage({ session }) {
           testRunId: item.testRunId,
           action: correction,
           retestConfirmed: true,
+          replacePrevious: true,
           note: `Corrected from History. Previous action: ${item.action?.action || "unknown"}`
         })
       });
@@ -192,12 +194,12 @@ export default function HistoryPage({ session }) {
               <div className="history-action">
                 <span className={`history-outcome ${actionTone(item.action.action)}`}>
                   <CheckCircle2 size={15} />
-                  {item.action.undoneAt ? `Undone: ${labelAction(item.action.action)}` : labelAction(item.action.action)}
+                  {item.action.undoneAt ? `Undone: ${labelAction(item.action.action, item.action.note)}` : labelAction(item.action.action, item.action.note)}
                 </span>
                 <strong>{item.action.actorName || "Reviewer"}</strong>
                 <time>{formatDateTime(item.action.createdAt)}</time>
                 {!item.action.undoneAt ? (
-                  <button className="quiet-button compact-button" type="button" onClick={() => { setCorrecting(item.action.actionId); setCorrection(["A", "B", "C", "NO_CLEAR", "KEPT_CURRENT", "RETEST_LATER"].includes(item.action.action) ? item.action.action : "A"); }}>
+                  <button className="quiet-button compact-button" type="button" onClick={() => { setCorrecting(item.action.actionId); setCorrection(reviewOutcomeValue(item.action.action, item.action.note) || "A"); }}>
                     <Pencil size={14} /> Correct
                   </button>
                 ) : <small>Undone by {item.action.undoneBy || "reviewer"}</small>}
@@ -211,8 +213,8 @@ export default function HistoryPage({ session }) {
                 <div className="history-correction">
                   <strong>Record the corrected outcome</strong>
                   <select value={correction} onChange={(event) => setCorrection(event.target.value)}>
-                    <option value="A">Selected A</option><option value="B">Selected B</option><option value="C">Selected C</option>
-                    <option value="NO_CLEAR">Not enough views / No clear</option><option value="KEPT_CURRENT">Kept current</option><option value="RETEST_LATER">Retest later</option>
+                    {REVIEW_OUTCOMES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                    <option value="NO_CLEAR">Not enough views / No clear (legacy)</option>
                   </select>
                   <button className="primary-button compact-button" type="button" onClick={() => saveCorrection(item)} disabled={saving}>{saving ? "Saving..." : "Save correction"}</button>
                   <button className="icon-button" type="button" onClick={() => setCorrecting("")} title="Cancel correction"><X size={16} /></button>
@@ -261,10 +263,8 @@ export default function HistoryPage({ session }) {
   );
 }
 
-function labelAction(action) {
-  if (["A", "B", "C"].includes(action)) return `Selected ${action}`;
-  if (action === "NO_CLEAR") return "Not enough views / No clear winner";
-  return String(action || "Done").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+function labelAction(action, note) {
+  return reviewActionLabel(action, note);
 }
 
 function actionTone(action) {
